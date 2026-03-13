@@ -1,0 +1,6 @@
+# Syntax error: nonlocal and global conflict
+x = 1
+def foo():
+    global x
+    nonlocal x
+    pass

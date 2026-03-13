@@ -1,0 +1,138 @@
+﻿using System.Reflection;
+using System.Reflection.Emit;
+using Naja.Semantics;
+using Naja.Inference;
+
+namespace Naja.CodeGen;
+
+/// <summary>
+/// All state needed to emit IL for a single method body.
+/// Passed down through all emitter methods so nothing is global.
+/// </summary>
+public sealed class EmitContext
+{
+    public ILGenerator IL { get; }
+    public LocalsManager Locals { get; }
+    public SemanticModel Model { get; }
+    public TypeBuilder TypeBuilder { get; }
+    public ModuleBuilder Module { get; }
+
+    /// <summary>Return type of the current method — used to validate return statements.</summary>
+    public Type ReturnType { get; }
+
+    /// <summary>Parameter names in order — used for ldarg emission.</summary>
+    public IReadOnlyList<string> Parameters { get; }
+
+    /// <summary>
+    /// Methods defined so far in this type — used for forward calls.
+    /// Populated by the AssemblyEmitter before body emission starts.
+    /// </summary>
+    public Dictionary<string, MethodBuilder> Methods { get; } = new();
+
+    /// <summary>
+    /// Parameter types for each method — stored separately so we never call
+    /// GetParameters() on an unfinished MethodBuilder (throws NotSupportedException).
+    /// </summary>
+    public Dictionary<string, Type[]> MethodParamTypes { get; } = new();
+
+    /// <summary>Instance fields of the current class — for self.x access.</summary>
+    public Dictionary<string, FieldBuilder> InstanceFields { get; } = new();
+
+    /// <summary>Defined class types in the module scope — for class instantiation.</summary>
+    public Dictionary<string, TypeBuilder> ClassTypes { get; } = new();
+
+    public Dictionary<string, ConstructorBuilder> ClassConstructors { get; } = new();
+
+    /// <summary>Set of defined class methods (Format: ClassName.MethodName) to check for method presence.</summary>
+    public HashSet<string> ClassMethods { get; } = new();
+
+    /// <summary>True when emitting an instance method (ldarg.0 = this).</summary>
+    public bool IsInstanceMethod { get; set; }
+
+    /// <summary>True when emitting inside a function body (not module level).</summary>
+    public bool IsInsideFunction { get; set; }
+
+    /// <summary>Name bound to 'self' / 'cls' in the source.</summary>
+    public string? SelfName { get; set; }
+
+    /// <summary>
+    /// Fields defined in this type — used for class variable access.
+    /// </summary>
+    public Dictionary<string, FieldBuilder> Fields { get; } = new();
+
+    /// <summary>
+    /// .NET imports from "from System.X import Y" — name → (FullTypeName, AssemblyName).
+    /// Used to emit Type.GetType and static method calls.
+    /// </summary>
+    public Dictionary<string, (string TypeName, string AssemblyName)> ImportMap { get; } = new();
+
+    /// <summary>
+    /// Inference results for this module.
+    /// Null when running without the inference pass (e.g. unit tests that
+    /// construct EmitContext directly).
+    /// </summary>
+    public InferenceResult? Inference { get; init; }
+
+    /// <summary>
+    /// Diagnostic sink for reporting dynamic sites, explicit dynamic() calls,
+    /// and cast() assertions. Null in permissive mode (no reporting overhead).
+    /// </summary>
+    public Naja.Inference.DiagnosticSink? Diagnostics { get; init; }
+
+    /// <summary>
+    /// Names of Application.* methods already emitted by the WinForms preamble in
+    /// AssemblyEmitter.EmitModule(). StatementEmitter must skip these to prevent
+    /// double-emit (EnableVisualStyles called twice etc.).
+    /// </summary>
+    public HashSet<string> WinFormsPreambleEmitted { get; } = new();
+
+    public EmitContext(
+        ILGenerator il,
+        SemanticModel model,
+        TypeBuilder typeBuilder,
+        ModuleBuilder moduleBuilder,
+        Type returnType,
+        IReadOnlyList<string> parameters)
+    {
+        IL = il;
+        Locals = new LocalsManager(il);
+        Model = model;
+        TypeBuilder = typeBuilder;
+        Module = moduleBuilder;
+        ReturnType = returnType;
+        Parameters = parameters;
+    }
+
+    /// <summary>
+    /// Get the argument index for a parameter name.
+    /// Returns -1 if not a parameter.
+    /// </summary>
+    public int GetParamIndex(string name)
+    {
+        for (int i = 0; i < Parameters.Count; i++)
+            if (Parameters[i] == name) return i;
+        return -1;
+    }
+
+    /// <summary>
+    /// Emit ldarg for a parameter by name.
+    /// </summary>
+    public bool TryEmitLoadParam(string name)
+    {
+        int idx = GetParamIndex(name);
+        if (idx < 0) return false;
+        
+        int ilIdx = IsInstanceMethod ? idx + 1 : idx;
+
+        // Use efficient short-form opcodes where possible
+        switch (ilIdx)
+        {
+            case 0: IL.Emit(OpCodes.Ldarg_0); break;
+            case 1: IL.Emit(OpCodes.Ldarg_1); break;
+            case 2: IL.Emit(OpCodes.Ldarg_2); break;
+            case 3: IL.Emit(OpCodes.Ldarg_3); break;
+            default: IL.Emit(OpCodes.Ldarg_S, (byte)ilIdx); break;
+        }
+        return true;
+    }
+}

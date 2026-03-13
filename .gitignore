@@ -1,0 +1,61 @@
+# Build outputs
+bin/
+obj/
+out/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# Rider
+.idea/
+
+# Test results
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+*.cobertura.xml
+
+# NuGet
+packages/
+*.nupkg
+*.snupkg
+project.lock.json
+
+# Logs
+*.log
+*.txt
+logs/
+log/
+
+# Build logs
+build_*.txt
+build_output*
+
+# Compiled outputs that may leak to root
+*.exe
+*.dll
+*.deps.json
+*.runtimeconfig.json
+*.pdb
+
+# Naja scratch/test files in root (testdata folders are excluded from this)
+*.naja
+!**/testdata/**/*.naja
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temp / debug artifacts
+*.il
+*.tmp
+*.cache
+NajaDebugAsm.*
+dump*.il

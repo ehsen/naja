@@ -1,0 +1,78 @@
+# test_event_unsubscribe.naja
+# Phase 4.3 — Event Unsubscription (-=)
+# Risk: -= on a never-subscribed handler must not throw.
+# After unsubscription the handler must not fire.
+# Removing one of two handlers must leave the other intact.
+
+from System.Windows.Forms import Button
+
+# --- Subscribe then unsubscribe — handler must not fire ---
+fired = [False]
+
+def handler(s, e):
+    fired[0] = True
+
+btn = Button()
+btn.Click += handler
+btn.Click -= handler
+btn.PerformClick()
+
+assert fired[0] == False, "Handler should not fire after unsubscription"
+
+# --- Unsubscribe something never subscribed — must not throw ---
+btn2 = Button()
+btn2.Click -= handler   # was never subscribed — must be silent
+
+# --- Remove one of two handlers, other must still fire ---
+a_fired = [False]
+b_fired = [False]
+
+def handler_a(s, e):
+    a_fired[0] = True
+
+def handler_b(s, e):
+    b_fired[0] = True
+
+btn3 = Button()
+btn3.Click += handler_a
+btn3.Click += handler_b
+btn3.Click -= handler_a
+btn3.PerformClick()
+
+assert a_fired[0] == False, "handler_a should not fire after removal"
+assert b_fired[0] == True,  "handler_b should still fire"
+
+# --- Subscribe, unsubscribe, re-subscribe ---
+counter = [0]
+
+def resubscribe_handler(s, e):
+    counter[0] += 1
+
+btn4 = Button()
+btn4.Click += resubscribe_handler
+btn4.Click -= resubscribe_handler
+btn4.PerformClick()
+assert counter[0] == 0, "Should not fire after unsubscription"
+
+btn4.Click += resubscribe_handler
+btn4.PerformClick()
+assert counter[0] == 1, "Should fire again after re-subscription"
+
+# --- Unsubscribe in a loop ---
+handlers_fired = [0]
+
+def counting_handler(s, e):
+    handlers_fired[0] += 1
+
+btn5 = Button()
+for _ in range(5):
+    btn5.Click += counting_handler
+
+btn5.PerformClick()
+assert handlers_fired[0] == 5, "5 subscriptions should fire 5 times"
+
+for _ in range(5):
+    btn5.Click -= counting_handler
+
+btn5.PerformClick()
+assert handlers_fired[0] == 5, "After removing all, count stays at 5"

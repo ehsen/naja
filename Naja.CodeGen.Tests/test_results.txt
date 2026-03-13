@@ -1,0 +1,202 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  Naja.Lexer -> F:\Sources\Naja\Naja.Lexer\bin\Debug\net10.0\Naja.Lexer.dll
+  Naja.Parser -> F:\Sources\Naja\Naja.Parser\bin\Debug\net10.0\Naja.Parser.dll
+  Naja.Semantics -> F:\Sources\Naja\Naja.Semantics\bin\Debug\net10.0\Naja.Semantics.dll
+  Naja.CodeGen -> F:\Sources\Naja\Naja.CodeGen\bin\Debug\net10.0\Naja.CodeGen.dll
+  Naja.CodeGen.Tests -> F:\Sources\Naja\Naja.CodeGen.Tests\bin\Debug\net10.0\Naja.CodeGen.Tests.dll
+Test run for F:\Sources\Naja\Naja.CodeGen.Tests\bin\Debug\net10.0\Naja.CodeGen.Tests.dll (.NETCoreApp,Version=v10.0)
+VSTest version 18.0.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.3)
+[xUnit.net 00:00:00.13]   Discovering: Naja.CodeGen.Tests
+[xUnit.net 00:00:00.20]   Discovered:  Naja.CodeGen.Tests
+[xUnit.net 00:00:00.26]   Starting:    Naja.CodeGen.Tests
+  Passed Naja.CodeGen.Tests.CodeGenTests.For_Range_With_Step [69 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.String_Slice_Reverse [6 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.String_Slice_Basic [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.FString_Variable_Interpolation [4 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Class_Instance_Fields_Independent [28 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.List_Extend [5 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.AdjacentStrings_Concat_At_Parse_Time [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Builtin_Type_Conversions [2 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Match_Integer_Cases [7 ms]
+[xUnit.net 00:00:00.48]       Naja.Parser.ParseException : [L2:C24] Expected Indent but got 'return' (Return)
+[xUnit.net 00:00:00.48]       Stack Trace:
+[xUnit.net 00:00:00.48]         F:\Sources\Naja\Naja.Parser\Parser.cs(1366,0): at Naja.Parser.Parser.Expect(TokenType type)
+[xUnit.net 00:00:00.48]         F:\Sources\Naja\Naja.Parser\Parser.cs(70,0): at Naja.Parser.Parser.ParseBlock()
+[xUnit.net 00:00:00.48]         F:\Sources\Naja\Naja.Parser\Parser.cs(390,0): at Naja.Parser.Parser.ParseFunctionDef(Boolean isAsync, IReadOnlyList`1 decorators)
+[xUnit.net 00:00:00.48]         F:\Sources\Naja\Naja.Parser\Parser.cs(89,0): at Naja.Parser.Parser.ParseStatement()
+[xUnit.net 00:00:00.48]         F:\Sources\Naja\Naja.Parser\Parser.cs(61,0): at Naja.Parser.Parser.ParseStatementList()
+[xUnit.net 00:00:00.48]         F:\Sources\Naja\Naja.Parser\Parser.cs(71,0): at Naja.Parser.Parser.ParseBlock()
+[xUnit.net 00:00:00.48]         F:\Sources\Naja\Naja.Parser\Parser.cs(468,0): at Naja.Parser.Parser.ParseClassDef(IReadOnlyList`1 decorators)
+[xUnit.net 00:00:00.49]         F:\Sources\Naja\Naja.Parser\Parser.cs(90,0): at Naja.Parser.Parser.ParseStatement()
+[xUnit.net 00:00:00.49]         F:\Sources\Naja\Naja.Parser\Parser.cs(61,0): at Naja.Parser.Parser.ParseStatementList()
+[xUnit.net 00:00:00.49]         F:\Sources\Naja\Naja.Parser\Parser.cs(47,0): at Naja.Parser.Parser.ParseModule()
+[xUnit.net 00:00:00.49]         F:\Sources\Naja\Naja.CodeGen.Tests\CodeGenTests.cs(1591,0): at Naja.CodeGen.Tests.CodeGenTests.Class_Dunder_Overrides()
+[xUnit.net 00:00:00.49]            at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+[xUnit.net 00:00:00.49]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Passed Naja.CodeGen.Tests.CodeGenTests.Builtin_Zip [2 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Not_On_Nonempty_List_Is_False [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Not_On_Empty_List_Is_True [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Builtin_Enumerate [2 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Exception_Tuple_Catch [16 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Not_On_None_Is_True [1 ms]
+  Failed Naja.CodeGen.Tests.CodeGenTests.Class_Dunder_Overrides [2 ms]
+  Error Message:
+   Naja.Parser.ParseException : [L2:C24] Expected Indent but got 'return' (Return)
+  Stack Trace:
+     at Naja.Parser.Parser.Expect(TokenType type) in F:\Sources\Naja\Naja.Parser\Parser.cs:line 1366
+   at Naja.Parser.Parser.ParseBlock() in F:\Sources\Naja\Naja.Parser\Parser.cs:line 70
+   at Naja.Parser.Parser.ParseFunctionDef(Boolean isAsync, IReadOnlyList`1 decorators) in F:\Sources\Naja\Naja.Parser\Parser.cs:line 390
+   at Naja.Parser.Parser.ParseStatement() in F:\Sources\Naja\Naja.Parser\Parser.cs:line 89
+   at Naja.Parser.Parser.ParseStatementList() in F:\Sources\Naja\Naja.Parser\Parser.cs:line 61
+   at Naja.Parser.Parser.ParseBlock() in F:\Sources\Naja\Naja.Parser\Parser.cs:line 71
+   at Naja.Parser.Parser.ParseClassDef(IReadOnlyList`1 decorators) in F:\Sources\Naja\Naja.Parser\Parser.cs:line 468
+   at Naja.Parser.Parser.ParseStatement() in F:\Sources\Naja\Naja.Parser\Parser.cs:line 90
+   at Naja.Parser.Parser.ParseStatementList() in F:\Sources\Naja\Naja.Parser\Parser.cs:line 61
+   at Naja.Parser.Parser.ParseModule() in F:\Sources\Naja\Naja.Parser\Parser.cs:line 47
+   at Naja.CodeGen.Tests.CodeGenTests.Class_Dunder_Overrides() in F:\Sources\Naja\Naja.CodeGen.Tests\CodeGenTests.cs:line 1591
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Passed Naja.CodeGen.Tests.CodeGenTests.In_And_Not_In_Operators [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Not_On_Nonempty_String_Is_False [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Builtin_Reversed [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Bug7_Nested_For_Loops_Do_Not_Collide [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Try_Except_Basic [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Variable_Assignment_And_Print [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.FString_Format_Specifier [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.ListComp_String_Transform [6 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Walrus_In_While_Condition [6 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.String_Find_And_Count [2 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Match_Or_Pattern [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Boolean_And_Or_Not [3 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.While_Loop [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Builtin_Len [3 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.List_Target_Unpack [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Modulo_Positive_Dividend_Negative_Divisor [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Print_None [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Builtin_Sorted [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Floor_Division [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Try_Except_Else_No_Exception [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Bug5_Class_Init_Typed_Ctor [2 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Starred_Unpack_Rest_In_Middle [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.ListComp_With_Filter [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Try_Finally_Runs_After_Exception [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.For_Range_Loop [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.String_Split_And_Join [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Match_String_Cases [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.FirstClass_Function_Variable_Call [3 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.List_Slice_Basic [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.String_Replace [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Continue_In_For_Loop [2 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Augmented_Assignments [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Builtin_Any_All [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Builtin_Round [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Class_Multiple_Methods [2 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.List_Sort_And_Reverse [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Builtin_Hex_Bin_Oct [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Try_Except_Else_With_Exception [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Class_Private_Members [7 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Break_In_For_Loop [2 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.List_Slice_From_Start [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Integer_Subtraction [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.With_Targetless_Disposes_Context [4 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Nested_ListComp_Flatten [2 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Tuple_Unpack_Basic [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Class_With_List_Field [2 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.SetComp_Basic [3 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Dict_Pop_Existing [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Dict_Update [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.For_Loop_Tuple_Unpack [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Not_On_Zero_Int_Is_True [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.ListComp_Nested_Generators [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Function_With_Return [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Hello_World [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.For_Range_With_Start [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Assert_Passing_Condition [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.List_Slice_With_Step [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Bug1_Await_Throws_CodeGenException [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.List_Slice_To_End [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Builtin_Sum [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.BareRaise_Reraises_Original_Exception [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Tuple_Unpack_Three_Values [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.String_Isdigit_Isalpha [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Class_FString_Method [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Print_Bool_False [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.FloorDivAssign_Negative [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.FString_Arithmetic_Expression [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Chained_Comparisons [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.IDisposable_From_Del [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Try_Except_Named_Exception [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Builtin_Name_Main_Guard [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Builtin_Abs [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.List_Append_And_Len [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Modulo_Negative_Dividend_Positive_Divisor [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.AdjacentStrings_Three_Parts [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Power [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.FloorDiv_Float_Uses_Floor [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Dict_Keys_Values_Items_Lengths [2 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.ListComp_Simple [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Dict_Item_Assignment_And_Read [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.FloorDiv_Positive_Int_Same_As_Div [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Starred_Unpack_Rest_At_End [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Modulo [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Not_On_Empty_String_Is_True [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Print_Integer [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Builtin_Min_Max_On_List [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Integer_Multiplication [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Ternary_Inline [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.If_Elif_Else [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Modulo_Used_In_Even_Check [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Class_Method_Returns_Value [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.String_Strip_Variants [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.FirstClass_Function_As_Argument [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Class_Inheritance_From_Exception [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Class_Method_Modifies_State [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Dict_Get_With_Default [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.FizzBuzz [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Global_Variable_In_Function [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Set_Literal_Deduplicates [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Builtin_Min_Max_Variadic [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.DictComp_With_Filter [4 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Integer_Addition [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Recursive_Factorial [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Word_Count_With_Dict [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.FloorDiv_Negative_Int_Floors_Down [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Builtin_Chr_Ord [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Boolean_Short_Circuit_Returns_Value [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Try_Finally_Always_Runs [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Multiple_Variables [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.List_Index_Count_Remove [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Print_Bool_True [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Pipeline_ListComp_Then_DictComp [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Class_Basic_Init_And_Method [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.List_Item_Assignment [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Modulo_Both_Negative [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.FString_No_Placeholders [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Match_Sequence_Pattern [2 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Match_Mapping_Pattern [2 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.String_Startswith_Endswith [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Recursive_Fibonacci [3 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.ListComp_With_IfExpr [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.ModuloAssign_Negative [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Assert_Failing_Throws [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Integer_Division_Returns_Float [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.List_Pop_Default_And_Index [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Bug4_Event_Unsubscribe [24 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Class_Property_And_Setter [3 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Bug3_Lambda_Returns_Value [3 ms]
+[xUnit.net 00:00:00.72]   Finished:    Naja.CodeGen.Tests
+  Passed Naja.CodeGen.Tests.CodeGenTests.String_Upper_Lower [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.Print_Float [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.FString_Multiple_Types [< 1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.DictComp_Key_Value_Transform [1 ms]
+  Passed Naja.CodeGen.Tests.CodeGenTests.DictComp_Simple [1 ms]
+
+Total tests: 149
+     Passed: 148
+     Failed: 1
+ Total time: 1.5402 Seconds

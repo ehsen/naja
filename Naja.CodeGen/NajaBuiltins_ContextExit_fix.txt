@@ -1,0 +1,55 @@
+    public static void ContextExit(object? obj)
+    {
+        if (obj is null) return;
+
+        // 1. Try Naja __exit__ protocol
+        var exitM = obj.GetType().GetMethod("__exit__");
+        if (exitM is not null)
+        {
+            var ps = exitM.GetParameters();
+            exitM.Invoke(obj, new object?[ps.Length]);
+            return;
+        }
+
+        // 2. Try Naja-emitted Dispose override (typed as object, not bool)
+        //    Naja subclasses emit: public object Dispose(object disposing)
+        //    We need to find the method declared on the actual type, not inherited
+        var najaDispose = obj.GetType().GetMethod("Dispose",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly);
+        if (najaDispose is not null)
+        {
+            try
+            {
+                var ps = najaDispose.GetParameters();
+                if (ps.Length == 0)
+                    najaDispose.Invoke(obj, null);
+                else
+                    // Pass true as the disposing parameter
+                    najaDispose.Invoke(obj, new object?[] { true });
+                return;
+            }
+            catch (System.Reflection.TargetInvocationException tie)
+            {
+                // If the Naja Dispose throws, unwrap and rethrow
+                if (tie.InnerException is not null)
+                    throw tie.InnerException;
+                throw;
+            }
+        }
+
+        // 3. Standard IDisposable fallback - call Dispose() directly
+        // This handles WinForms controls like Form, Button, etc.
+        if (obj is IDisposable d)
+        {
+            try
+            {
+                d.Dispose();
+            }
+            catch (System.Reflection.TargetInvocationException tie)
+            {
+                if (tie.InnerException is not null)
+                    throw tie.InnerException;
+                throw;
+            }
+        }
+    }

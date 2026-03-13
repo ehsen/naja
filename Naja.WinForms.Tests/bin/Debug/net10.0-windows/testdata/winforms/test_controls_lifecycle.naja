@@ -1,0 +1,63 @@
+# test_controls_lifecycle.naja
+# Phase 2.4 — Controls.Add / Controls.Remove Lifecycle
+# Risk: Adding a control reparents it; removing it clears Parent.
+# Naja runtime must not cache stale parent references after mutations.
+
+from System.Windows.Forms import Form, Panel, Button, Label, GroupBox
+
+f = Form()
+p = Panel()
+b = Button()
+
+# --- Add and verify parent chain ---
+f.Controls.Add(p)
+assert f.Controls.Count == 1, "Form should have 1 control after add"
+assert p.Parent is f,         "Panel.Parent should be Form after add"
+
+p.Controls.Add(b)
+assert p.Controls.Count == 1, "Panel should have 1 control after add"
+assert b.Parent is p,         "Button.Parent should be Panel after add"
+
+# --- Remove and verify parent is cleared ---
+p.Controls.Remove(b)
+assert p.Controls.Count == 0, "Panel should have 0 controls after remove"
+assert b.Parent is None,      "Button.Parent should be None after remove"
+
+f.Controls.Remove(p)
+assert f.Controls.Count == 0, "Form should have 0 controls after remove"
+assert p.Parent is None,      "Panel.Parent should be None after remove"
+
+# --- Re-add to a different parent ---
+f2 = Form()
+f2.Controls.Add(b)
+assert b.Parent is f2,         "Button should reparent to f2"
+assert f2.Controls.Count == 1, "f2 should have 1 control"
+
+# --- Multiple controls ---
+lbl1 = Label()
+lbl2 = Label()
+lbl3 = Label()
+lbl1.Text = "A"
+lbl2.Text = "B"
+lbl3.Text = "C"
+
+p2 = Panel()
+p2.Controls.Add(lbl1)
+p2.Controls.Add(lbl2)
+p2.Controls.Add(lbl3)
+assert p2.Controls.Count == 3, "Panel should have 3 controls"
+
+p2.Controls.Remove(lbl2)
+assert p2.Controls.Count == 2, "Panel should have 2 controls after removing lbl2"
+assert lbl2.Parent is None,    "lbl2.Parent should be None after remove"
+
+# Verify remaining controls are still accessible
+assert p2.Controls[0].Text == "A", "First remaining control should be 'A'"
+
+# --- Controls.Clear() ---
+p3 = Panel()
+gb = GroupBox()
+p3.Controls.Add(gb)
+assert p3.Controls.Count == 1, "Panel should have 1 control before clear"
+p3.Controls.Clear()
+assert p3.Controls.Count == 0, "Panel should have 0 controls after Clear()"

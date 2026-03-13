@@ -1,0 +1,40 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  Naja.Lexer -> F:\Sources\Naja\Naja.Lexer\bin\Debug\net10.0\Naja.Lexer.dll
+  Naja.Parser -> F:\Sources\Naja\Naja.Parser\bin\Debug\net10.0\Naja.Parser.dll
+  Naja.Semantics -> F:\Sources\Naja\Naja.Semantics\bin\Debug\net10.0\Naja.Semantics.dll
+  Naja.CodeGen -> F:\Sources\Naja\Naja.CodeGen\bin\Debug\net10.0\Naja.CodeGen.dll
+  Naja.CodeGen.Tests -> F:\Sources\Naja\Naja.CodeGen.Tests\bin\Debug\net10.0\Naja.CodeGen.Tests.dll
+Test run for F:\Sources\Naja\Naja.CodeGen.Tests\bin\Debug\net10.0\Naja.CodeGen.Tests.dll (.NETCoreApp,Version=v10.0)
+VSTest version 18.0.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+F:\Sources\Naja\Naja.CodeGen.Tests\bin\Debug\net10.0\Naja.CodeGen.Tests.dll
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.3)
+[xUnit.net 00:00:00.16]   Discovering: Naja.CodeGen.Tests
+[xUnit.net 00:00:00.24]   Discovered:  Naja.CodeGen.Tests
+[xUnit.net 00:00:00.28]   Starting:    Naja.CodeGen.Tests
+[xUnit.net 00:00:00.43]       Assert.True() Failure
+[xUnit.net 00:00:00.43]       Expected: True
+[xUnit.net 00:00:00.43]       Actual:   False
+[xUnit.net 00:00:00.43]       Stack Trace:
+[xUnit.net 00:00:00.44]         F:\Sources\Naja\Naja.CodeGen.Tests\CodeGenTests.cs(1670,0): at Naja.CodeGen.Tests.CodeGenTests.Class_Final_Fields_Are_InitOnly()
+[xUnit.net 00:00:00.44]            at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+[xUnit.net 00:00:00.44]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+[xUnit.net 00:00:00.44]   Finished:    Naja.CodeGen.Tests
+  Passed Naja.CodeGen.Tests.CodeGenTests.Class_Sealed_And_Methods_Final [72 ms]
+  Failed Naja.CodeGen.Tests.CodeGenTests.Class_Final_Fields_Are_InitOnly [14 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Stack Trace:
+     at Naja.CodeGen.Tests.CodeGenTests.Class_Final_Fields_Are_InitOnly() in F:\Sources\Naja\Naja.CodeGen.Tests\CodeGenTests.cs:line 1670
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+Total tests: 2
+     Passed: 1
+     Failed: 1
+ Total time: 1.5029 Seconds

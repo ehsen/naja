@@ -1,0 +1,22 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "Naja.CodeGen/1.0.0.0": {
+        "runtime": {
+          "Naja.CodeGen.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "Naja.CodeGen/1.0.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

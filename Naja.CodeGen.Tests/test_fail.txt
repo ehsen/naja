@@ -1,0 +1,54 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  Naja.Lexer -> F:\Sources\Naja\Naja.Lexer\bin\Debug\net10.0\Naja.Lexer.dll
+  Naja.Parser -> F:\Sources\Naja\Naja.Parser\bin\Debug\net10.0\Naja.Parser.dll
+  Naja.Semantics -> F:\Sources\Naja\Naja.Semantics\bin\Debug\net10.0\Naja.Semantics.dll
+  Naja.CodeGen -> F:\Sources\Naja\Naja.CodeGen\bin\Debug\net10.0\Naja.CodeGen.dll
+  Naja.CodeGen.Tests -> F:\Sources\Naja\Naja.CodeGen.Tests\bin\Debug\net10.0\Naja.CodeGen.Tests.dll
+Test run for F:\Sources\Naja\Naja.CodeGen.Tests\bin\Debug\net10.0\Naja.CodeGen.Tests.dll (.NETCoreApp,Version=v10.0)
+VSTest version 18.0.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+F:\Sources\Naja\Naja.CodeGen.Tests\bin\Debug\net10.0\Naja.CodeGen.Tests.dll
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.3)
+[xUnit.net 00:00:00.13]   Discovering: Naja.CodeGen.Tests
+[xUnit.net 00:00:00.20]   Discovered:  Naja.CodeGen.Tests
+[xUnit.net 00:00:00.24]   Starting:    Naja.CodeGen.Tests
+[xUnit.net 00:00:00.33]       Naja.Parser.ParseException : [L2:C24] Expected Indent but got 'return' (Return)
+[xUnit.net 00:00:00.33]       Stack Trace:
+[xUnit.net 00:00:00.33]         F:\Sources\Naja\Naja.Parser\Parser.cs(1366,0): at Naja.Parser.Parser.Expect(TokenType type)
+[xUnit.net 00:00:00.33]         F:\Sources\Naja\Naja.Parser\Parser.cs(70,0): at Naja.Parser.Parser.ParseBlock()
+[xUnit.net 00:00:00.33]         F:\Sources\Naja\Naja.Parser\Parser.cs(390,0): at Naja.Parser.Parser.ParseFunctionDef(Boolean isAsync, IReadOnlyList`1 decorators)
+[xUnit.net 00:00:00.34]         F:\Sources\Naja\Naja.Parser\Parser.cs(89,0): at Naja.Parser.Parser.ParseStatement()
+[xUnit.net 00:00:00.34]         F:\Sources\Naja\Naja.Parser\Parser.cs(61,0): at Naja.Parser.Parser.ParseStatementList()
+[xUnit.net 00:00:00.34]         F:\Sources\Naja\Naja.Parser\Parser.cs(71,0): at Naja.Parser.Parser.ParseBlock()
+[xUnit.net 00:00:00.34]         F:\Sources\Naja\Naja.Parser\Parser.cs(468,0): at Naja.Parser.Parser.ParseClassDef(IReadOnlyList`1 decorators)
+[xUnit.net 00:00:00.34]         F:\Sources\Naja\Naja.Parser\Parser.cs(90,0): at Naja.Parser.Parser.ParseStatement()
+[xUnit.net 00:00:00.34]         F:\Sources\Naja\Naja.Parser\Parser.cs(61,0): at Naja.Parser.Parser.ParseStatementList()
+[xUnit.net 00:00:00.34]         F:\Sources\Naja\Naja.Parser\Parser.cs(47,0): at Naja.Parser.Parser.ParseModule()
+[xUnit.net 00:00:00.34]         F:\Sources\Naja\Naja.CodeGen.Tests\CodeGenTests.cs(1591,0): at Naja.CodeGen.Tests.CodeGenTests.Class_Dunder_Overrides()
+[xUnit.net 00:00:00.34]            at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+[xUnit.net 00:00:00.34]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+[xUnit.net 00:00:00.35]   Finished:    Naja.CodeGen.Tests
+  Failed Naja.CodeGen.Tests.CodeGenTests.Class_Dunder_Overrides [26 ms]
+  Error Message:
+   Naja.Parser.ParseException : [L2:C24] Expected Indent but got 'return' (Return)
+  Stack Trace:
+     at Naja.Parser.Parser.Expect(TokenType type) in F:\Sources\Naja\Naja.Parser\Parser.cs:line 1366
+   at Naja.Parser.Parser.ParseBlock() in F:\Sources\Naja\Naja.Parser\Parser.cs:line 70
+   at Naja.Parser.Parser.ParseFunctionDef(Boolean isAsync, IReadOnlyList`1 decorators) in F:\Sources\Naja\Naja.Parser\Parser.cs:line 390
+   at Naja.Parser.Parser.ParseStatement() in F:\Sources\Naja\Naja.Parser\Parser.cs:line 89
+   at Naja.Parser.Parser.ParseStatementList() in F:\Sources\Naja\Naja.Parser\Parser.cs:line 61
+   at Naja.Parser.Parser.ParseBlock() in F:\Sources\Naja\Naja.Parser\Parser.cs:line 71
+   at Naja.Parser.Parser.ParseClassDef(IReadOnlyList`1 decorators) in F:\Sources\Naja\Naja.Parser\Parser.cs:line 468
+   at Naja.Parser.Parser.ParseStatement() in F:\Sources\Naja\Naja.Parser\Parser.cs:line 90
+   at Naja.Parser.Parser.ParseStatementList() in F:\Sources\Naja\Naja.Parser\Parser.cs:line 61
+   at Naja.Parser.Parser.ParseModule() in F:\Sources\Naja\Naja.Parser\Parser.cs:line 47
+   at Naja.CodeGen.Tests.CodeGenTests.Class_Dunder_Overrides() in F:\Sources\Naja\Naja.CodeGen.Tests\CodeGenTests.cs:line 1591
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+Total tests: 1
+     Failed: 1
+ Total time: 1.2793 Seconds

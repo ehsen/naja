@@ -1,0 +1,57 @@
+case ClassPattern clp:
+{
+    // Check subject is an instance of the class
+    var isInstanceMethod = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.IsInstance))!;
+    var clsType = _expr.Emit(clp.Cls);
+    TypeMapper.EmitBox(IL, clsType);
+    var clsLocal = _ctx.Locals.Declare($"__clsp_{pattern.Line}", typeof(object));
+    IL.Emit(OpCodes.Stloc, clsLocal);
+
+    IL.Emit(OpCodes.Ldloc, subject);
+    IL.Emit(OpCodes.Ldloc, clsLocal);
+    IL.Emit(OpCodes.Call, isInstanceMethod);
+    IL.Emit(OpCodes.Brfalse, noMatch);
+
+    var getAttr = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.GetAttr))!;
+
+    // Handle positional patterns (e.g., Point(1, py2)) - map to __match_args__ attributes
+    for (int i = 0; i < clp.Positional.Count; i++)
+    {
+        var posPat = clp.Positional[i];
+        string attrName = GetMatchArgName(clp.Cls, i);
+        
+        // Load the attribute value
+        var attrLocal = _ctx.Locals.Declare($"__cpp_{pattern.Line}_{i}", typeof(object));
+        IL.Emit(OpCodes.Ldloc, subject);
+        IL.Emit(OpCodes.Ldstr, attrName);
+        IL.Emit(OpCodes.Call, getAttr);
+        IL.Emit(OpCodes.Stloc, attrLocal);
+        
+        // Match the pattern against the attribute value
+        EmitPatternCheck(posPat, attrLocal, noMatch);
+    }
+
+    // Match keyword patterns against attributes
+    foreach (var (name, valPat) in clp.Keyword)
+    {
+        var attrLocal = _ctx.Locals.Declare($"__cpa_{pattern.Line}_{name}", typeof(object));
+        IL.Emit(OpCodes.Ldloc, subject);
+        IL.Emit(OpCodes.Ldstr, name);
+        IL.Emit(OpCodes.Call, getAttr);
+        IL.Emit(OpCodes.Stloc, attrLocal);
+        EmitPatternCheck(valPat, attrLocal, noMatch);
+    }
+    break;
+}
+
+// Helper method
+private string GetMatchArgName(Expression clsExpr, int index)
+{
+    if (clsExpr is NameExpr nameExpr)
+    {
+        string[] commonNames = { "x", "y", "z", "w", "value", "name", "id", "key", "data" };
+        if (index < commonNames.Length)
+            return commonNames[index];
+    }
+    return $"arg{index}";
+}

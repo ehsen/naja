@@ -1,0 +1,2 @@
+# Syntax error: return outside function
+return 42

@@ -1,0 +1,112 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  Naja.Lexer -> F:\Sources\Naja\Naja.Lexer\bin\Debug\net10.0\Naja.Lexer.dll
+  Naja.Parser -> F:\Sources\Naja\Naja.Parser\bin\Debug\net10.0\Naja.Parser.dll
+  Naja.Semantics -> F:\Sources\Naja\Naja.Semantics\bin\Debug\net10.0\Naja.Semantics.dll
+  Naja.CodeGen -> F:\Sources\Naja\Naja.CodeGen\bin\Debug\net10.0\Naja.CodeGen.dll
+  Naja.CodeGen.Tests -> F:\Sources\Naja\Naja.CodeGen.Tests\bin\Debug\net10.0\Naja.CodeGen.Tests.dll
+Test run for F:\Sources\Naja\Naja.CodeGen.Tests\bin\Debug\net10.0\Naja.CodeGen.Tests.dll (.NETCoreApp,Version=v10.0)
+VSTest version 18.0.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+F:\Sources\Naja\Naja.CodeGen.Tests\bin\Debug\net10.0\Naja.CodeGen.Tests.dll
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.3)
+[xUnit.net 00:00:00.09]   Discovering: Naja.CodeGen.Tests
+[xUnit.net 00:00:00.14]   Discovered:  Naja.CodeGen.Tests
+[xUnit.net 00:00:00.17]   Starting:    Naja.CodeGen.Tests
+[xUnit.net 00:00:00.26]       Assert.Equal() Failure: Strings differ
+[xUnit.net 00:00:00.26]                  ↓ (pos 0)
+[xUnit.net 00:00:00.26]       Expected: "1\n2"
+[xUnit.net 00:00:00.26]       Actual:   "0\n2"
+[xUnit.net 00:00:00.26]                  ↑ (pos 0)
+[xUnit.net 00:00:00.26]       Stack Trace:
+[xUnit.net 00:00:00.26]         F:\Sources\Naja\Naja.CodeGen.Tests\CodeGenTests.cs(1698,0): at Naja.CodeGen.Tests.CodeGenTests.Method_Resolution_OptionalParams()
+[xUnit.net 00:00:00.26]            at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+[xUnit.net 00:00:00.26]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+[xUnit.net 00:00:00.27]       Naja.CodeGen.CodeGenException : [L3:C11] Undefined name 'Int32'
+[xUnit.net 00:00:00.27]       Stack Trace:
+[xUnit.net 00:00:00.27]         F:\Sources\Naja\Naja.CodeGen\ExpressionEmitter.cs(226,0): at Naja.CodeGen.ExpressionEmitter.EmitName(NameExpr e)
+[xUnit.net 00:00:00.27]         F:\Sources\Naja\Naja.CodeGen\ExpressionEmitter.cs(35,0): at Naja.CodeGen.ExpressionEmitter.Emit(Expression expr)
+[xUnit.net 00:00:00.27]         F:\Sources\Naja\Naja.CodeGen\ExpressionEmitter.cs(837,0): at Naja.CodeGen.ExpressionEmitter.EmitMethodCall(AttributeExpr attr, IReadOnlyList`1 args)
+[xUnit.net 00:00:00.27]         F:\Sources\Naja\Naja.CodeGen\ExpressionEmitter.cs(763,0): at Naja.CodeGen.ExpressionEmitter.EmitCall(CallExpr e)
+[xUnit.net 00:00:00.27]         F:\Sources\Naja\Naja.CodeGen\ExpressionEmitter.cs(42,0): at Naja.CodeGen.ExpressionEmitter.Emit(Expression expr)
+[xUnit.net 00:00:00.27]         F:\Sources\Naja\Naja.CodeGen\StatementEmitter.cs(71,0): at Naja.CodeGen.StatementEmitter.Emit(AssignStatement s)
+[xUnit.net 00:00:00.27]         F:\Sources\Naja\Naja.CodeGen\StatementEmitter.cs(30,0): at Naja.CodeGen.StatementEmitter.Emit(Statement stmt)
+[xUnit.net 00:00:00.27]         F:\Sources\Naja\Naja.CodeGen\AssemblyEmitter.cs(202,0): at Naja.CodeGen.AssemblyEmitter.EmitModule(Module module, ModuleBuilder modBuilder)
+[xUnit.net 00:00:00.27]         F:\Sources\Naja\Naja.CodeGen\AssemblyEmitter.cs(42,0): at Naja.CodeGen.AssemblyEmitter.EmitToMemory(Module module)
+[xUnit.net 00:00:00.27]         F:\Sources\Naja\Naja.CodeGen.Tests\CodeGenTests.cs(23,0): at Naja.CodeGen.Tests.CodeGenTests.Run(String source)
+[xUnit.net 00:00:00.27]         F:\Sources\Naja\Naja.CodeGen.Tests\CodeGenTests.cs(1710,0): at Naja.CodeGen.Tests.CodeGenTests.Method_Resolution_OutRefParams()
+[xUnit.net 00:00:00.27]            at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+[xUnit.net 00:00:00.27]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+[xUnit.net 00:00:00.27]       Naja.CodeGen.CodeGenException : [L2:C7] Undefined name 'String'
+[xUnit.net 00:00:00.27]       Stack Trace:
+[xUnit.net 00:00:00.27]         F:\Sources\Naja\Naja.CodeGen\ExpressionEmitter.cs(226,0): at Naja.CodeGen.ExpressionEmitter.EmitName(NameExpr e)
+[xUnit.net 00:00:00.27]         F:\Sources\Naja\Naja.CodeGen\ExpressionEmitter.cs(35,0): at Naja.CodeGen.ExpressionEmitter.Emit(Expression expr)
+[xUnit.net 00:00:00.27]         F:\Sources\Naja\Naja.CodeGen\ExpressionEmitter.cs(837,0): at Naja.CodeGen.ExpressionEmitter.EmitMethodCall(AttributeExpr attr, IReadOnlyList`1 args)
+[xUnit.net 00:00:00.27]         F:\Sources\Naja\Naja.CodeGen\ExpressionEmitter.cs(763,0): at Naja.CodeGen.ExpressionEmitter.EmitCall(CallExpr e)
+[xUnit.net 00:00:00.27]         F:\Sources\Naja\Naja.CodeGen\ExpressionEmitter.cs(42,0): at Naja.CodeGen.ExpressionEmitter.Emit(Expression expr)
+[xUnit.net 00:00:00.27]         F:\Sources\Naja\Naja.CodeGen\ExpressionEmitter.cs(800,0): at Naja.CodeGen.ExpressionEmitter.EmitBuiltinCall(MethodInfo method, IReadOnlyList`1 args, String name)
+[xUnit.net 00:00:00.27]         F:\Sources\Naja\Naja.CodeGen\ExpressionEmitter.cs(671,0): at Naja.CodeGen.ExpressionEmitter.EmitCall(CallExpr e)
+[xUnit.net 00:00:00.27]         F:\Sources\Naja\Naja.CodeGen\ExpressionEmitter.cs(42,0): at Naja.CodeGen.ExpressionEmitter.Emit(Expression expr)
+[xUnit.net 00:00:00.27]         F:\Sources\Naja\Naja.CodeGen\StatementEmitter.cs(519,0): at Naja.CodeGen.StatementEmitter.Emit(ExprStatement s)
+[xUnit.net 00:00:00.27]         F:\Sources\Naja\Naja.CodeGen\StatementEmitter.cs(33,0): at Naja.CodeGen.StatementEmitter.Emit(Statement stmt)
+[xUnit.net 00:00:00.27]         F:\Sources\Naja\Naja.CodeGen\AssemblyEmitter.cs(202,0): at Naja.CodeGen.AssemblyEmitter.EmitModule(Module module, ModuleBuilder modBuilder)
+[xUnit.net 00:00:00.27]         F:\Sources\Naja\Naja.CodeGen\AssemblyEmitter.cs(42,0): at Naja.CodeGen.AssemblyEmitter.EmitToMemory(Module module)
+[xUnit.net 00:00:00.27]         F:\Sources\Naja\Naja.CodeGen.Tests\CodeGenTests.cs(23,0): at Naja.CodeGen.Tests.CodeGenTests.Run(String source)
+[xUnit.net 00:00:00.28]         F:\Sources\Naja\Naja.CodeGen.Tests\CodeGenTests.cs(1688,0): at Naja.CodeGen.Tests.CodeGenTests.Method_Resolution_ParamsArray()
+[xUnit.net 00:00:00.28]            at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+[xUnit.net 00:00:00.28]            at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+[xUnit.net 00:00:00.28]   Finished:    Naja.CodeGen.Tests
+  Failed Naja.CodeGen.Tests.CodeGenTests.Method_Resolution_OptionalParams [53 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "1\n2"
+Actual:   "0\n2"
+           ↑ (pos 0)
+  Stack Trace:
+     at Naja.CodeGen.Tests.CodeGenTests.Method_Resolution_OptionalParams() in F:\Sources\Naja\Naja.CodeGen.Tests\CodeGenTests.cs:line 1698
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Failed Naja.CodeGen.Tests.CodeGenTests.Method_Resolution_OutRefParams [4 ms]
+  Error Message:
+   Naja.CodeGen.CodeGenException : [L3:C11] Undefined name 'Int32'
+  Stack Trace:
+     at Naja.CodeGen.ExpressionEmitter.EmitName(NameExpr e) in F:\Sources\Naja\Naja.CodeGen\ExpressionEmitter.cs:line 226
+   at Naja.CodeGen.ExpressionEmitter.Emit(Expression expr) in F:\Sources\Naja\Naja.CodeGen\ExpressionEmitter.cs:line 35
+   at Naja.CodeGen.ExpressionEmitter.EmitMethodCall(AttributeExpr attr, IReadOnlyList`1 args) in F:\Sources\Naja\Naja.CodeGen\ExpressionEmitter.cs:line 837
+   at Naja.CodeGen.ExpressionEmitter.EmitCall(CallExpr e) in F:\Sources\Naja\Naja.CodeGen\ExpressionEmitter.cs:line 763
+   at Naja.CodeGen.ExpressionEmitter.Emit(Expression expr) in F:\Sources\Naja\Naja.CodeGen\ExpressionEmitter.cs:line 42
+   at Naja.CodeGen.StatementEmitter.Emit(AssignStatement s) in F:\Sources\Naja\Naja.CodeGen\StatementEmitter.cs:line 71
+   at Naja.CodeGen.StatementEmitter.Emit(Statement stmt) in F:\Sources\Naja\Naja.CodeGen\StatementEmitter.cs:line 30
+   at Naja.CodeGen.AssemblyEmitter.EmitModule(Module module, ModuleBuilder modBuilder) in F:\Sources\Naja\Naja.CodeGen\AssemblyEmitter.cs:line 202
+   at Naja.CodeGen.AssemblyEmitter.EmitToMemory(Module module) in F:\Sources\Naja\Naja.CodeGen\AssemblyEmitter.cs:line 42
+   at Naja.CodeGen.Tests.CodeGenTests.Run(String source) in F:\Sources\Naja\Naja.CodeGen.Tests\CodeGenTests.cs:line 23
+   at Naja.CodeGen.Tests.CodeGenTests.Method_Resolution_OutRefParams() in F:\Sources\Naja\Naja.CodeGen.Tests\CodeGenTests.cs:line 1710
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Failed Naja.CodeGen.Tests.CodeGenTests.Method_Resolution_ParamsArray [1 ms]
+  Error Message:
+   Naja.CodeGen.CodeGenException : [L2:C7] Undefined name 'String'
+  Stack Trace:
+     at Naja.CodeGen.ExpressionEmitter.EmitName(NameExpr e) in F:\Sources\Naja\Naja.CodeGen\ExpressionEmitter.cs:line 226
+   at Naja.CodeGen.ExpressionEmitter.Emit(Expression expr) in F:\Sources\Naja\Naja.CodeGen\ExpressionEmitter.cs:line 35
+   at Naja.CodeGen.ExpressionEmitter.EmitMethodCall(AttributeExpr attr, IReadOnlyList`1 args) in F:\Sources\Naja\Naja.CodeGen\ExpressionEmitter.cs:line 837
+   at Naja.CodeGen.ExpressionEmitter.EmitCall(CallExpr e) in F:\Sources\Naja\Naja.CodeGen\ExpressionEmitter.cs:line 763
+   at Naja.CodeGen.ExpressionEmitter.Emit(Expression expr) in F:\Sources\Naja\Naja.CodeGen\ExpressionEmitter.cs:line 42
+   at Naja.CodeGen.ExpressionEmitter.EmitBuiltinCall(MethodInfo method, IReadOnlyList`1 args, String name) in F:\Sources\Naja\Naja.CodeGen\ExpressionEmitter.cs:line 800
+   at Naja.CodeGen.ExpressionEmitter.EmitCall(CallExpr e) in F:\Sources\Naja\Naja.CodeGen\ExpressionEmitter.cs:line 671
+   at Naja.CodeGen.ExpressionEmitter.Emit(Expression expr) in F:\Sources\Naja\Naja.CodeGen\ExpressionEmitter.cs:line 42
+   at Naja.CodeGen.StatementEmitter.Emit(ExprStatement s) in F:\Sources\Naja\Naja.CodeGen\StatementEmitter.cs:line 519
+   at Naja.CodeGen.StatementEmitter.Emit(Statement stmt) in F:\Sources\Naja\Naja.CodeGen\StatementEmitter.cs:line 33
+   at Naja.CodeGen.AssemblyEmitter.EmitModule(Module module, ModuleBuilder modBuilder) in F:\Sources\Naja\Naja.CodeGen\AssemblyEmitter.cs:line 202
+   at Naja.CodeGen.AssemblyEmitter.EmitToMemory(Module module) in F:\Sources\Naja\Naja.CodeGen\AssemblyEmitter.cs:line 42
+   at Naja.CodeGen.Tests.CodeGenTests.Run(String source) in F:\Sources\Naja\Naja.CodeGen.Tests\CodeGenTests.cs:line 23
+   at Naja.CodeGen.Tests.CodeGenTests.Method_Resolution_ParamsArray() in F:\Sources\Naja\Naja.CodeGen.Tests\CodeGenTests.cs:line 1688
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+Total tests: 3
+     Failed: 3
+ Total time: 0.9068 Seconds

@@ -1,0 +1,83 @@
+# test_invoke_required.naja
+# Phase 8.1 — Cross-Thread Safety / Control.Invoke
+# Risk: WinForms controls have strict thread affinity.
+# InvokeRequired must be detectable and Invoke must marshal correctly.
+# Controls created without a message pump report InvokeRequired = False
+# on the same thread, but True on a background thread.
+
+from System.Windows.Forms import Label, Button
+from System.Threading import Thread
+
+# --- InvokeRequired is False on the creating thread ---
+lbl = Label()
+lbl.Text = "Initial"
+assert lbl.InvokeRequired == False, "InvokeRequired should be False on creating thread"
+
+# --- Direct property set works on creating thread ---
+lbl.Text = "Direct"
+assert lbl.Text == "Direct", "Direct set on creating thread should work"
+
+# --- Background thread: InvokeRequired = True, Invoke marshals correctly ---
+result = [None]
+invoke_was_required = [None]
+
+def background_work():
+    invoke_was_required[0] = lbl.InvokeRequired
+    if lbl.InvokeRequired:
+        lbl.Invoke(lambda: setattr(lbl, 'Text', 'From thread'))
+    else:
+        lbl.Text = "Direct from thread"
+    result[0] = "done"
+
+t = Thread(background_work)
+t.Start()
+t.Join()
+
+assert result[0] == "done", "Background thread should complete"
+# In headless/no-pump context InvokeRequired may be False — both paths are valid
+assert lbl.Text in ["From thread", "Direct from thread"], \
+    "Label text should be set by background thread via either path"
+
+# --- BeginInvoke (async marshal) ---
+lbl2 = Label()
+lbl2.Text = "Before"
+
+begin_result = [None]
+
+def bg_begin():
+    if lbl2.InvokeRequired:
+        lbl2.BeginInvoke(lambda: setattr(lbl2, 'Text', 'AfterBeginInvoke'))
+    else:
+        lbl2.Text = "AfterBeginInvoke"
+    begin_result[0] = "done"
+
+t2 = Thread(bg_begin)
+t2.Start()
+t2.Join()
+
+assert begin_result[0] == "done", "BeginInvoke thread should complete"
+
+# --- Multiple threads updating different controls ---
+labels = [Label() for _ in range(3)]
+for i, l in enumerate(labels):
+    l.Text = f"Label{i}"
+
+completed = [0]
+
+def update_label(index):
+    lbl_target = labels[index]
+    if lbl_target.InvokeRequired:
+        lbl_target.Invoke(lambda: setattr(lbl_target, 'Text', f"Updated{index}"))
+    else:
+        lbl_target.Text = f"Updated{index}"
+    completed[0] += 1
+
+threads = [Thread(lambda i=i: update_label(i)) for i in range(3)]
+for t in threads:
+    t.Start()
+for t in threads:
+    t.Join()
+
+assert completed[0] == 3, "All 3 threads should complete"
+for i, l in enumerate(labels):
+    assert l.Text == f"Updated{i}", f"Label{i} should be 'Updated{i}'"

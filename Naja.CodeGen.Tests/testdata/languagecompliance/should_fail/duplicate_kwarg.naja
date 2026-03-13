@@ -1,0 +1,4 @@
+# Syntax error: duplicate keyword argument
+def foo(x):
+    pass
+foo(x=1, x=2)

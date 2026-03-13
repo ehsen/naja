@@ -1,0 +1,81 @@
+# test_event_args.naja
+# Phase 4.4 — Complex EventArgs Payloads
+# Risk: Naja fails to read properties off .NET event payloads
+# passed back into Python callbacks (unmanaged → managed boundary).
+
+from System.Windows.Forms import TreeView, TreeNode, CheckBox, TextBox, NumericUpDown
+
+# --- TreeView.AfterSelect: TreeViewEventArgs.Node.Text ---
+tree = TreeView()
+node_root = TreeNode("Root")
+node_child = TreeNode("Child")
+node_root.Nodes.Add(node_child)
+tree.Nodes.Add(node_root)
+
+received_node_text = [None]
+
+def on_after_select(sender, e):
+    received_node_text[0] = e.Node.Text
+
+tree.AfterSelect += on_after_select
+tree.SelectedNode = node_root
+assert received_node_text[0] == "Root", "AfterSelect should capture node text 'Root'"
+
+tree.SelectedNode = node_child
+assert received_node_text[0] == "Child", "AfterSelect should capture node text 'Child'"
+
+# --- TreeView.BeforeSelect: can cancel ---
+cancel_called = [False]
+
+def on_before_select(sender, e):
+    cancel_called[0] = True
+    # e.Cancel = True would block selection — just verify we can read e properties
+
+tree.BeforeSelect += on_before_select
+tree.SelectedNode = node_root
+assert cancel_called[0] == True, "BeforeSelect handler should have been called"
+
+# --- CheckBox.CheckedChanged: sender.Checked in handler ---
+received_checked = [None]
+
+def on_checked_changed(sender, e):
+    received_checked[0] = sender.Checked
+
+cb = CheckBox()
+cb.CheckedChanged += on_checked_changed
+cb.Checked = True
+assert received_checked[0] == True,  "sender.Checked should be True in handler"
+
+cb.Checked = False
+assert received_checked[0] == False, "sender.Checked should be False in handler"
+
+# --- NumericUpDown.ValueChanged: sender.Value in handler ---
+received_value = [None]
+
+def on_value_changed(sender, e):
+    received_value[0] = sender.Value
+
+nud = NumericUpDown()
+nud.Minimum = 0
+nud.Maximum = 100
+nud.ValueChanged += on_value_changed
+nud.Value = 42
+assert received_value[0] == 42, "sender.Value should be 42 in ValueChanged handler"
+
+nud.Value = 99
+assert received_value[0] == 99, "sender.Value should be 99 after second change"
+
+# --- TextBox.TextChanged: full EventArgs chain ---
+text_history = []
+
+def on_text_changed(sender, e):
+    text_history.append(sender.Text)
+
+tb = TextBox()
+tb.TextChanged += on_text_changed
+tb.Text = "First"
+tb.Text = "Second"
+tb.Text = "Third"
+
+assert text_history == ["First", "Second", "Third"], \
+    "TextChanged history should capture all 3 values in order"

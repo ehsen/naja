@@ -1,0 +1,87 @@
+# canary_control_flow.naja
+# Tests: if/elif/else, for, while, break, continue, nested loops, ternary
+
+# Basic if/elif/else
+x = 10
+if x > 10:
+    result = "big"
+elif x == 10:
+    result = "ten"
+else:
+    result = "small"
+assert result == "ten", f"Expected 'ten', got {result}"
+
+# For loop with range
+total = 0
+for i in range(5):
+    total = total + i
+assert total == 10, f"Expected 10, got {total}"
+
+# While loop
+n = 5
+countdown = 0
+while n > 0:
+    countdown = countdown + 1
+    n = n - 1
+assert countdown == 5
+
+# Break
+found = False
+for i in range(100):
+    if i == 7:
+        found = True
+        break
+assert found == True
+assert i == 7, f"Expected i=7 after break, got {i}"
+
+# Continue
+evens = []
+for i in range(10):
+    if i % 2 != 0:
+        continue
+    evens.append(i)
+assert evens == [0, 2, 4, 6, 8], f"Got {evens}"
+
+# Nested loops with break
+outer_ran = 0
+for i in range(5):
+    outer_ran = outer_ran + 1
+    for j in range(5):
+        if j == 2:
+            break
+assert outer_ran == 5
+
+# Ternary / conditional expression
+val = "yes" if True else "no"
+assert val == "yes"
+val2 = "yes" if False else "no"
+assert val2 == "no"
+
+# For/else — else runs when no break
+found_flag = False
+for i in range(5):
+    if i == 99:
+        found_flag = True
+        break
+else:
+    found_flag = False
+assert found_flag == False
+
+# For/else — else does NOT run when break fires
+found_flag2 = False
+for i in range(5):
+    if i == 3:
+        found_flag2 = True
+        break
+else:
+    found_flag2 = False
+assert found_flag2 == True
+
+# While/else
+w = 3
+while_else_ran = False
+while w > 0:
+    w = w - 1
+else:
+    while_else_ran = True
+assert while_else_ran == True

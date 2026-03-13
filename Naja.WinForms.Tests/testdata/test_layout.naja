@@ -1,0 +1,71 @@
+# test_layout.naja
+# Phase 5.1 — Anchor & Dock Combinations
+# Risk: AnchorStyles is a [Flags] enum; DockStyle is a plain enum.
+# Both must coerce correctly from Int64 and round-trip through named constants.
+
+from System.Windows.Forms import Button, Panel, Label, TextBox, DockStyle, AnchorStyles
+
+p = Panel()
+p.Width = 600
+p.Height = 400
+
+# --- DockStyle: each named value ---
+controls_dock = []
+for style in [DockStyle.None, DockStyle.Top, DockStyle.Bottom, DockStyle.Left, DockStyle.Right, DockStyle.Fill]:
+    b = Button()
+    b.Dock = style
+    controls_dock.append(b)
+
+assert controls_dock[0].Dock == int(DockStyle.None),   "DockStyle.None failed"
+assert controls_dock[1].Dock == int(DockStyle.Top),    "DockStyle.Top failed"
+assert controls_dock[2].Dock == int(DockStyle.Bottom), "DockStyle.Bottom failed"
+assert controls_dock[3].Dock == int(DockStyle.Left),   "DockStyle.Left failed"
+assert controls_dock[4].Dock == int(DockStyle.Right),  "DockStyle.Right failed"
+assert controls_dock[5].Dock == int(DockStyle.Fill),   "DockStyle.Fill failed"
+
+# --- DockStyle via integer literal ---
+b_int = Button()
+b_int.Dock = 5  # Fill
+assert b_int.Dock == 5, "DockStyle via int literal should be 5"
+
+# --- AnchorStyles: single flags ---
+b_top = Button()
+b_top.Anchor = AnchorStyles.Top
+assert b_top.Anchor == int(AnchorStyles.Top), "AnchorStyles.Top failed"
+
+b_left = Button()
+b_left.Anchor = AnchorStyles.Left
+assert b_left.Anchor == int(AnchorStyles.Left), "AnchorStyles.Left failed"
+
+# --- AnchorStyles: combined flags ---
+b_tl = Button()
+b_tl.Anchor = AnchorStyles.Top | AnchorStyles.Left
+assert b_tl.Anchor == int(AnchorStyles.Top | AnchorStyles.Left), \
+    "Top|Left anchor combination failed"
+
+b_tr = Button()
+b_tr.Anchor = AnchorStyles.Top | AnchorStyles.Right
+assert b_tr.Anchor == int(AnchorStyles.Top | AnchorStyles.Right), \
+    "Top|Right anchor combination failed"
+
+b_all = Button()
+b_all.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right
+assert b_all.Anchor == int(AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right), \
+    "All-sides anchor combination failed"
+
+# --- AnchorStyles via integer ---
+b_int_anchor = Button()
+b_int_anchor.Anchor = 9   # Top | Right
+assert b_int_anchor.Anchor == 9, "AnchorStyles via int literal should be 9"
+
+# --- Add to panel and verify properties persist ---
+b_docked = Button()
+b_docked.Dock = DockStyle.Bottom
+p.Controls.Add(b_docked)
+assert p.Controls[0].Dock == int(DockStyle.Bottom), "Docked control property should survive Controls.Add"
+
+# --- Label AutoSize ---
+lbl = Label()
+lbl.AutoSize = True
+lbl.Text = "Auto sized"
+assert lbl.AutoSize == True, "Label.AutoSize should be True"

@@ -1,0 +1,62 @@
+# test_tablelayout.naja
+# Phase 5.2 — TableLayoutPanel Cell Assignment
+# Risk: TableLayoutPanel.Controls.Add(control, col, row) is an overloaded
+# method. GetControlFromPosition must return the exact instance placed there.
+
+from System.Windows.Forms import TableLayoutPanel, Button, Label, TextBox
+
+tlp = TableLayoutPanel()
+tlp.ColumnCount = 3
+tlp.RowCount = 3
+
+# --- Add controls at specific cells ---
+b00 = Button()
+b00.Text = "0,0"
+b11 = Button()
+b11.Text = "1,1"
+b22 = Button()
+b22.Text = "2,2"
+lbl01 = Label()
+lbl01.Text = "0,1"
+txt12 = TextBox()
+txt12.Text = "1,2"
+
+tlp.Controls.Add(b00,  0, 0)
+tlp.Controls.Add(b11,  1, 1)
+tlp.Controls.Add(b22,  2, 2)
+tlp.Controls.Add(lbl01, 0, 1)
+tlp.Controls.Add(txt12, 1, 2)
+
+assert tlp.Controls.Count == 5, "TableLayoutPanel should have 5 controls"
+
+# --- GetControlFromPosition ---
+assert tlp.GetControlFromPosition(0, 0) is b00,   "Position (0,0) should be b00"
+assert tlp.GetControlFromPosition(1, 1) is b11,   "Position (1,1) should be b11"
+assert tlp.GetControlFromPosition(2, 2) is b22,   "Position (2,2) should be b22"
+assert tlp.GetControlFromPosition(0, 1) is lbl01, "Position (0,1) should be lbl01"
+assert tlp.GetControlFromPosition(1, 2) is txt12, "Position (1,2) should be txt12"
+
+# Empty cells return None
+assert tlp.GetControlFromPosition(2, 0) is None, "Empty cell (2,0) should return None"
+assert tlp.GetControlFromPosition(0, 2) is None, "Empty cell (0,2) should return None"
+
+# --- GetCellPosition (reverse lookup) ---
+pos_b00 = tlp.GetCellPosition(b00)
+assert pos_b00.Column == 0, "b00 column should be 0"
+assert pos_b00.Row    == 0, "b00 row should be 0"
+
+pos_b22 = tlp.GetCellPosition(b22)
+assert pos_b22.Column == 2, "b22 column should be 2"
+assert pos_b22.Row    == 2, "b22 row should be 2"
+
+# --- ColumnCount / RowCount ---
+assert tlp.ColumnCount == 3, "ColumnCount should be 3"
+assert tlp.RowCount    == 3, "RowCount should be 3"
+
+tlp.ColumnCount = 4
+assert tlp.ColumnCount == 4, "ColumnCount should update to 4"
+
+# --- Remove a control ---
+tlp.Controls.Remove(b11)
+assert tlp.Controls.Count == 4, "Should have 4 controls after remove"
+assert tlp.GetControlFromPosition(1, 1) is None, "Cell (1,1) should be empty after remove"

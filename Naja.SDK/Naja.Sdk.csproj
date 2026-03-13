@@ -1,0 +1,40 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<PackageId>Naja.Sdk</PackageId>
+		<Version>0.1.0</Version>
+		<Authors>Naja</Authors>
+		<Description>MSBuild SDK for the Naja language — .naja source files as first-class .NET citizens.</Description>
+
+		<!--
+      This project produces no DLL of its own.
+      Its entire job is to pack the Sdk/ and build/ folders into a NuGet package
+      that MSBuild can use as an SDK resolver.
+    -->
+		<IncludeBuildOutput>false</IncludeBuildOutput>
+		<NoDefaultExcludes>true</NoDefaultExcludes>
+		<DevelopmentDependency>true</DevelopmentDependency>
+		<SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<!--
+      Sdk/Sdk.props   → injected by MSBuild before the user's .najaproj is evaluated
+      Sdk/Sdk.targets → injected by MSBuild after  the user's .najaproj is evaluated
+      These two files are the SDK contract — MSBuild looks for them by convention.
+    -->
+		<None Include="Sdk\Sdk.props"    Pack="true" PackagePath="Sdk\Sdk.props" />
+		<None Include="Sdk\Sdk.targets"  Pack="true" PackagePath="Sdk\Sdk.targets" />
+
+		<!--
+      build/ props+targets are imported by NuGet restore for PackageReference consumers.
+      Named Naja.Sdk.props / Naja.Sdk.targets so NuGet auto-imports them.
+    -->
+		<None Include="build\Naja.Sdk.props"   Pack="true" PackagePath="build\Naja.Sdk.props" />
+		<None Include="build\Naja.Sdk.targets" Pack="true" PackagePath="build\Naja.Sdk.targets" />
+	</ItemGroup>
+
+</Project>

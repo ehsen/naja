@@ -1,0 +1,52 @@
+# test_struct_boxing.naja
+# Phase 1.1 — Struct & ValueType Boxing
+# Risk: Structs pushed to stack without OpCodes.Box cause NullReferenceException
+# or memory corruption. Also verifies struct copy semantics (value type, not reference).
+
+from System.Windows.Forms import Form, Padding
+from System.Drawing import Size, Color, Point, Rectangle
+
+f = Form()
+
+# --- Size ---
+f.Size = Size(800, 600)
+assert f.Size.Width == 800, "Size.Width round-trip failed"
+assert f.Size.Height == 600, "Size.Height round-trip failed"
+
+# Struct copy semantics: mutating a local copy must not affect f.Size
+copy = f.Size
+assert copy.Width == 800, "Struct copy Width mismatch"
+
+# --- Point ---
+f.Location = Point(100, 200)
+assert f.Location.X == 100, "Point.X round-trip failed"
+assert f.Location.Y == 200, "Point.Y round-trip failed"
+
+# --- Color (channel-level unboxing) ---
+f.BackColor = Color.Red
+assert f.BackColor.R == 255, "Color.R should be 255 for Red"
+assert f.BackColor.G == 0,   "Color.G should be 0 for Red"
+assert f.BackColor.B == 0,   "Color.B should be 0 for Red"
+
+f.BackColor = Color.Blue
+assert f.BackColor.B == 255, "Color.B should be 255 for Blue"
+assert f.BackColor.R == 0,   "Color.R should be 0 for Blue"
+
+# --- Rectangle (composite struct with 4 fields) ---
+f.Bounds = Rectangle(10, 20, 800, 600)
+assert f.Bounds.X == 10,      "Rectangle.X round-trip failed"
+assert f.Bounds.Y == 20,      "Rectangle.Y round-trip failed"
+assert f.Bounds.Width == 800, "Rectangle.Width round-trip failed"
+assert f.Bounds.Height == 600,"Rectangle.Height round-trip failed"
+
+# --- Padding (four-field struct) ---
+f.Padding = Padding(5, 10, 15, 20)
+assert f.Padding.Left   == 5,  "Padding.Left round-trip failed"
+assert f.Padding.Top    == 10, "Padding.Top round-trip failed"
+assert f.Padding.Right  == 15, "Padding.Right round-trip failed"
+assert f.Padding.Bottom == 20, "Padding.Bottom round-trip failed"
+
+# --- Overwrite and re-read (ensures no caching of stale boxed value) ---
+f.Size = Size(1024, 768)
+assert f.Size.Width == 1024, "Overwrite Size.Width failed"
+assert f.Size.Height == 768, "Overwrite Size.Height failed"

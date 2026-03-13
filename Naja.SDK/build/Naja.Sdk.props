@@ -1,0 +1,18 @@
+<!--
+  build/Naja.Sdk.props
+  Auto-imported by NuGet for projects that reference Naja.Sdk as a PackageReference.
+  Keeps NajaCompilerPath pointing at the right naja.exe inside the NuGet cache.
+-->
+<Project>
+
+  <PropertyGroup>
+    <!--
+      When consumed as a NuGet package, the naja compiler lives in the
+      package's tools/ folder. MSBuild exposes the package path via
+      the $(NajaSdkPackageRoot) property set below.
+    -->
+    <NajaSdkPackageRoot Condition="'$(NajaSdkPackageRoot)' == ''">$(MSBuildThisFileDirectory)..\</NajaSdkPackageRoot>
+    <NajaCompilerPath   Condition="'$(NajaCompilerPath)'   == ''">$(NajaSdkPackageRoot)tools\naja.exe</NajaCompilerPath>
+  </PropertyGroup>
+
+</Project>

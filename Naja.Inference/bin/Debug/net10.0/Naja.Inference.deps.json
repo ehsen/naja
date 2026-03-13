@@ -1,0 +1,73 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "Naja.Inference/1.0.0": {
+        "dependencies": {
+          "Naja.Parser": "1.0.0",
+          "Naja.Semantics": "1.0.0"
+        },
+        "runtime": {
+          "Naja.Inference.dll": {}
+        }
+      },
+      "Naja.Lexer/1.0.0": {
+        "runtime": {
+          "Naja.Lexer.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "Naja.Parser/1.0.0": {
+        "dependencies": {
+          "Naja.Lexer": "1.0.0"
+        },
+        "runtime": {
+          "Naja.Parser.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "Naja.Semantics/1.0.0": {
+        "dependencies": {
+          "Naja.Lexer": "1.0.0",
+          "Naja.Parser": "1.0.0"
+        },
+        "runtime": {
+          "Naja.Semantics.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "Naja.Inference/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Naja.Lexer/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Naja.Parser/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Naja.Semantics/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

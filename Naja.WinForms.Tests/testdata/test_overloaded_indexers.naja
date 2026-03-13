@@ -1,0 +1,69 @@
+# test_overloaded_indexers.naja
+# Phase 2.2 — Overloaded Indexer Resolution
+# Risk: Collections like DataGridViewCellCollection have Item[int] and Item[string].
+# GetItem must iterate GetIndexParameters(), match argument type, never crash on ambiguity.
+
+from System.Windows.Forms import DataGridView, DataGridViewTextBoxColumn, ListBox, TabControl, TabPage
+
+# --- DataGridView: integer and string cell indexers ---
+grid = DataGridView()
+grid.Columns.Add("Col1", "Header 1")
+grid.Columns.Add("Col2", "Header 2")
+grid.Columns.Add("Col3", "Header 3")
+grid.Rows.Add("Value A", "Value B", "Value C")
+grid.Rows.Add("Value D", "Value E", "Value F")
+
+# Integer indexer on Cells
+assert grid.Rows[0].Cells[0].Value == "Value A", "Cells[0] int indexer failed"
+assert grid.Rows[0].Cells[1].Value == "Value B", "Cells[1] int indexer failed"
+assert grid.Rows[0].Cells[2].Value == "Value C", "Cells[2] int indexer failed"
+
+# String indexer on Cells (column name)
+assert grid.Rows[0].Cells["Col1"].Value == "Value A", "Cells['Col1'] string indexer failed"
+assert grid.Rows[0].Cells["Col2"].Value == "Value B", "Cells['Col2'] string indexer failed"
+assert grid.Rows[0].Cells["Col3"].Value == "Value C", "Cells['Col3'] string indexer failed"
+
+# Second row
+assert grid.Rows[1].Cells[0].Value      == "Value D", "Row 1 Cells[0] failed"
+assert grid.Rows[1].Cells["Col3"].Value == "Value F", "Row 1 Cells['Col3'] failed"
+
+# Integer indexer on Columns
+col0 = grid.Columns[0]
+assert col0.Name == "Col1", "Columns[0].Name should be Col1"
+
+col1 = grid.Columns[1]
+assert col1.Name == "Col2", "Columns[1].Name should be Col2"
+
+# String indexer on Columns
+col_by_name = grid.Columns["Col3"]
+assert col_by_name.Name == "Col3", "Columns['Col3'].Name failed"
+
+# --- TabControl.TabPages: integer and string indexers ---
+tabs = TabControl()
+page1 = TabPage()
+page1.Name = "page1"
+page1.Text = "First"
+page2 = TabPage()
+page2.Name = "page2"
+page2.Text = "Second"
+
+tabs.TabPages.Add(page1)
+tabs.TabPages.Add(page2)
+
+# Integer indexer
+assert tabs.TabPages[0].Text == "First",  "TabPages[0].Text failed"
+assert tabs.TabPages[1].Text == "Second", "TabPages[1].Text failed"
+
+# String indexer (by Name)
+assert tabs.TabPages["page1"].Text == "First",  "TabPages['page1'].Text failed"
+assert tabs.TabPages["page2"].Text == "Second", "TabPages['page2'].Text failed"
+
+# --- ListBox.Items: integer indexer ---
+lb = ListBox()
+lb.Items.Add("Alpha")
+lb.Items.Add("Beta")
+lb.Items.Add("Gamma")
+
+assert lb.Items[0] == "Alpha", "ListBox.Items[0] failed"
+assert lb.Items[1] == "Beta",  "ListBox.Items[1] failed"
+assert lb.Items[2] == "Gamma", "ListBox.Items[2] failed"

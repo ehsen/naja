@@ -1,0 +1,69 @@
+# test_numeric_coercion.naja
+# Phase 1.4 — Numeric Widening & Narrowing
+# Risk: Naja integers are Int64. WinForms properties expect Int32, Int16,
+# Byte, Single, or Double. CoerceValue must narrow without truncation bugs.
+
+from System.Windows.Forms import ProgressBar, TrackBar, NumericUpDown, Form, Label
+
+# --- ProgressBar (Int32 properties) ---
+pb = ProgressBar()
+pb.Minimum = 0
+pb.Maximum = 100
+pb.Value = 0
+assert pb.Value == 0,   "Initial ProgressBar value should be 0"
+
+pb.Value = 75
+assert pb.Value == 75,  "ProgressBar value should be 75"
+
+pb.Value = 100
+assert pb.Value == 100, "ProgressBar value should be 100"
+
+pb.Step = 10
+pb.PerformStep()
+# After PerformStep at 100, value stays clamped at Maximum
+assert pb.Value == 100, "ProgressBar should clamp at Maximum"
+
+# --- TrackBar (Int32) ---
+tb = TrackBar()
+tb.Minimum = 0
+tb.Maximum = 50
+tb.Value = 0
+assert tb.Value == 0,   "TrackBar initial value should be 0"
+
+tb.Value = 25
+assert tb.Value == 25,  "TrackBar value should be 25"
+
+tb.Value = 50
+assert tb.Value == 50,  "TrackBar value should be 50"
+
+tb.TickFrequency = 5
+assert tb.TickFrequency == 5, "TickFrequency should be 5"
+
+# --- NumericUpDown (Decimal) ---
+nud = NumericUpDown()
+nud.Minimum = 0
+nud.Maximum = 999
+nud.Value = 42
+assert nud.Value == 42, "NumericUpDown value should be 42"
+
+nud.DecimalPlaces = 2
+assert nud.DecimalPlaces == 2, "DecimalPlaces should be 2"
+
+# --- Form.Opacity (Double — widening from Int64/Float) ---
+f = Form()
+f.Opacity = 1.0
+assert f.Opacity == 1.0, "Opacity 1.0 round-trip failed"
+
+f.Opacity = 0.5
+assert f.Opacity > 0.49, "Opacity should be ~0.5"
+assert f.Opacity < 0.51, "Opacity should be ~0.5"
+
+f.Opacity = 0.0
+assert f.Opacity == 0.0, "Opacity 0.0 round-trip failed"
+
+# --- Label.Width / Height (Int32) ---
+lbl = Label()
+lbl.Width = 200
+lbl.Height = 30
+assert lbl.Width  == 200, "Label.Width should be 200"
+assert lbl.Height == 30,  "Label.Height should be 30"

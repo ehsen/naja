@@ -1,0 +1,135 @@
+# canary_pattern_matching.naja
+# Tests: all PEP 634 pattern types
+
+# 1. Literal pattern
+match 42:
+    case 42:
+        lit_ok = True
+    case _:
+        lit_ok = False
+assert lit_ok == True
+
+# 2. Wildcard
+match "anything":
+    case _:
+        wild_ok = True
+assert wild_ok == True
+
+# 3. Capture pattern
+match [1, 2, 3]:
+    case [x, y, z]:
+        cap_ok = (x == 1 and y == 2 and z == 3)
+assert cap_ok == True
+
+# 4. OR pattern
+def classify_char(c):
+    match c:
+        case 'a' | 'e' | 'i' | 'o' | 'u':
+            return "vowel"
+        case _:
+            return "consonant"
+
+assert classify_char('a') == "vowel"
+assert classify_char('e') == "vowel"
+assert classify_char('b') == "consonant"
+
+# 5. AS pattern
+match [1, 2]:
+    case [x, y] as lst:
+        as_x = x
+        as_lst_len = len(lst)
+assert as_x == 1
+assert as_lst_len == 2
+
+# 6. Guard (if clause)
+match 15:
+    case x if x > 10:
+        guard_ok = True
+    case _:
+        guard_ok = False
+assert guard_ok == True
+
+match 5:
+    case x if x > 10:
+        guard_fail = True
+    case _:
+        guard_fail = False
+assert guard_fail == False
+
+# 7. Sequence pattern with star
+match [1, 2, 3, 4, 5]:
+    case [first, *rest]:
+        seq_first = first
+        seq_rest = rest
+assert seq_first == 1
+assert seq_rest == [2, 3, 4, 5]
+
+match [1, 2, 3, 4, 5]:
+    case [*head, last]:
+        seq_last = last
+assert seq_last == 5
+
+# 8. Mapping pattern
+match {'action': 'delete', 'id': 5}:
+    case {'action': 'delete', 'id': eid}:
+        map_eid = eid
+    case _:
+        map_eid = -1
+assert map_eid == 5
+
+# Mapping pattern — extra keys ignored
+match {'a': 1, 'b': 2, 'c': 3}:
+    case {'a': val}:
+        map_partial = val
+assert map_partial == 1
+
+# 9. Nested patterns
+match {'user': {'name': 'Alice', 'age': 30}}:
+    case {'user': {'name': name, 'age': age}}:
+        nested_name = name
+        nested_age = age
+assert nested_name == "Alice"
+assert nested_age == 30
+
+# 10. Class pattern
+class Point:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+    __match_args__ = ('x', 'y')
+
+p = Point(1, 2)
+match p:
+    case Point(x=px, y=py):
+        class_px = px
+        class_py = py
+assert class_px == 1
+assert class_py == 2
+
+# Positional class pattern via __match_args__
+match p:
+    case Point(1, py2):
+        pos_py = py2
+assert pos_py == 2
+
+# 11. None/True/False as literals (not captures!)
+match None:
+    case None:
+        none_ok = True
+    case _:
+        none_ok = False
+assert none_ok == True
+
+match True:
+    case True:
+        bool_ok = True
+    case _:
+        bool_ok = False
+assert bool_ok == True
+
+# 12. No match — falls through silently
+matched = False
+match "xyz":
+    case "abc":
+        matched = True
+assert matched == False

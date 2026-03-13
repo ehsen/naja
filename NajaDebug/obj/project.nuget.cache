@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "dgSpecHash": "4av+pqeNhqo=",
+  "success": true,
+  "projectFilePath": "f:\\Sources\\Naja\\NajaDebug\\NajaDebug.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\Ehsen\\.nuget\\packages\\system.reflection.metadataloadcontext\\10.0.4\\system.reflection.metadataloadcontext.10.0.4.nupkg.sha512"
+  ],
+  "logs": []
+}

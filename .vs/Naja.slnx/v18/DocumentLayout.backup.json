@@ -1,0 +1,843 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "F:\\Sources\\Naja\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{704B04C4-0CFD-2779-B621-2BBFCCF506B4}|Naja.CodeGen\\Naja.CodeGen.csproj|f:\\sources\\naja\\naja.codegen\\assemblyemitter.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{704B04C4-0CFD-2779-B621-2BBFCCF506B4}|Naja.CodeGen\\Naja.CodeGen.csproj|solutionrelative:naja.codegen\\assemblyemitter.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3ACC3F95-55E3-FA70-E099-9F11C3E86742}|Naja.CodeGen.Tests\\Naja.CodeGen.Tests.csproj|f:\\sources\\naja\\naja.codegen.tests\\codegentests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{3ACC3F95-55E3-FA70-E099-9F11C3E86742}|Naja.CodeGen.Tests\\Naja.CodeGen.Tests.csproj|solutionrelative:naja.codegen.tests\\codegentests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{19E9D4D8-CE5F-2713-F315-B183475142AC}|Naja.CLI\\Naja.CLI.csproj|f:\\sources\\naja\\naja.cli\\commands.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{19E9D4D8-CE5F-2713-F315-B183475142AC}|Naja.CLI\\Naja.CLI.csproj|solutionrelative:naja.cli\\commands.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{704B04C4-0CFD-2779-B621-2BBFCCF506B4}|Naja.CodeGen\\Naja.CodeGen.csproj|f:\\sources\\naja\\naja.codegen\\najaengine.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{704B04C4-0CFD-2779-B621-2BBFCCF506B4}|Naja.CodeGen\\Naja.CodeGen.csproj|solutionrelative:naja.codegen\\najaengine.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{1E9FD61D-017D-A152-56AB-552A0BD24607}|Naja.Lexer\\Naja.Lexer.csproj|f:\\sources\\naja\\naja.lexer\\lexer.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{1E9FD61D-017D-A152-56AB-552A0BD24607}|Naja.Lexer\\Naja.Lexer.csproj|solutionrelative:naja.lexer\\lexer.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{1BAEA097-A6BE-291B-EC88-30F96BE2129D}|Naja.Inference\\Naja.Inference.csproj|f:\\sources\\naja\\naja.inference\\engine\\typeinferenceengine.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{1BAEA097-A6BE-291B-EC88-30F96BE2129D}|Naja.Inference\\Naja.Inference.csproj|solutionrelative:naja.inference\\engine\\typeinferenceengine.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{704B04C4-0CFD-2779-B621-2BBFCCF506B4}|Naja.CodeGen\\Naja.CodeGen.csproj|f:\\sources\\naja\\naja.codegen\\emitcontext.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{704B04C4-0CFD-2779-B621-2BBFCCF506B4}|Naja.CodeGen\\Naja.CodeGen.csproj|solutionrelative:naja.codegen\\emitcontext.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{704B04C4-0CFD-2779-B621-2BBFCCF506B4}|Naja.CodeGen\\Naja.CodeGen.csproj|f:\\sources\\naja\\naja.codegen\\expressionemitter.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{704B04C4-0CFD-2779-B621-2BBFCCF506B4}|Naja.CodeGen\\Naja.CodeGen.csproj|solutionrelative:naja.codegen\\expressionemitter.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{6C0A3BA4-A9CB-42E2-9E51-1D794AE32509}|Naja.SDK\\Naja.Sdk.csproj|f:\\sources\\naja\\naja.sdk\\sdk\\sdk.props||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{6C0A3BA4-A9CB-42E2-9E51-1D794AE32509}|Naja.SDK\\Naja.Sdk.csproj|solutionrelative:naja.sdk\\sdk\\sdk.props||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3ACC3F95-55E3-FA70-E099-9F11C3E86742}|Naja.CodeGen.Tests\\Naja.CodeGen.Tests.csproj|f:\\sources\\naja\\naja.codegen.tests\\languagecompliance\\canarytests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{3ACC3F95-55E3-FA70-E099-9F11C3E86742}|Naja.CodeGen.Tests\\Naja.CodeGen.Tests.csproj|solutionrelative:naja.codegen.tests\\languagecompliance\\canarytests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{19E9D4D8-CE5F-2713-F315-B183475142AC}|Naja.CLI\\Naja.CLI.csproj|f:\\sources\\naja\\naja.cli\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{19E9D4D8-CE5F-2713-F315-B183475142AC}|Naja.CLI\\Naja.CLI.csproj|solutionrelative:naja.cli\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{6C0A3BA4-A9CB-42E2-9E51-1D794AE32509}|Naja.SDK\\Naja.Sdk.csproj|f:\\sources\\naja\\naja.sdk\\sdk\\sdk.targets||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{6C0A3BA4-A9CB-42E2-9E51-1D794AE32509}|Naja.SDK\\Naja.Sdk.csproj|solutionrelative:naja.sdk\\sdk\\sdk.targets||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{B36505FF-E90F-4F4B-8D99-23FEF4270E01}|Naja.WinForms.Tests\\Naja.WinForms.Tests.csproj|f:\\sources\\naja\\naja.winforms.tests\\winformstests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{B36505FF-E90F-4F4B-8D99-23FEF4270E01}|Naja.WinForms.Tests\\Naja.WinForms.Tests.csproj|solutionrelative:naja.winforms.tests\\winformstests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{6C0A3BA4-A9CB-42E2-9E51-1D794AE32509}|Naja.SDK\\Naja.Sdk.csproj|f:\\sources\\naja\\naja.sdk\\naja.sdk.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
+      "RelativeMoniker": "D:0:0:{6C0A3BA4-A9CB-42E2-9E51-1D794AE32509}|Naja.SDK\\Naja.Sdk.csproj|solutionrelative:naja.sdk\\naja.sdk.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{6C0A3BA4-A9CB-42E2-9E51-1D794AE32509}|Naja.SDK\\Naja.Sdk.csproj|f:\\sources\\naja\\naja.sdk\\class1.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{6C0A3BA4-A9CB-42E2-9E51-1D794AE32509}|Naja.SDK\\Naja.Sdk.csproj|solutionrelative:naja.sdk\\class1.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{19E9D4D8-CE5F-2713-F315-B183475142AC}|Naja.CLI\\Naja.CLI.csproj|f:\\sources\\naja\\naja.cli\\naja.cli.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
+      "RelativeMoniker": "D:0:0:{19E9D4D8-CE5F-2713-F315-B183475142AC}|Naja.CLI\\Naja.CLI.csproj|solutionrelative:naja.cli\\naja.cli.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Program Files\\dotnet\\sdk\\10.0.104\\Sdks\\Microsoft.NET.Sdk\\targets\\Microsoft.PackageDependencyResolution.targets||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{704B04C4-0CFD-2779-B621-2BBFCCF506B4}|Naja.CodeGen\\Naja.CodeGen.csproj|f:\\sources\\naja\\naja.codegen\\statementemitter.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{704B04C4-0CFD-2779-B621-2BBFCCF506B4}|Naja.CodeGen\\Naja.CodeGen.csproj|solutionrelative:naja.codegen\\statementemitter.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{704B04C4-0CFD-2779-B621-2BBFCCF506B4}|Naja.CodeGen\\Naja.CodeGen.csproj|f:\\sources\\naja\\naja.codegen\\najabuiltins.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{704B04C4-0CFD-2779-B621-2BBFCCF506B4}|Naja.CodeGen\\Naja.CodeGen.csproj|solutionrelative:naja.codegen\\najabuiltins.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3ACC3F95-55E3-FA70-E099-9F11C3E86742}|Naja.CodeGen.Tests\\Naja.CodeGen.Tests.csproj|f:\\sources\\naja\\naja.codegen.tests\\languagecompliance\\negativetests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{3ACC3F95-55E3-FA70-E099-9F11C3E86742}|Naja.CodeGen.Tests\\Naja.CodeGen.Tests.csproj|solutionrelative:naja.codegen.tests\\languagecompliance\\negativetests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{E0FBE958-7575-5CC8-5486-1F2E0DC8EB27}|Naja.Parser\\Naja.Parser.csproj|f:\\sources\\naja\\naja.parser\\parser.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{E0FBE958-7575-5CC8-5486-1F2E0DC8EB27}|Naja.Parser\\Naja.Parser.csproj|solutionrelative:naja.parser\\parser.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{E0FBE958-7575-5CC8-5486-1F2E0DC8EB27}|Naja.Parser\\Naja.Parser.csproj|f:\\sources\\naja\\naja.parser\\statements.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{E0FBE958-7575-5CC8-5486-1F2E0DC8EB27}|Naja.Parser\\Naja.Parser.csproj|solutionrelative:naja.parser\\statements.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{E0FBE958-7575-5CC8-5486-1F2E0DC8EB27}|Naja.Parser\\Naja.Parser.csproj|f:\\sources\\naja\\naja.parser\\expressions.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{E0FBE958-7575-5CC8-5486-1F2E0DC8EB27}|Naja.Parser\\Naja.Parser.csproj|solutionrelative:naja.parser\\expressions.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{E0FBE958-7575-5CC8-5486-1F2E0DC8EB27}|Naja.Parser\\Naja.Parser.csproj|f:\\sources\\naja\\naja.parser\\parseexception.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{E0FBE958-7575-5CC8-5486-1F2E0DC8EB27}|Naja.Parser\\Naja.Parser.csproj|solutionrelative:naja.parser\\parseexception.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A1D0EAFC-6E81-E883-3954-4B9BE326BB4F}|Naja.Parser.Tests\\Naja.Parser.Tests.csproj|f:\\sources\\naja\\naja.parser.tests\\naja.parser.tests.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
+      "RelativeMoniker": "D:0:0:{A1D0EAFC-6E81-E883-3954-4B9BE326BB4F}|Naja.Parser.Tests\\Naja.Parser.Tests.csproj|solutionrelative:naja.parser.tests\\naja.parser.tests.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{0185FE5F-426E-3ED1-10B3-402FAEA979E3}|Naja.Semantics\\Naja.Semantics.csproj|f:\\sources\\naja\\naja.semantics\\types.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0185FE5F-426E-3ED1-10B3-402FAEA979E3}|Naja.Semantics\\Naja.Semantics.csproj|solutionrelative:naja.semantics\\types.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{0185FE5F-426E-3ED1-10B3-402FAEA979E3}|Naja.Semantics\\Naja.Semantics.csproj|f:\\sources\\naja\\naja.semantics\\symboltable.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0185FE5F-426E-3ED1-10B3-402FAEA979E3}|Naja.Semantics\\Naja.Semantics.csproj|solutionrelative:naja.semantics\\symboltable.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{704B04C4-0CFD-2779-B621-2BBFCCF506B4}|Naja.CodeGen\\Naja.CodeGen.csproj|f:\\sources\\naja\\naja.codegen\\typemapper.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{704B04C4-0CFD-2779-B621-2BBFCCF506B4}|Naja.CodeGen\\Naja.CodeGen.csproj|solutionrelative:naja.codegen\\typemapper.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{704B04C4-0CFD-2779-B621-2BBFCCF506B4}|Naja.CodeGen\\Naja.CodeGen.csproj|f:\\sources\\naja\\naja.codegen\\codegenexception.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{704B04C4-0CFD-2779-B621-2BBFCCF506B4}|Naja.CodeGen\\Naja.CodeGen.csproj|solutionrelative:naja.codegen\\codegenexception.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3ACC3F95-55E3-FA70-E099-9F11C3E86742}|Naja.CodeGen.Tests\\Naja.CodeGen.Tests.csproj|f:\\sources\\naja\\naja.codegen.tests\\languagecompliance\\cpythonsuiterunner.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{3ACC3F95-55E3-FA70-E099-9F11C3E86742}|Naja.CodeGen.Tests\\Naja.CodeGen.Tests.csproj|solutionrelative:naja.codegen.tests\\languagecompliance\\cpythonsuiterunner.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3ACC3F95-55E3-FA70-E099-9F11C3E86742}|Naja.CodeGen.Tests\\Naja.CodeGen.Tests.csproj|f:\\sources\\naja\\naja.codegen.tests\\naja.codegen.tests.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
+      "RelativeMoniker": "D:0:0:{3ACC3F95-55E3-FA70-E099-9F11C3E86742}|Naja.CodeGen.Tests\\Naja.CodeGen.Tests.csproj|solutionrelative:naja.codegen.tests\\naja.codegen.tests.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3ACC3F95-55E3-FA70-E099-9F11C3E86742}|Naja.CodeGen.Tests\\Naja.CodeGen.Tests.csproj|f:\\sources\\naja\\naja.codegen.tests\\languagecompliance\\generatortests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{3ACC3F95-55E3-FA70-E099-9F11C3E86742}|Naja.CodeGen.Tests\\Naja.CodeGen.Tests.csproj|solutionrelative:naja.codegen.tests\\languagecompliance\\generatortests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3ACC3F95-55E3-FA70-E099-9F11C3E86742}|Naja.CodeGen.Tests\\Naja.CodeGen.Tests.csproj|f:\\sources\\naja\\naja.codegen.tests\\languagecompliance\\scopingtests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{3ACC3F95-55E3-FA70-E099-9F11C3E86742}|Naja.CodeGen.Tests\\Naja.CodeGen.Tests.csproj|solutionrelative:naja.codegen.tests\\languagecompliance\\scopingtests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3ACC3F95-55E3-FA70-E099-9F11C3E86742}|Naja.CodeGen.Tests\\Naja.CodeGen.Tests.csproj|f:\\sources\\naja\\naja.codegen.tests\\languagecompliance\\patternmatchingtests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{3ACC3F95-55E3-FA70-E099-9F11C3E86742}|Naja.CodeGen.Tests\\Naja.CodeGen.Tests.csproj|solutionrelative:naja.codegen.tests\\languagecompliance\\patternmatchingtests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3ACC3F95-55E3-FA70-E099-9F11C3E86742}|Naja.CodeGen.Tests\\Naja.CodeGen.Tests.csproj|f:\\sources\\naja\\naja.codegen.tests\\languagecompliance\\fstringtests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{3ACC3F95-55E3-FA70-E099-9F11C3E86742}|Naja.CodeGen.Tests\\Naja.CodeGen.Tests.csproj|solutionrelative:naja.codegen.tests\\languagecompliance\\fstringtests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3ACC3F95-55E3-FA70-E099-9F11C3E86742}|Naja.CodeGen.Tests\\Naja.CodeGen.Tests.csproj|f:\\sources\\naja\\naja.codegen.tests\\languagecompliance\\exceptiontests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{3ACC3F95-55E3-FA70-E099-9F11C3E86742}|Naja.CodeGen.Tests\\Naja.CodeGen.Tests.csproj|solutionrelative:naja.codegen.tests\\languagecompliance\\exceptiontests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3ACC3F95-55E3-FA70-E099-9F11C3E86742}|Naja.CodeGen.Tests\\Naja.CodeGen.Tests.csproj|f:\\sources\\naja\\naja.codegen.tests\\languagecompliance\\controlflowtests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{3ACC3F95-55E3-FA70-E099-9F11C3E86742}|Naja.CodeGen.Tests\\Naja.CodeGen.Tests.csproj|solutionrelative:naja.codegen.tests\\languagecompliance\\controlflowtests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3ACC3F95-55E3-FA70-E099-9F11C3E86742}|Naja.CodeGen.Tests\\Naja.CodeGen.Tests.csproj|f:\\sources\\naja\\naja.codegen.tests\\languagecompliance\\comprehensiontests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{3ACC3F95-55E3-FA70-E099-9F11C3E86742}|Naja.CodeGen.Tests\\Naja.CodeGen.Tests.csproj|solutionrelative:naja.codegen.tests\\languagecompliance\\comprehensiontests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{B36505FF-E90F-4F4B-8D99-23FEF4270E01}|Naja.WinForms.Tests\\Naja.WinForms.Tests.csproj|f:\\sources\\naja\\naja.winforms.tests\\naja.winforms.tests.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
+      "RelativeMoniker": "D:0:0:{B36505FF-E90F-4F4B-8D99-23FEF4270E01}|Naja.WinForms.Tests\\Naja.WinForms.Tests.csproj|solutionrelative:naja.winforms.tests\\naja.winforms.tests.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{1BAEA097-A6BE-291B-EC88-30F96BE2129D}|Naja.Inference\\Naja.Inference.csproj|f:\\sources\\naja\\naja.inference\\naja.inference.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
+      "RelativeMoniker": "D:0:0:{1BAEA097-A6BE-291B-EC88-30F96BE2129D}|Naja.Inference\\Naja.Inference.csproj|solutionrelative:naja.inference\\naja.inference.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{1BAEA097-A6BE-291B-EC88-30F96BE2129D}|Naja.Inference\\Naja.Inference.csproj|f:\\sources\\naja\\naja.inference\\analysis\\dynamicsiteanalyser.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{1BAEA097-A6BE-291B-EC88-30F96BE2129D}|Naja.Inference\\Naja.Inference.csproj|solutionrelative:naja.inference\\analysis\\dynamicsiteanalyser.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{704B04C4-0CFD-2779-B621-2BBFCCF506B4}|Naja.CodeGen\\Naja.CodeGen.csproj|f:\\sources\\naja\\naja.codegen\\naja.codegen.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
+      "RelativeMoniker": "D:0:0:{704B04C4-0CFD-2779-B621-2BBFCCF506B4}|Naja.CodeGen\\Naja.CodeGen.csproj|solutionrelative:naja.codegen\\naja.codegen.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{704B04C4-0CFD-2779-B621-2BBFCCF506B4}|Naja.CodeGen\\Naja.CodeGen.csproj|f:\\sources\\naja\\naja.codegen\\najaslice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{704B04C4-0CFD-2779-B621-2BBFCCF506B4}|Naja.CodeGen\\Naja.CodeGen.csproj|solutionrelative:naja.codegen\\najaslice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{E0FBE958-7575-5CC8-5486-1F2E0DC8EB27}|Naja.Parser\\Naja.Parser.csproj|f:\\sources\\naja\\naja.parser\\naja.parser.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
+      "RelativeMoniker": "D:0:0:{E0FBE958-7575-5CC8-5486-1F2E0DC8EB27}|Naja.Parser\\Naja.Parser.csproj|solutionrelative:naja.parser\\naja.parser.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{0185FE5F-426E-3ED1-10B3-402FAEA979E3}|Naja.Semantics\\Naja.Semantics.csproj|f:\\sources\\naja\\naja.semantics\\naja.semantics.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
+      "RelativeMoniker": "D:0:0:{0185FE5F-426E-3ED1-10B3-402FAEA979E3}|Naja.Semantics\\Naja.Semantics.csproj|solutionrelative:naja.semantics\\naja.semantics.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{1E9FD61D-017D-A152-56AB-552A0BD24607}|Naja.Lexer\\Naja.Lexer.csproj|f:\\sources\\naja\\naja.lexer\\indenttracker.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{1E9FD61D-017D-A152-56AB-552A0BD24607}|Naja.Lexer\\Naja.Lexer.csproj|solutionrelative:naja.lexer\\indenttracker.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A1D0EAFC-6E81-E883-3954-4B9BE326BB4F}|Naja.Parser.Tests\\Naja.Parser.Tests.csproj|f:\\sources\\naja\\naja.parser.tests\\parsertests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{A1D0EAFC-6E81-E883-3954-4B9BE326BB4F}|Naja.Parser.Tests\\Naja.Parser.Tests.csproj|solutionrelative:naja.parser.tests\\parsertests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{B5105F5A-1E05-E293-2738-7E4FB482CDD5}|Naja.Semantics.Tests\\Naja.Semantics.Tests.csproj|f:\\sources\\naja\\naja.semantics.tests\\semantictests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{B5105F5A-1E05-E293-2738-7E4FB482CDD5}|Naja.Semantics.Tests\\Naja.Semantics.Tests.csproj|solutionrelative:naja.semantics.tests\\semantictests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{0BA89F96-AF2D-24CC-0225-0C688813536A}|Naja.Lexer.Tests\\Naja.Lexer.Tests.csproj|f:\\sources\\naja\\naja.lexer.tests\\naja.lexer.tests.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
+      "RelativeMoniker": "D:0:0:{0BA89F96-AF2D-24CC-0225-0C688813536A}|Naja.Lexer.Tests\\Naja.Lexer.Tests.csproj|solutionrelative:naja.lexer.tests\\naja.lexer.tests.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{0BA89F96-AF2D-24CC-0225-0C688813536A}|Naja.Lexer.Tests\\Naja.Lexer.Tests.csproj|f:\\sources\\naja\\naja.lexer.tests\\lexertests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0BA89F96-AF2D-24CC-0225-0C688813536A}|Naja.Lexer.Tests\\Naja.Lexer.Tests.csproj|solutionrelative:naja.lexer.tests\\lexertests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{089100B1-113F-4E66-888A-E83F3999EAFD}|Solution Items{089100B1-113F-4E66-888A-E83F3999EAFD}|F:\\Sources\\Naja\\global.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
+      "RelativeMoniker": "D:0:0:{089100B1-113F-4E66-888A-E83F3999EAFD}|Solution Items{089100B1-113F-4E66-888A-E83F3999EAFD}|solutionrelative:global.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 2,
+          "Children": [
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{aa2115a1-9712-457b-9047-dbb71ca2cdd2}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "TypeInferenceEngine.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.Inference\\Engine\\TypeInferenceEngine.cs",
+              "RelativeDocumentMoniker": "Naja.Inference\\Engine\\TypeInferenceEngine.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.Inference\\Engine\\TypeInferenceEngine.cs",
+              "RelativeToolTip": "Naja.Inference\\Engine\\TypeInferenceEngine.cs",
+              "ViewState": "AgIAAOYBAAAAAAAAAAAAAPcBAAAFAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-13T10:02:16.299Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "AssemblyEmitter.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.CodeGen\\AssemblyEmitter.cs",
+              "RelativeDocumentMoniker": "Naja.CodeGen\\AssemblyEmitter.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.CodeGen\\AssemblyEmitter.cs",
+              "RelativeToolTip": "Naja.CodeGen\\AssemblyEmitter.cs",
+              "ViewState": "AgIAAMwEAAAAAAAAAAAAANMEAAAnAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-06T08:05:20.933Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "Commands.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.CLI\\Commands.cs",
+              "RelativeDocumentMoniker": "Naja.CLI\\Commands.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.CLI\\Commands.cs",
+              "RelativeToolTip": "Naja.CLI\\Commands.cs",
+              "ViewState": "AgIAAJAAAAAAAAAAAAAlwEcAAAAXAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-06T08:45:34.754Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 8,
+              "Title": "Sdk.props",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.SDK\\Sdk\\Sdk.props",
+              "RelativeDocumentMoniker": "Naja.SDK\\Sdk\\Sdk.props",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.SDK\\Sdk\\Sdk.props",
+              "RelativeToolTip": "Naja.SDK\\Sdk\\Sdk.props",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAACUAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003801|",
+              "WhenOpened": "2026-03-12T09:19:19.676Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "CodeGenTests.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.CodeGen.Tests\\CodeGenTests.cs",
+              "RelativeDocumentMoniker": "Naja.CodeGen.Tests\\CodeGenTests.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.CodeGen.Tests\\CodeGenTests.cs",
+              "RelativeToolTip": "Naja.CodeGen.Tests\\CodeGenTests.cs",
+              "ViewState": "AgIAAEAHAAAAAAAAAAAkwEUHAAAwAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-06T08:17:28.016Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "Lexer.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.Lexer\\Lexer.cs",
+              "RelativeDocumentMoniker": "Naja.Lexer\\Lexer.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.Lexer\\Lexer.cs",
+              "RelativeToolTip": "Naja.Lexer\\Lexer.cs",
+              "ViewState": "AgIAABIBAAAAAAAAAAAkwAkAAAA5AAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-06T06:57:18.06Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "NajaEngine.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.CodeGen\\NajaEngine.cs",
+              "RelativeDocumentMoniker": "Naja.CodeGen\\NajaEngine.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.CodeGen\\NajaEngine.cs",
+              "RelativeToolTip": "Naja.CodeGen\\NajaEngine.cs",
+              "ViewState": "AgIAAE4AAAAAAAAAAAAhwFgAAAAYAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-09T19:16:32.075Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 6,
+              "Title": "EmitContext.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.CodeGen\\EmitContext.cs",
+              "RelativeDocumentMoniker": "Naja.CodeGen\\EmitContext.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.CodeGen\\EmitContext.cs",
+              "RelativeToolTip": "Naja.CodeGen\\EmitContext.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAF8AAAASAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-06T08:31:37.387Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 7,
+              "Title": "ExpressionEmitter.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.CodeGen\\ExpressionEmitter.cs",
+              "RelativeDocumentMoniker": "Naja.CodeGen\\ExpressionEmitter.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.CodeGen\\ExpressionEmitter.cs",
+              "RelativeToolTip": "Naja.CodeGen\\ExpressionEmitter.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-06T08:21:44.926Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 10,
+              "Title": "Program.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.CLI\\Program.cs",
+              "RelativeDocumentMoniker": "Naja.CLI\\Program.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.CLI\\Program.cs",
+              "RelativeToolTip": "Naja.CLI\\Program.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAEgAAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-06T09:21:43.33Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 50,
+              "Title": "global.json",
+              "DocumentMoniker": "F:\\Sources\\Naja\\global.json",
+              "RelativeDocumentMoniker": "global.json",
+              "ToolTip": "F:\\Sources\\Naja\\global.json",
+              "RelativeToolTip": "global.json",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAgAAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
+              "WhenOpened": "2026-03-12T09:20:29.561Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 9,
+              "Title": "CanaryTests.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.CodeGen.Tests\\LanguageCompliance\\CanaryTests.cs",
+              "RelativeDocumentMoniker": "Naja.CodeGen.Tests\\LanguageCompliance\\CanaryTests.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.CodeGen.Tests\\LanguageCompliance\\CanaryTests.cs",
+              "RelativeToolTip": "Naja.CodeGen.Tests\\LanguageCompliance\\CanaryTests.cs",
+              "ViewState": "AgIAAOUAAAAAAAAAAAAuwP8AAAAFAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-10T08:23:06.996Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 12,
+              "Title": "WinFormsTests.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.WinForms.Tests\\WinFormsTests.cs",
+              "RelativeDocumentMoniker": "Naja.WinForms.Tests\\WinFormsTests.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.WinForms.Tests\\WinFormsTests.cs",
+              "RelativeToolTip": "Naja.WinForms.Tests\\WinFormsTests.cs",
+              "ViewState": "AgIAAB4AAAAAAAAAAAA7wEEAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-09T19:09:43.171Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 13,
+              "Title": "Naja.Sdk.csproj",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.SDK\\Naja.Sdk.csproj",
+              "RelativeDocumentMoniker": "Naja.SDK\\Naja.Sdk.csproj",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.SDK\\Naja.Sdk.csproj",
+              "RelativeToolTip": "Naja.SDK\\Naja.Sdk.csproj",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAACcAAAAKAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
+              "WhenOpened": "2026-03-12T09:10:45.735Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 11,
+              "Title": "Sdk.targets",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.SDK\\Sdk\\Sdk.targets",
+              "RelativeDocumentMoniker": "Naja.SDK\\Sdk\\Sdk.targets",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.SDK\\Sdk\\Sdk.targets",
+              "RelativeToolTip": "Naja.SDK\\Sdk\\Sdk.targets",
+              "ViewState": "AgIAAA8AAAAAAAAAAAArwB4AAAAQAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003801|",
+              "WhenOpened": "2026-03-12T09:19:34.651Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 14,
+              "Title": "Class1.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.SDK\\Class1.cs",
+              "RelativeDocumentMoniker": "Naja.SDK\\Class1.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.SDK\\Class1.cs",
+              "RelativeToolTip": "Naja.SDK\\Class1.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-12T09:10:19.392Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 15,
+              "Title": "Naja.CLI.csproj",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.CLI\\Naja.CLI.csproj",
+              "RelativeDocumentMoniker": "Naja.CLI\\Naja.CLI.csproj",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.CLI\\Naja.CLI.csproj",
+              "RelativeToolTip": "Naja.CLI\\Naja.CLI.csproj",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAkAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
+              "WhenOpened": "2026-03-12T07:11:48.135Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 16,
+              "Title": "Microsoft.PackageDependencyResolution.targets",
+              "DocumentMoniker": "C:\\Program Files\\dotnet\\sdk\\10.0.104\\Sdks\\Microsoft.NET.Sdk\\targets\\Microsoft.PackageDependencyResolution.targets",
+              "ToolTip": "C:\\Program Files\\dotnet\\sdk\\10.0.104\\Sdks\\Microsoft.NET.Sdk\\targets\\Microsoft.PackageDependencyResolution.targets",
+              "ViewState": "AgIAAI4BAAAAAAAAAAAUwAkBAAAEAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003801|",
+              "WhenOpened": "2026-03-12T08:33:03.062Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 17,
+              "Title": "StatementEmitter.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.CodeGen\\StatementEmitter.cs",
+              "RelativeDocumentMoniker": "Naja.CodeGen\\StatementEmitter.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.CodeGen\\StatementEmitter.cs",
+              "RelativeToolTip": "Naja.CodeGen\\StatementEmitter.cs",
+              "ViewState": "AgIAAAkDAAAAAAAAAIBJwB8DAAAFAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-06T08:21:51.773Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 30,
+              "Title": "Naja.CodeGen.Tests.csproj",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.CodeGen.Tests\\Naja.CodeGen.Tests.csproj",
+              "RelativeDocumentMoniker": "Naja.CodeGen.Tests\\Naja.CodeGen.Tests.csproj",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.CodeGen.Tests\\Naja.CodeGen.Tests.csproj",
+              "RelativeToolTip": "Naja.CodeGen.Tests\\Naja.CodeGen.Tests.csproj",
+              "ViewState": "AgIAABEAAAAAAAAAAAAawAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
+              "WhenOpened": "2026-03-11T07:19:49.693Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 18,
+              "Title": "NajaBuiltins.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.CodeGen\\NajaBuiltins.cs",
+              "RelativeDocumentMoniker": "Naja.CodeGen\\NajaBuiltins.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.CodeGen\\NajaBuiltins.cs",
+              "RelativeToolTip": "Naja.CodeGen\\NajaBuiltins.cs",
+              "ViewState": "AgIAAKoAAAAAAAAAAAAgwLsAAAAIAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-06T08:11:53.948Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 20,
+              "Title": "Parser.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.Parser\\Parser.cs",
+              "RelativeDocumentMoniker": "Naja.Parser\\Parser.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.Parser\\Parser.cs",
+              "RelativeToolTip": "Naja.Parser\\Parser.cs",
+              "ViewState": "AgIAAAMAAAAAAAAAAAAqwAwAAAALAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-06T07:28:45.761Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 19,
+              "Title": "NegativeTests.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.CodeGen.Tests\\LanguageCompliance\\NegativeTests.cs",
+              "RelativeDocumentMoniker": "Naja.CodeGen.Tests\\LanguageCompliance\\NegativeTests.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.CodeGen.Tests\\LanguageCompliance\\NegativeTests.cs",
+              "RelativeToolTip": "Naja.CodeGen.Tests\\LanguageCompliance\\NegativeTests.cs",
+              "ViewState": "AgIAABwAAAAAAAAAAABRwCAAAAADAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-10T08:22:44.205Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 21,
+              "Title": "Statements.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.Parser\\Statements.cs",
+              "RelativeDocumentMoniker": "Naja.Parser\\Statements.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.Parser\\Statements.cs",
+              "RelativeToolTip": "Naja.Parser\\Statements.cs",
+              "ViewState": "AgIAAKsAAAAAAAAAAAASwLgAAABIAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-11T08:31:35.299Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 22,
+              "Title": "Expressions.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.Parser\\Expressions.cs",
+              "RelativeDocumentMoniker": "Naja.Parser\\Expressions.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.Parser\\Expressions.cs",
+              "RelativeToolTip": "Naja.Parser\\Expressions.cs",
+              "ViewState": "AgIAAMIAAAAAAAAAAAAuwNcAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-06T07:20:56.006Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 26,
+              "Title": "SymbolTable.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.Semantics\\SymbolTable.cs",
+              "RelativeDocumentMoniker": "Naja.Semantics\\SymbolTable.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.Semantics\\SymbolTable.cs",
+              "RelativeToolTip": "Naja.Semantics\\SymbolTable.cs",
+              "ViewState": "AgIAALYAAAAAAAAAAABRwAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-11T08:26:11.487Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 25,
+              "Title": "Types.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.Semantics\\Types.cs",
+              "RelativeDocumentMoniker": "Naja.Semantics\\Types.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.Semantics\\Types.cs",
+              "RelativeToolTip": "Naja.Semantics\\Types.cs",
+              "ViewState": "AgIAAE8AAAAAAAAAAAAwwFUAAAA3AAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-11T08:27:34.37Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 23,
+              "Title": "ParseException.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.Parser\\ParseException.cs",
+              "RelativeDocumentMoniker": "Naja.Parser\\ParseException.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.Parser\\ParseException.cs",
+              "RelativeToolTip": "Naja.Parser\\ParseException.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-11T08:32:19.05Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 24,
+              "Title": "Naja.Parser.Tests.csproj",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.Parser.Tests\\Naja.Parser.Tests.csproj",
+              "RelativeDocumentMoniker": "Naja.Parser.Tests\\Naja.Parser.Tests.csproj",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.Parser.Tests\\Naja.Parser.Tests.csproj",
+              "RelativeToolTip": "Naja.Parser.Tests\\Naja.Parser.Tests.csproj",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
+              "WhenOpened": "2026-03-06T07:25:49.573Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 27,
+              "Title": "TypeMapper.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.CodeGen\\TypeMapper.cs",
+              "RelativeDocumentMoniker": "Naja.CodeGen\\TypeMapper.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.CodeGen\\TypeMapper.cs",
+              "RelativeToolTip": "Naja.CodeGen\\TypeMapper.cs",
+              "ViewState": "AgIAANoAAAAAAAAAAAAlwOkAAAAtAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-06T08:13:45.8Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 28,
+              "Title": "CodeGenException.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.CodeGen\\CodeGenException.cs",
+              "RelativeDocumentMoniker": "Naja.CodeGen\\CodeGenException.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.CodeGen\\CodeGenException.cs",
+              "RelativeToolTip": "Naja.CodeGen\\CodeGenException.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-09T12:04:03.507Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 29,
+              "Title": "CpythonSuiteRunner.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.CodeGen.Tests\\LanguageCompliance\\CpythonSuiteRunner.cs",
+              "RelativeDocumentMoniker": "Naja.CodeGen.Tests\\LanguageCompliance\\CpythonSuiteRunner.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.CodeGen.Tests\\LanguageCompliance\\CpythonSuiteRunner.cs",
+              "RelativeToolTip": "Naja.CodeGen.Tests\\LanguageCompliance\\CpythonSuiteRunner.cs",
+              "ViewState": "AgIAAF8AAAAAAAAAAAAgwG0AAABQAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-10T08:22:56.278Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 32,
+              "Title": "ScopingTests.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.CodeGen.Tests\\LanguageCompliance\\ScopingTests.cs",
+              "RelativeDocumentMoniker": "Naja.CodeGen.Tests\\LanguageCompliance\\ScopingTests.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.CodeGen.Tests\\LanguageCompliance\\ScopingTests.cs",
+              "RelativeToolTip": "Naja.CodeGen.Tests\\LanguageCompliance\\ScopingTests.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAMAAAAvAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-10T08:22:33.901Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 33,
+              "Title": "PatternMatchingTests.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.CodeGen.Tests\\LanguageCompliance\\PatternMatchingTests.cs",
+              "RelativeDocumentMoniker": "Naja.CodeGen.Tests\\LanguageCompliance\\PatternMatchingTests.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.CodeGen.Tests\\LanguageCompliance\\PatternMatchingTests.cs",
+              "RelativeToolTip": "Naja.CodeGen.Tests\\LanguageCompliance\\PatternMatchingTests.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-10T08:22:37.315Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 31,
+              "Title": "GeneratorTests.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.CodeGen.Tests\\LanguageCompliance\\GeneratorTests.cs",
+              "RelativeDocumentMoniker": "Naja.CodeGen.Tests\\LanguageCompliance\\GeneratorTests.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.CodeGen.Tests\\LanguageCompliance\\GeneratorTests.cs",
+              "RelativeToolTip": "Naja.CodeGen.Tests\\LanguageCompliance\\GeneratorTests.cs",
+              "ViewState": "AgIAAEIAAAAAAAAAAAAlwEwAAAAlAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-10T08:22:52.756Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 34,
+              "Title": "FStringTests.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.CodeGen.Tests\\LanguageCompliance\\FStringTests.cs",
+              "RelativeDocumentMoniker": "Naja.CodeGen.Tests\\LanguageCompliance\\FStringTests.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.CodeGen.Tests\\LanguageCompliance\\FStringTests.cs",
+              "RelativeToolTip": "Naja.CodeGen.Tests\\LanguageCompliance\\FStringTests.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-10T08:22:54.106Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 35,
+              "Title": "ExceptionTests.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.CodeGen.Tests\\LanguageCompliance\\ExceptionTests.cs",
+              "RelativeDocumentMoniker": "Naja.CodeGen.Tests\\LanguageCompliance\\ExceptionTests.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.CodeGen.Tests\\LanguageCompliance\\ExceptionTests.cs",
+              "RelativeToolTip": "Naja.CodeGen.Tests\\LanguageCompliance\\ExceptionTests.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAN0AAAAGAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-10T08:22:55.158Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 36,
+              "Title": "ControlFlowTests.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.CodeGen.Tests\\LanguageCompliance\\ControlFlowTests.cs",
+              "RelativeDocumentMoniker": "Naja.CodeGen.Tests\\LanguageCompliance\\ControlFlowTests.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.CodeGen.Tests\\LanguageCompliance\\ControlFlowTests.cs",
+              "RelativeToolTip": "Naja.CodeGen.Tests\\LanguageCompliance\\ControlFlowTests.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-10T08:23:03.764Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 37,
+              "Title": "ComprehensionTests.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.CodeGen.Tests\\LanguageCompliance\\ComprehensionTests.cs",
+              "RelativeDocumentMoniker": "Naja.CodeGen.Tests\\LanguageCompliance\\ComprehensionTests.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.CodeGen.Tests\\LanguageCompliance\\ComprehensionTests.cs",
+              "RelativeToolTip": "Naja.CodeGen.Tests\\LanguageCompliance\\ComprehensionTests.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-10T08:23:05.837Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 39,
+              "Title": "Naja.Inference.csproj",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.Inference\\Naja.Inference.csproj",
+              "RelativeDocumentMoniker": "Naja.Inference\\Naja.Inference.csproj",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.Inference\\Naja.Inference.csproj",
+              "RelativeToolTip": "Naja.Inference\\Naja.Inference.csproj",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
+              "WhenOpened": "2026-03-09T19:03:31.656Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 38,
+              "Title": "Naja.WinForms.Tests.csproj",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.WinForms.Tests\\Naja.WinForms.Tests.csproj",
+              "RelativeDocumentMoniker": "Naja.WinForms.Tests\\Naja.WinForms.Tests.csproj",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.WinForms.Tests\\Naja.WinForms.Tests.csproj",
+              "RelativeToolTip": "Naja.WinForms.Tests\\Naja.WinForms.Tests.csproj",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAACMAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
+              "WhenOpened": "2026-03-09T18:57:08.391Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 42,
+              "Title": "NajaSlice.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.CodeGen\\NajaSlice.cs",
+              "RelativeDocumentMoniker": "Naja.CodeGen\\NajaSlice.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.CodeGen\\NajaSlice.cs",
+              "RelativeToolTip": "Naja.CodeGen\\NajaSlice.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAgAAAAhAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-06T18:32:22.752Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 40,
+              "Title": "DynamicSiteAnalyser.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.Inference\\Analysis\\DynamicSiteAnalyser.cs",
+              "RelativeDocumentMoniker": "Naja.Inference\\Analysis\\DynamicSiteAnalyser.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.Inference\\Analysis\\DynamicSiteAnalyser.cs",
+              "RelativeToolTip": "Naja.Inference\\Analysis\\DynamicSiteAnalyser.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAYAAABSAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-08T12:14:30.775Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 41,
+              "Title": "Naja.CodeGen.csproj",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.CodeGen\\Naja.CodeGen.csproj",
+              "RelativeDocumentMoniker": "Naja.CodeGen\\Naja.CodeGen.csproj",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.CodeGen\\Naja.CodeGen.csproj",
+              "RelativeToolTip": "Naja.CodeGen\\Naja.CodeGen.csproj",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
+              "WhenOpened": "2026-03-06T08:04:30.174Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 46,
+              "Title": "ParserTests.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.Parser.Tests\\ParserTests.cs",
+              "RelativeDocumentMoniker": "Naja.Parser.Tests\\ParserTests.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.Parser.Tests\\ParserTests.cs",
+              "RelativeToolTip": "Naja.Parser.Tests\\ParserTests.cs",
+              "ViewState": "AgIAAJsAAAAAAAAAAAAYwKsAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-06T07:22:32.171Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 43,
+              "Title": "Naja.Parser.csproj",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.Parser\\Naja.Parser.csproj",
+              "RelativeDocumentMoniker": "Naja.Parser\\Naja.Parser.csproj",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.Parser\\Naja.Parser.csproj",
+              "RelativeToolTip": "Naja.Parser\\Naja.Parser.csproj",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAoAAAAOAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
+              "WhenOpened": "2026-03-06T07:23:44.002Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 47,
+              "Title": "SemanticTests.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.Semantics.Tests\\SemanticTests.cs",
+              "RelativeDocumentMoniker": "Naja.Semantics.Tests\\SemanticTests.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.Semantics.Tests\\SemanticTests.cs",
+              "RelativeToolTip": "Naja.Semantics.Tests\\SemanticTests.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAwAAAAlAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-06T07:45:29.815Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 44,
+              "Title": "Naja.Semantics.csproj",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.Semantics\\Naja.Semantics.csproj",
+              "RelativeDocumentMoniker": "Naja.Semantics\\Naja.Semantics.csproj",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.Semantics\\Naja.Semantics.csproj",
+              "RelativeToolTip": "Naja.Semantics\\Naja.Semantics.csproj",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAoAAABEAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
+              "WhenOpened": "2026-03-06T07:44:03.286Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 48,
+              "Title": "Naja.Lexer.Tests.csproj",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.Lexer.Tests\\Naja.Lexer.Tests.csproj",
+              "RelativeDocumentMoniker": "Naja.Lexer.Tests\\Naja.Lexer.Tests.csproj",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.Lexer.Tests\\Naja.Lexer.Tests.csproj",
+              "RelativeToolTip": "Naja.Lexer.Tests\\Naja.Lexer.Tests.csproj",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
+              "WhenOpened": "2026-03-06T06:46:06.333Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 49,
+              "Title": "LexerTests.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.Lexer.Tests\\LexerTests.cs",
+              "RelativeDocumentMoniker": "Naja.Lexer.Tests\\LexerTests.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.Lexer.Tests\\LexerTests.cs",
+              "RelativeToolTip": "Naja.Lexer.Tests\\LexerTests.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAUAAAAXAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-06T06:38:18.621Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 45,
+              "Title": "IndentTracker.cs",
+              "DocumentMoniker": "F:\\Sources\\Naja\\Naja.Lexer\\IndentTracker.cs",
+              "RelativeDocumentMoniker": "Naja.Lexer\\IndentTracker.cs",
+              "ToolTip": "F:\\Sources\\Naja\\Naja.Lexer\\IndentTracker.cs",
+              "RelativeToolTip": "Naja.Lexer\\IndentTracker.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-06T06:36:34.547Z"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

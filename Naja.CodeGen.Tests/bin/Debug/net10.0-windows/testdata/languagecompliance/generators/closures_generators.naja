@@ -1,0 +1,135 @@
+# closures_generators.naja
+# Tests: closures, generator functions, yield, yield from, send, generator expressions
+
+# --- Generator basics ---
+def gen_range(n):
+    i = 0
+    while i < n:
+        yield i
+        i = i + 1
+
+items = list(gen_range(5))
+assert items == [0, 1, 2, 3, 4], f"Got {items}"
+
+# Generator is lazy
+def counting_gen():
+    count = 0
+    while True:
+        yield count
+        count = count + 1
+
+gen = counting_gen()
+assert next(gen) == 0
+assert next(gen) == 1
+assert next(gen) == 2
+
+# for loop over generator
+def squares(n):
+    for i in range(n):
+        yield i * i
+
+sq = [x for x in squares(5)]
+assert sq == [0, 1, 4, 9, 16]
+
+# Generator with return value (StopIteration.value)
+def gen_with_return():
+    yield 1
+    yield 2
+    return "done"
+
+g = gen_with_return()
+assert next(g) == 1
+assert next(g) == 2
+try:
+    next(g)
+    stop_raised = False
+except StopIteration:
+    stop_raised = True
+assert stop_raised == True
+
+# yield from — delegation
+def inner_gen():
+    yield 'a'
+    yield 'b'
+    yield 'c'
+
+def outer_gen():
+    yield 0
+    yield from inner_gen()
+    yield 3
+
+assert list(outer_gen()) == [0, 'a', 'b', 'c', 3]
+
+# yield from flattens nested
+def flatten(lst):
+    for item in lst:
+        if isinstance(item, list):
+            yield from flatten(item)
+        else:
+            yield item
+
+nested = [1, [2, [3, 4], 5], 6]
+flat = list(flatten(nested))
+assert flat == [1, 2, 3, 4, 5, 6], f"Got {flat}"
+
+# Generator expression
+gen_expr = (x * x for x in range(5))
+assert list(gen_expr) == [0, 1, 4, 9, 16]
+
+# Generator expression with filter
+evens_gen = (x for x in range(10) if x % 2 == 0)
+assert list(evens_gen) == [0, 2, 4, 6, 8]
+
+# Generators are single-use iterators
+g2 = gen_range(3)
+first_pass = list(g2)
+second_pass = list(g2)  # Exhausted — should be empty
+assert first_pass == [0, 1, 2]
+assert second_pass == []
+
+# --- Closures ---
+def adder(n):
+    def add(x):
+        return x + n
+    return add
+
+add5 = adder(5)
+add10 = adder(10)
+assert add5(3) == 8
+assert add10(3) == 13
+assert add5(add10(1)) == 16  # Compose closures
+
+# Closure over mutable state via list (pre-nonlocal pattern)
+def make_stack():
+    items = []
+    def push(x):
+        items.append(x)
+    def pop():
+        return items.pop()
+    def peek():
+        return items[-1] if items else None
+    return push, pop, peek
+
+push, pop, peek = make_stack()
+push(1)
+push(2)
+push(3)
+assert peek() == 3
+assert pop() == 3
+assert pop() == 2
+assert peek() == 1
+
+# Closure in class method
+class Multiplier:
+    def __init__(self, factor):
+        self.factor = factor
+
+    def make_multiply(self):
+        factor = self.factor
+        def multiply(x):
+            return x * factor
+        return multiply
+
+m = Multiplier(7)
+times7 = m.make_multiply()
+assert times7(6) == 42

@@ -1,0 +1,1105 @@
+﻿using Naja.Parser;
+using Naja.Semantics;
+using Naja.Inference;
+using System.Reflection;
+using System.Reflection.Emit;
+using NajaModule = Naja.Parser.Module;
+using NajaParam = Naja.Parser.Parameter;
+
+namespace Naja.CodeGen;
+
+/// <summary>
+/// Top-level IL emitter.
+/// Takes a parsed + analyzed module and produces a .NET assembly.
+///
+/// Assembly structure:
+///   NajaOutput.dll / .exe
+///     └── NajaModule (TypeBuilder)
+///           ├── static fields   (module-level variables)
+///           ├── static methods  (module-level functions)
+///           └── static Main()   (entry point — runs module body)
+/// </summary>
+public sealed class AssemblyEmitter
+{
+    private readonly SemanticModel _model;
+    private readonly string _assemblyName;
+    private readonly HashSet<string> _classMethodNames = new();
+
+    public AssemblyEmitter(SemanticModel model, string assemblyName = "NajaOutput")
+    {
+        _model = model;
+        _assemblyName = assemblyName;
+    }
+
+    // ── Public API ────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Emit the module to a dynamic assembly and return it.
+    /// Use for in-memory execution (testing, REPL).
+    /// </summary>
+    public Assembly EmitToMemory(NajaModule module)
+    {
+        var (asmBuilder, modBuilder) = CreateBuilders(false);
+        var typeBuilder = EmitModule(module, modBuilder);
+        typeBuilder.CreateType();
+        return asmBuilder;
+    }
+
+    /// <summary>
+    /// Emit the module and save it to a .dll file on disk.
+    /// </summary>
+    public void EmitToFile(NajaModule module, string outputPath)
+    {
+        // Use PersistedAssemblyBuilder for .NET 9+
+        var asmName = new AssemblyName(_assemblyName);
+        var asmBuilder = new PersistedAssemblyBuilder(asmName, typeof(object).Assembly);
+        var modBuilder = asmBuilder.DefineDynamicModule(_assemblyName);
+
+        var typeBuilder = EmitModule(module, modBuilder);
+        typeBuilder.CreateType();
+
+        // Set entry point and save
+        var mainMethod = typeBuilder.GetMethod("Main",
+            BindingFlags.Public | BindingFlags.Static);
+
+        var entryPoint = mainMethod ?? throw new CodeGenException("No Main method found");
+        asmBuilder.Save(outputPath);
+    }
+
+    // ── NajaModule emission ───────────────────────────────────────────────────────
+
+    private TypeBuilder EmitModule(NajaModule module, ModuleBuilder modBuilder)
+    {
+        var typeBuilder = modBuilder.DefineType(
+            "NajaModule",
+            TypeAttributes.Public | TypeAttributes.Abstract | TypeAttributes.Sealed);
+
+        // .NET imports: from System.X import Y → name → (TypeName, AssemblyName)
+        // Build this early so class base types (e.g. class MainWindow(Form)) can be resolved.
+        var importMap = new Dictionary<string, (string TypeName, string AssemblyName)>();
+        foreach (var stmt in module.Body)
+        {
+            if (stmt is FromImportStatement fromImp && fromImp.Module.Contains('.'))
+            {
+                foreach (var alias in fromImp.Names)
+                {
+                    var name = alias.Alias ?? alias.Name;
+                    var typeName = fromImp.Module + "." + alias.Name;
+
+                    // Resolve the real assembly name by searching currently-loaded assemblies.
+                    // This ensures WinForms / Drawing types get the right strong-name token.
+                    var resolvedType = AppDomain.CurrentDomain.GetAssemblies()
+                        .Select(a => a.GetType(typeName, throwOnError: false, ignoreCase: true))
+                        .FirstOrDefault(t => t is not null);
+
+                    var asmFullName = resolvedType?.Assembly.FullName
+                        ?? resolvedType?.Assembly.GetName().Name
+                        ?? fromImp.Module;
+
+                    importMap[name] = (typeName, asmFullName);
+                }
+            }
+        }
+
+        // ── Pass 1: declare all module-level fields, method stubs, class stubs ──
+        var fields = new Dictionary<string, FieldBuilder>();
+        var methods = new Dictionary<string, MethodBuilder>();
+        var paramTypes = new Dictionary<string, Type[]>();
+        var classTypes = new Dictionary<string, TypeBuilder>();
+        var classConstructors = new Dictionary<string, ConstructorBuilder>();
+
+        foreach (var stmt in module.Body)
+        {
+            if (stmt is FunctionDef fn)
+            {
+                var (mb, pts) = DeclareMethod(fn, typeBuilder);
+                methods[fn.Name] = mb;
+                paramTypes[fn.Name] = pts;
+            }
+            else if (stmt is ClassDef cls)
+            {
+                var ct = DeclareClass(cls, modBuilder, importMap, out var defaultCtor);
+                classTypes[cls.Name] = ct;
+                classConstructors[cls.Name] = defaultCtor;
+
+                foreach (var classStmt in cls.Body)
+                {
+                    if (classStmt is FunctionDef cfn)
+                    {
+                        _classMethodNames.Add($"{cls.Name}.{cfn.Name}");
+                    }
+                }
+            }
+            else if (stmt is AssignStatement assign)
+            {
+                foreach (var target in assign.Targets)
+                {
+                    if (target is NameExpr n)
+                    {
+                        var sym = _model.ModuleScope.Lookup(n.Name);
+                        var clrType = sym is not null
+                            ? TypeMapper.ToClrType(sym.Type)
+                            : typeof(object);
+                        if (clrType == typeof(void)) clrType = typeof(object);
+
+                        var fb = typeBuilder.DefineField(
+                            n.Name,
+                            clrType,
+                            FieldAttributes.Public | FieldAttributes.Static);
+                        fields[n.Name] = fb;
+                    }
+                }
+            }
+        }
+
+        // Module-level builtins: __name__ and __file__ (so "if __name__ == '__main__'" works)
+        if (!fields.ContainsKey("__name__"))
+        {
+            var nameField = typeBuilder.DefineField(
+                "__name__",
+                typeof(string),
+                FieldAttributes.Public | FieldAttributes.Static);
+            fields["__name__"] = nameField;
+        }
+        if (!fields.ContainsKey("__file__"))
+        {
+            var fileField = typeBuilder.DefineField(
+                "__file__",
+                typeof(string),
+                FieldAttributes.Public | FieldAttributes.Static);
+            fields["__file__"] = fileField;
+        }
+
+        // ── Pass 2: emit Main() — runs the module body ────────────────────────
+        var mainBuilder = typeBuilder.DefineMethod(
+            "Main",
+            MethodAttributes.Public | MethodAttributes.Static,
+            typeof(void),
+            Type.EmptyTypes);
+
+        var mainIL = mainBuilder.GetILGenerator();
+
+        // ── Run type inference ────────────────────────────────────────────────
+        var inferenceEngine = new TypeInferenceEngine(_model);
+        var inferenceResult = inferenceEngine.Infer(module);
+        // ─────────────────────────────────────────────────────────────────────
+
+        var mainCtx = new EmitContext(mainIL, _model, typeBuilder, modBuilder,
+                                      typeof(void), [])
+        {
+            Inference = inferenceResult
+        };
+        foreach (var (k, v) in fields) mainCtx.Fields[k] = v;
+        foreach (var (k, v) in methods) mainCtx.Methods[k] = v;
+        foreach (var (k, v) in paramTypes) mainCtx.MethodParamTypes[k] = v;
+        foreach (var (k, v) in classTypes) mainCtx.ClassTypes[k] = v;
+        foreach (var (k, v) in classConstructors) mainCtx.ClassConstructors[k] = v;
+        foreach (var mn in _classMethodNames) mainCtx.ClassMethods.Add(mn);
+        foreach (var (k, v) in importMap) mainCtx.ImportMap[k] = v;
+
+        var mainStmtEmitter = new StatementEmitter(mainCtx);
+
+        // Initialize __name__ and __file__ so "if __name__ == '__main__'" works
+        mainIL.Emit(OpCodes.Ldstr, "__main__");
+        mainIL.Emit(OpCodes.Stsfld, mainCtx.Fields["__name__"]);
+        mainIL.Emit(OpCodes.Ldstr, "");
+        mainIL.Emit(OpCodes.Stsfld, mainCtx.Fields["__file__"]);
+
+        bool usesWinForms = importMap.Values.Any(v => v.AssemblyName.StartsWith("System.Windows.Forms", StringComparison.OrdinalIgnoreCase));
+        if (usesWinForms)
+        {
+            var appType = Type.GetType("System.Windows.Forms.Application, System.Windows.Forms");
+            if (appType != null)
+            {
+                var evs = appType.GetMethod("EnableVisualStyles", Type.EmptyTypes);
+                if (evs != null) mainIL.Emit(OpCodes.Call, evs);
+                var sctrd = appType.GetMethod("SetCompatibleTextRenderingDefault", new[] { typeof(bool) });
+                if (sctrd != null)
+                {
+                    mainIL.Emit(OpCodes.Ldc_I4_0);
+                    mainIL.Emit(OpCodes.Call, sctrd);
+                }
+                var shdpi = appType.GetMethod("SetHighDpiMode");
+                if (shdpi != null)
+                {
+                    mainIL.Emit(OpCodes.Ldc_I4_2); // HighDpiMode.SystemAware
+                    mainIL.Emit(OpCodes.Call, shdpi);
+                }
+            }
+        }
+
+        foreach (var stmt in module.Body)
+        {
+            if (stmt is FunctionDef or ClassDef)
+                continue;
+            mainStmtEmitter.Emit(stmt);
+        }
+
+        mainIL.Emit(OpCodes.Ret);
+
+        // ── Pass 3: emit function and class bodies ────────────────────────────
+        foreach (var stmt in module.Body)
+        {
+            if (stmt is FunctionDef fn && methods.TryGetValue(fn.Name, out var mb))
+                EmitFunctionBody(fn, mb, typeBuilder, modBuilder, fields, methods, paramTypes, importMap, inferenceResult);
+            else if (stmt is ClassDef cls && classTypes.TryGetValue(cls.Name, out var ct))
+                EmitClassBody(cls, ct, modBuilder, fields, methods, paramTypes, classTypes, classConstructors, importMap, inferenceResult);
+        }
+
+        // Finalise all class types
+        foreach (var ct in classTypes.Values)
+        {
+            try { ct.CreateType(); } catch { /* ignore if already created */ }
+        }
+
+        return typeBuilder;
+    }
+
+    // ── Class declaration (stub TypeBuilder) ─────────────────────────────────
+
+    private TypeBuilder DeclareClass(
+        ClassDef cls,
+        ModuleBuilder modBuilder,
+        Dictionary<string, (string TypeName, string AssemblyName)> importMap,
+        out ConstructorBuilder defaultCtor)
+    {
+        // Resolve base class — default to object
+        Type baseType = typeof(object);
+        if (cls.Bases.Count > 0 && cls.Bases[0] is NameExpr baseExpr)
+        {
+            if (importMap.TryGetValue(baseExpr.Name, out var imp))
+            {
+                // Search already-loaded assemblies first (avoids partial AQN Type.GetType failures).
+                baseType =
+                    AppDomain.CurrentDomain.GetAssemblies()
+                        .Select(a => a.GetType(imp.TypeName, throwOnError: false, ignoreCase: true))
+                        .FirstOrDefault(t => t is not null)
+                    ?? Type.GetType(imp.TypeName + ", " + imp.AssemblyName)
+                    ?? Type.GetType(imp.TypeName)
+                    ?? typeof(object);
+            }
+            else
+            {
+                baseType = baseExpr.Name switch
+                {
+                    "Exception" or "BaseException" => typeof(Exception),
+                    "ValueError" => typeof(ArgumentException),
+                    "TypeError" => typeof(InvalidCastException),
+                    "RuntimeError" => typeof(InvalidOperationException),
+                    "NotImplementedError" => typeof(NotImplementedException),
+                    _ => typeof(object)
+                };
+            }
+        }
+
+        var isSealedClass = cls.Decorators.Any(d =>
+            d is NameExpr { Name: "final" } ||
+            (d is AttributeExpr a && a.Attribute == "final" && a.Object is NameExpr { Name: "typing" }));
+
+        var typeAttrs = TypeAttributes.Public | TypeAttributes.Class;
+        if (isSealedClass) typeAttrs |= TypeAttributes.Sealed;
+
+        var tb = modBuilder.DefineType(
+            cls.Name,
+            typeAttrs,
+            baseType);
+
+        var delFnDecl = cls.Body.OfType<FunctionDef>().FirstOrDefault(f => f.Name == "__del__");
+        var disposeBoolMethodDecl = baseType?.GetMethod("Dispose", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, new[] { typeof(bool) }, null);
+
+        if (delFnDecl != null && disposeBoolMethodDecl == null && (baseType == null || !typeof(IDisposable).IsAssignableFrom(baseType)))
+        {
+            tb.AddInterfaceImplementation(typeof(IDisposable));
+        }
+
+        // Define a public constructor that calls base() so the base class is properly initialized.
+        // This is critical for .NET base classes like Form which require their own ctor to run.
+        var baseCtor = baseType.GetConstructor(
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance,
+            null, Type.EmptyTypes, null)
+            ?? typeof(object).GetConstructor(Type.EmptyTypes)!;
+
+        var initFn = cls.Body.OfType<FunctionDef>().FirstOrDefault(f => f.Name == "__init__");
+        int argCount = initFn != null && initFn.Params.Count > 0 && (initFn.Params[0].Name == "self" || initFn.Params[0].Name == "cls")
+            ? initFn.Params.Count - 1
+            : (initFn?.Params.Count ?? 0);
+
+        var ctorParams = Enumerable.Repeat(typeof(object), argCount).ToArray();
+
+        defaultCtor = tb.DefineConstructor(
+            MethodAttributes.Public,
+            CallingConventions.Standard,
+            ctorParams);
+
+        if (initFn != null)
+        {
+            int skip = initFn.Params.Count > 0 && (initFn.Params[0].Name == "self" || initFn.Params[0].Name == "cls") ? 1 : 0;
+            for (int i = 0; i < argCount; i++)
+            {
+                defaultCtor.DefineParameter(i + 1, ParameterAttributes.None, initFn.Params[i + skip].Name);
+            }
+        }
+
+        var ctorIL = defaultCtor.GetILGenerator();
+        ctorIL.Emit(OpCodes.Ldarg_0);
+        ctorIL.Emit(OpCodes.Call, baseCtor);
+        
+        if (initFn == null)
+        {
+            ctorIL.Emit(OpCodes.Ret);
+        }
+
+        return tb;
+    }
+
+    // ── Instance-field deep scanner ───────────────────────────────────────────
+
+    /// <summary>
+    /// Recursively walks all statements (including nested blocks) looking for
+    /// <c>self.x = ...</c> assignments so that every instance field used anywhere
+    /// in a method body (e.g. inside an if-branch or a try block) gets declared
+    /// on the TypeBuilder before IL emission begins.
+    /// </summary>
+    private static void ScanForInstanceFields(
+        IReadOnlyList<Statement> stmts,
+        Dictionary<string, FieldBuilder> instanceFields,
+        TypeBuilder ct)
+    {
+        foreach (var stmt in stmts)
+        {
+            switch (stmt)
+            {
+                case AssignStatement assign:
+                    foreach (var t in assign.Targets)
+                        TryDeclareInstanceField(t, instanceFields, ct);
+                    break;
+
+                case AnnAssignStatement ann:
+                    bool isFinalField = ann.Annotation is NameExpr { Name: "Final" } || 
+                                   (ann.Annotation is AttributeExpr attr && attr.Attribute == "Final" && attr.Object is NameExpr { Name: "typing" }) ||
+                                   (ann.Annotation is SubscriptExpr sub && (sub.Object is NameExpr { Name: "Final" } || (sub.Object is AttributeExpr subAttr && subAttr.Attribute == "Final" && subAttr.Object is NameExpr { Name: "typing" })));
+                    TryDeclareInstanceField(ann.Target, instanceFields, ct, isFinalField);
+                    break;
+
+                case IfStatement ifs:
+                    ScanForInstanceFields(ifs.Then, instanceFields, ct);
+                    foreach (var (_, body) in ifs.Elifs)
+                        ScanForInstanceFields(body, instanceFields, ct);
+                    ScanForInstanceFields(ifs.Else, instanceFields, ct);
+                    break;
+
+                case ForStatement forS:
+                    ScanForInstanceFields(forS.Body, instanceFields, ct);
+                    ScanForInstanceFields(forS.Else, instanceFields, ct);
+                    break;
+
+                case WhileStatement whileS:
+                    ScanForInstanceFields(whileS.Body, instanceFields, ct);
+                    ScanForInstanceFields(whileS.Else, instanceFields, ct);
+                    break;
+
+                case TryStatement tryS:
+                    ScanForInstanceFields(tryS.Body, instanceFields, ct);
+                    foreach (var h in tryS.Handlers)
+                        ScanForInstanceFields(h.Body, instanceFields, ct);
+                    ScanForInstanceFields(tryS.Else, instanceFields, ct);
+                    ScanForInstanceFields(tryS.Finally, instanceFields, ct);
+                    break;
+
+                case WithStatement withS:
+                    ScanForInstanceFields(withS.Body, instanceFields, ct);
+                    break;
+            }
+        }
+    }
+
+    private static void TryDeclareInstanceField(
+        Expression target,
+        Dictionary<string, FieldBuilder> instanceFields,
+        TypeBuilder ct,
+        bool isFinal = false)
+    {
+        if (target is AttributeExpr attr &&
+            attr.Object is NameExpr obj &&
+            (obj.Name == "self" || obj.Name == "cls") &&
+            !instanceFields.ContainsKey(attr.Attribute))
+        {
+            bool isPriv = attr.Attribute.StartsWith("_") && !(attr.Attribute.StartsWith("__") && attr.Attribute.EndsWith("__"));
+            var fbAttrs = isPriv ? FieldAttributes.Private : FieldAttributes.Public;
+            if (isFinal) fbAttrs |= FieldAttributes.InitOnly;
+            var fb = ct.DefineField(attr.Attribute, typeof(object), fbAttrs);
+            instanceFields[attr.Attribute] = fb;
+        }
+    }
+
+    // ── Class body emission ───────────────────────────────────────────────────
+
+    private void EmitClassBody(
+        ClassDef cls,
+        TypeBuilder ct,
+        ModuleBuilder modBuilder,
+        Dictionary<string, FieldBuilder> moduleFields,
+        Dictionary<string, MethodBuilder> moduleMethods,
+        Dictionary<string, Type[]> moduleParamTypes,
+        Dictionary<string, TypeBuilder> moduleClassTypes,
+        Dictionary<string, ConstructorBuilder> moduleClassConstructors,
+        Dictionary<string, (string TypeName, string AssemblyName)> importMap,
+        InferenceResult inferenceResult)
+    {
+        // ── Collect class members ─────────────────────────────────────────────
+        var instanceFields = new Dictionary<string, FieldBuilder>();
+        var classMethods = new Dictionary<string, MethodBuilder>();
+        var classParamTypes = new Dictionary<string, Type[]>();
+
+        // Pass 1: declare fields from class-level assignments and method stubs
+        foreach (var stmt in cls.Body)
+        {
+            if (stmt is FunctionDef fn)
+            {
+                var (mb, pts, uniqueName) = DeclareInstanceMethod(fn, ct);
+                classMethods[uniqueName] = mb;
+                classParamTypes[uniqueName] = pts;
+                _classMethodNames.Add($"{cls.Name}.{uniqueName}");
+
+                // Deep-scan method body for instance field declarations (e.g. self.name = value)
+                // including those nested inside if/for/while/try/with blocks.
+                ScanForInstanceFields(fn.Body, instanceFields, ct);
+            }
+            else if (stmt is AssignStatement assign)
+            {
+                foreach (var t in assign.Targets)
+                {
+                    if (t is NameExpr n)
+                    {
+                        if (!instanceFields.ContainsKey(n.Name))
+                        {
+                            bool isPriv = n.Name.StartsWith("_") && !(n.Name.StartsWith("__") && n.Name.EndsWith("__"));
+                            var fb = ct.DefineField(n.Name, typeof(object), isPriv ? FieldAttributes.Private : FieldAttributes.Public);
+                            instanceFields[n.Name] = fb;
+                        }
+                    }
+                }
+            }
+            else if (stmt is AnnAssignStatement ann && ann.Target is NameExpr an)
+            {
+                if (!instanceFields.ContainsKey(an.Name))
+                {
+                    bool isPriv = an.Name.StartsWith("_") && !(an.Name.StartsWith("__") && an.Name.EndsWith("__"));
+                    bool isFinalField = ann.Annotation is NameExpr { Name: "Final" } || 
+                                   (ann.Annotation is AttributeExpr attr && attr.Attribute == "Final" && attr.Object is NameExpr { Name: "typing" }) ||
+                                   (ann.Annotation is SubscriptExpr sub && (sub.Object is NameExpr { Name: "Final" } || (sub.Object is AttributeExpr subAttr && subAttr.Attribute == "Final" && subAttr.Object is NameExpr { Name: "typing" })));
+                    
+                    var attrs = isPriv ? FieldAttributes.Private : FieldAttributes.Public;
+                    if (isFinalField) attrs |= FieldAttributes.InitOnly;
+                    
+                    var fb = ct.DefineField(an.Name, typeof(object), attrs);
+                    instanceFields[an.Name] = fb;
+                }
+            }
+         }
+
+        // WinForms and IDisposable
+        var delFn = cls.Body.OfType<FunctionDef>().FirstOrDefault(f => f.Name == "__del__");
+        var disposeBoolMethod = ct.BaseType?.GetMethod("Dispose", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, new[] { typeof(bool) }, null);
+
+        if (delFn != null || disposeBoolMethod != null)
+        {
+            if (disposeBoolMethod != null && (delFn != null || ct.BaseType?.FullName?.StartsWith("System.Windows.Forms") == true))
+            {
+                var disposeMb = ct.DefineMethod("Dispose",
+                    MethodAttributes.Family | MethodAttributes.Virtual | MethodAttributes.HideBySig,
+                    typeof(void), new[] { typeof(bool) });
+                disposeMb.DefineParameter(1, ParameterAttributes.None, "disposing");
+
+                var dil = disposeMb.GetILGenerator();
+
+                if (delFn != null && classMethods.TryGetValue("__del__", out var delMb))
+                {
+                    var trueLabel = dil.DefineLabel();
+                    dil.Emit(OpCodes.Ldarg_1); // disposing
+                    dil.Emit(OpCodes.Brfalse, trueLabel);
+                    dil.Emit(OpCodes.Ldarg_0); // this
+                    dil.Emit(OpCodes.Call, delMb);
+                    if (delMb.ReturnType != typeof(void)) dil.Emit(OpCodes.Pop);
+                    dil.MarkLabel(trueLabel);
+                }
+
+                dil.Emit(OpCodes.Ldarg_0);
+                dil.Emit(OpCodes.Ldarg_1);
+                dil.Emit(OpCodes.Call, disposeBoolMethod);
+                dil.Emit(OpCodes.Ret);
+                
+                ct.DefineMethodOverride(disposeMb, disposeBoolMethod);
+            }
+            else if (delFn != null && classMethods.TryGetValue("__del__", out var delMb2))
+            {
+                var disposeMb = ct.DefineMethod("Dispose",
+                    MethodAttributes.Public | MethodAttributes.Virtual | MethodAttributes.HideBySig | MethodAttributes.NewSlot | MethodAttributes.Final,
+                    typeof(void), Type.EmptyTypes);
+
+                var dil = disposeMb.GetILGenerator();
+                dil.Emit(OpCodes.Ldarg_0);
+                dil.Emit(OpCodes.Call, delMb2);
+                if (delMb2.ReturnType != typeof(void)) dil.Emit(OpCodes.Pop);
+                dil.Emit(OpCodes.Ret);
+            }
+        }
+
+        // Pass 2: emit method bodies
+        foreach (var stmt in cls.Body)
+        {
+            if (stmt is FunctionDef fn)
+            {
+                var isProperty = fn.Decorators.Any(d => d is NameExpr { Name: "property" });
+                var isSetter = fn.Decorators.Any(d => d is AttributeExpr attr && attr.Attribute == "setter");
+                string uniqueName = isProperty ? "get_" + fn.Name : isSetter ? "set_" + fn.Name : fn.Name;
+
+                if (classMethods.TryGetValue(uniqueName, out var mb))
+                    EmitMethodBody(fn, mb, ct, modBuilder,
+                                   moduleFields, moduleMethods, moduleParamTypes,
+                                   moduleClassTypes, moduleClassConstructors,
+                                   instanceFields, classMethods, classParamTypes, importMap, inferenceResult);
+            }
+        }
+
+        // Generate properties
+        var propNames = cls.Body.OfType<FunctionDef>()
+                           .Where(f => f.Decorators.Any(d => d is NameExpr { Name: "property" } || (d is AttributeExpr a && a.Attribute == "setter")))
+                           .Select(f => f.Name)
+                           .Distinct();
+
+        foreach (var pName in propNames)
+        {
+            classMethods.TryGetValue("get_" + pName, out var getMb);
+            classMethods.TryGetValue("set_" + pName, out var setMb);
+            
+            if (getMb != null || setMb != null)
+            {
+                var pb = ct.DefineProperty(pName, PropertyAttributes.None, typeof(object), null);
+                if (getMb != null) pb.SetGetMethod(getMb);
+                if (setMb != null) pb.SetSetMethod(setMb);
+            }
+        }
+
+        // Generate dunder overrides
+        if (classMethods.TryGetValue("__str__", out var strMb))
+        {
+            var tsMb = ct.DefineMethod("ToString",
+                MethodAttributes.Public | MethodAttributes.Virtual | MethodAttributes.HideBySig,
+                typeof(string), Type.EmptyTypes);
+            var dil = tsMb.GetILGenerator();
+            dil.Emit(OpCodes.Ldarg_0);
+            dil.Emit(OpCodes.Call, strMb);
+            dil.Emit(OpCodes.Call, typeof(Convert).GetMethod("ToString", new[] { typeof(object) })!);
+            dil.Emit(OpCodes.Ret);
+            var baseTs = typeof(object).GetMethod("ToString");
+            if (baseTs != null) ct.DefineMethodOverride(tsMb, baseTs);
+        }
+
+        if (classMethods.TryGetValue("__hash__", out var hashMb))
+        {
+            var ghMb = ct.DefineMethod("GetHashCode",
+                MethodAttributes.Public | MethodAttributes.Virtual | MethodAttributes.HideBySig,
+                typeof(int), Type.EmptyTypes);
+            var dil = ghMb.GetILGenerator();
+            dil.Emit(OpCodes.Ldarg_0);
+            dil.Emit(OpCodes.Call, hashMb);
+            dil.Emit(OpCodes.Call, typeof(Convert).GetMethod("ToInt32", new[] { typeof(object) })!);
+            dil.Emit(OpCodes.Ret);
+            var baseGh = typeof(object).GetMethod("GetHashCode");
+            if (baseGh != null) ct.DefineMethodOverride(ghMb, baseGh);
+        }
+
+        // Generate Indexer (Item property with DefaultMemberAttribute)
+        classMethods.TryGetValue("__getitem__", out var getItemMb);
+        classMethods.TryGetValue("__setitem__", out var setItemMb);
+
+        if (getItemMb != null || setItemMb != null)
+        {
+            var pb = ct.DefineProperty("Item", PropertyAttributes.None, typeof(object), new[] { typeof(object) });
+            
+            if (getItemMb != null)
+            {
+                var getMb = ct.DefineMethod("get_Item",
+                    MethodAttributes.Public | MethodAttributes.SpecialName | MethodAttributes.HideBySig | MethodAttributes.Virtual,
+                    typeof(object), new[] { typeof(object) });
+                var dil = getMb.GetILGenerator();
+                dil.Emit(OpCodes.Ldarg_0); // this
+                
+                // Coerce 'key' from object to whatever __getitem__ expects
+                classParamTypes.TryGetValue($"{cls.Name}.__getitem__", out var getParamTypes);
+                var pType = getParamTypes?.Length > 0 ? getParamTypes[0] : typeof(object);
+                dil.Emit(OpCodes.Ldarg_1); // key
+                if (pType != typeof(object))
+                {
+                    TypeMapper.EmitUnbox(dil, TypeMapper.FromClrType(pType));
+                }
+                
+                dil.Emit(OpCodes.Call, getItemMb);
+                
+                if (getItemMb.ReturnType != typeof(object) && getItemMb.ReturnType != typeof(void))
+                {
+                    TypeMapper.EmitBox(dil, TypeMapper.FromClrType(getItemMb.ReturnType));
+                }
+                else if (getItemMb.ReturnType == typeof(void))
+                {
+                    dil.Emit(OpCodes.Ldnull);
+                }
+                
+                dil.Emit(OpCodes.Ret);
+                pb.SetGetMethod(getMb);
+            }
+
+            if (setItemMb != null)
+            {
+                var setMb = ct.DefineMethod("set_Item",
+                    MethodAttributes.Public | MethodAttributes.SpecialName | MethodAttributes.HideBySig | MethodAttributes.Virtual,
+                    typeof(void), new[] { typeof(object), typeof(object) });
+                var dil = setMb.GetILGenerator();
+                dil.Emit(OpCodes.Ldarg_0); // this
+                
+                classParamTypes.TryGetValue($"{cls.Name}.__setitem__", out var setParamTypes);
+                
+                // Coerce key
+                dil.Emit(OpCodes.Ldarg_1); // key
+                if (setParamTypes != null && setParamTypes.Length > 0 && setParamTypes[0] != typeof(object))
+                {
+                    TypeMapper.EmitUnbox(dil, TypeMapper.FromClrType(setParamTypes[0]));
+                }
+                
+                // Coerce value
+                dil.Emit(OpCodes.Ldarg_2); // value
+                if (setParamTypes != null && setParamTypes.Length > 1 && setParamTypes[1] != typeof(object))
+                {
+                    TypeMapper.EmitUnbox(dil, TypeMapper.FromClrType(setParamTypes[1]));
+                }
+                
+                dil.Emit(OpCodes.Call, setItemMb);
+                if (setItemMb.ReturnType != typeof(void))
+                    dil.Emit(OpCodes.Pop);
+                dil.Emit(OpCodes.Ret);
+                pb.SetSetMethod(setMb);
+            }
+
+            var defaultMemberAttrCtor = typeof(System.Reflection.DefaultMemberAttribute).GetConstructor(new[] { typeof(string) });
+            if (defaultMemberAttrCtor != null)
+            {
+                var cab = new CustomAttributeBuilder(defaultMemberAttrCtor, new object[] { "Item" });
+                ct.SetCustomAttribute(cab);
+            }
+        }
+
+        if (classMethods.TryGetValue("__eq__", out var eqMb))
+        {
+            var eqOvr = ct.DefineMethod("Equals",
+                MethodAttributes.Public | MethodAttributes.Virtual | MethodAttributes.HideBySig,
+                typeof(bool), new[] { typeof(object) });
+            var dil = eqOvr.GetILGenerator();
+            dil.Emit(OpCodes.Ldarg_0);
+            dil.Emit(OpCodes.Ldarg_1); // object param
+            dil.Emit(OpCodes.Call, eqMb);
+            dil.Emit(OpCodes.Call, typeof(Convert).GetMethod("ToBoolean", new[] { typeof(object) })!);
+            dil.Emit(OpCodes.Ret);
+            var baseEq = typeof(object).GetMethod("Equals", new[] { typeof(object) });
+            if (baseEq != null) ct.DefineMethodOverride(eqOvr, baseEq);
+        }
+
+        if (classMethods.TryGetValue("__len__", out var lenMb))
+        {
+            var pb = ct.DefineProperty("Count", PropertyAttributes.None, typeof(int), null);
+            var getMb = ct.DefineMethod("get_Count",
+                MethodAttributes.Public | MethodAttributes.SpecialName | MethodAttributes.HideBySig,
+                typeof(int), Type.EmptyTypes);
+            var dil = getMb.GetILGenerator();
+            dil.Emit(OpCodes.Ldarg_0);
+            dil.Emit(OpCodes.Call, lenMb);
+            dil.Emit(OpCodes.Call, typeof(Convert).GetMethod("ToInt32", new[] { typeof(object) })!);
+            dil.Emit(OpCodes.Ret);
+            pb.SetGetMethod(getMb);
+        }
+
+        if (classMethods.TryGetValue("__copy__", out var copyMb))
+        {
+            ct.AddInterfaceImplementation(typeof(ICloneable));
+            var cloneMb = ct.DefineMethod("Clone",
+                MethodAttributes.Public | MethodAttributes.Virtual | MethodAttributes.HideBySig | MethodAttributes.NewSlot | MethodAttributes.Final,
+                typeof(object), Type.EmptyTypes);
+            var dil = cloneMb.GetILGenerator();
+            dil.Emit(OpCodes.Ldarg_0);
+            dil.Emit(OpCodes.Call, copyMb);
+            dil.Emit(OpCodes.Ret);
+        }
+
+        if (classMethods.TryGetValue("__iter__", out var iterMb))
+        {
+            ct.AddInterfaceImplementation(typeof(System.Collections.IEnumerable));
+            var geMb = ct.DefineMethod("GetEnumerator",
+                MethodAttributes.Public | MethodAttributes.Virtual | MethodAttributes.HideBySig | MethodAttributes.NewSlot | MethodAttributes.Final,
+                typeof(System.Collections.IEnumerator), Type.EmptyTypes);
+            var dil = geMb.GetILGenerator();
+            dil.Emit(OpCodes.Ldarg_0);
+            dil.Emit(OpCodes.Call, iterMb);
+            dil.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.GetEnumerator), new[] { typeof(object) })!);
+            dil.Emit(OpCodes.Ret);
+        }
+
+        if (classMethods.TryGetValue("__next__", out var nextMb))
+        {
+            ct.AddInterfaceImplementation(typeof(System.Collections.IEnumerator));
+
+            var currentFb = ct.DefineField("__current_enumerator_val", typeof(object), FieldAttributes.Private);
+
+            var currentPb = ct.DefineProperty("Current", PropertyAttributes.None, typeof(object), null);
+            var currentGetMb = ct.DefineMethod("get_Current",
+                MethodAttributes.Public | MethodAttributes.SpecialName | MethodAttributes.Virtual | MethodAttributes.HideBySig | MethodAttributes.NewSlot | MethodAttributes.Final,
+                typeof(object), Type.EmptyTypes);
+            var cDil = currentGetMb.GetILGenerator();
+            cDil.Emit(OpCodes.Ldarg_0);
+            cDil.Emit(OpCodes.Ldfld, currentFb);
+            cDil.Emit(OpCodes.Ret);
+            currentPb.SetGetMethod(currentGetMb);
+
+            var resetMb = ct.DefineMethod("Reset",
+                MethodAttributes.Public | MethodAttributes.Virtual | MethodAttributes.HideBySig | MethodAttributes.NewSlot | MethodAttributes.Final,
+                typeof(void), Type.EmptyTypes);
+            var rDil = resetMb.GetILGenerator();
+            rDil.Emit(OpCodes.Newobj, typeof(NotSupportedException).GetConstructor(Type.EmptyTypes)!);
+            rDil.Emit(OpCodes.Throw);
+
+            var moveNextMb = ct.DefineMethod("MoveNext",
+                MethodAttributes.Public | MethodAttributes.Virtual | MethodAttributes.HideBySig | MethodAttributes.NewSlot | MethodAttributes.Final,
+                typeof(bool), Type.EmptyTypes);
+            var mnDil = moveNextMb.GetILGenerator();
+            
+            var retLocal = mnDil.DeclareLocal(typeof(bool));
+            var retLabel = mnDil.DefineLabel();
+            
+            mnDil.BeginExceptionBlock();
+            mnDil.Emit(OpCodes.Ldarg_0); // this (for stfld)
+            mnDil.Emit(OpCodes.Ldarg_0); // this (for call __next__)
+            mnDil.Emit(OpCodes.Call, nextMb);
+            
+            if (nextMb.ReturnType == typeof(void))
+            {
+                mnDil.Emit(OpCodes.Pop); // pop the 'this' from stfld
+                // or just load null instead
+            }
+            else
+            {
+                if (nextMb.ReturnType != typeof(object))
+                    TypeMapper.EmitBox(mnDil, TypeMapper.FromClrType(nextMb.ReturnType));
+                mnDil.Emit(OpCodes.Stfld, currentFb);
+            }
+            
+            mnDil.Emit(OpCodes.Ldc_I4_1);
+            mnDil.Emit(OpCodes.Stloc, retLocal);
+            mnDil.Emit(OpCodes.Leave, retLabel);
+            
+            mnDil.BeginCatchBlock(typeof(InvalidOperationException));
+            mnDil.Emit(OpCodes.Pop);
+            mnDil.Emit(OpCodes.Ldc_I4_0);
+            mnDil.Emit(OpCodes.Stloc, retLocal);
+            mnDil.Emit(OpCodes.Leave, retLabel);
+            
+            mnDil.EndExceptionBlock();
+            
+            mnDil.MarkLabel(retLabel);
+            mnDil.Emit(OpCodes.Ldloc, retLocal);
+            mnDil.Emit(OpCodes.Ret);
+        }
+
+        if (classMethods.TryGetValue("__bool__", out var boolMb))
+        {
+            var opTrueMb = ct.DefineMethod("op_True",
+                MethodAttributes.Public | MethodAttributes.Static | MethodAttributes.SpecialName | MethodAttributes.HideBySig,
+                typeof(bool), new[] { ct });
+            var tDil = opTrueMb.GetILGenerator();
+            tDil.Emit(OpCodes.Ldarg_0);
+            tDil.Emit(OpCodes.Callvirt, boolMb);
+            if (boolMb.ReturnType != typeof(bool))
+                tDil.Emit(OpCodes.Call, typeof(Convert).GetMethod("ToBoolean", new[] { typeof(object) })!);
+            tDil.Emit(OpCodes.Ret);
+
+            var opFalseMb = ct.DefineMethod("op_False",
+                MethodAttributes.Public | MethodAttributes.Static | MethodAttributes.SpecialName | MethodAttributes.HideBySig,
+                typeof(bool), new[] { ct });
+            var fDil = opFalseMb.GetILGenerator();
+            fDil.Emit(OpCodes.Ldarg_0);
+            fDil.Emit(OpCodes.Callvirt, boolMb);
+            if (boolMb.ReturnType != typeof(bool))
+                fDil.Emit(OpCodes.Call, typeof(Convert).GetMethod("ToBoolean", new[] { typeof(object) })!);
+            fDil.Emit(OpCodes.Ldc_I4_0);
+            fDil.Emit(OpCodes.Ceq);
+            fDil.Emit(OpCodes.Ret);
+
+            var opImplicitMb = ct.DefineMethod("op_Implicit",
+                MethodAttributes.Public | MethodAttributes.Static | MethodAttributes.SpecialName | MethodAttributes.HideBySig,
+                typeof(bool), new[] { ct });
+            var iDil = opImplicitMb.GetILGenerator();
+            iDil.Emit(OpCodes.Ldarg_0);
+            iDil.Emit(OpCodes.Callvirt, boolMb);
+            if (boolMb.ReturnType != typeof(bool))
+                iDil.Emit(OpCodes.Call, typeof(Convert).GetMethod("ToBoolean", new[] { typeof(object) })!);
+            iDil.Emit(OpCodes.Ret);
+        }
+
+        // Finish the constructor if we have an __init__ method
+        if (moduleClassConstructors.TryGetValue(cls.Name, out var ctor) && classMethods.TryGetValue("__init__", out var initMb))
+        {
+            var ctorIl = ctor.GetILGenerator();
+            
+            var suspendLayout = ct.BaseType?.GetMethod("SuspendLayout", Type.EmptyTypes);
+            var resumeLayout = ct.BaseType?.GetMethod("ResumeLayout", new[] { typeof(bool) });
+
+            if (suspendLayout != null && resumeLayout != null)
+            {
+                ctorIl.Emit(OpCodes.Ldarg_0);
+                ctorIl.Emit(OpCodes.Call, suspendLayout);
+            }
+
+            ctorIl.Emit(OpCodes.Ldarg_0); // this
+
+            var initFn = cls.Body.OfType<FunctionDef>().First(f => f.Name == "__init__");
+            int argCount = initFn.Params.Count > 0 && (initFn.Params[0].Name == "self" || initFn.Params[0].Name == "cls")
+                ? initFn.Params.Count - 1
+                : initFn.Params.Count;
+
+            for (int i = 0; i < argCount; i++)
+            {
+                var ilIdx = i + 1;
+                switch (ilIdx)
+                {
+                    case 1: ctorIl.Emit(OpCodes.Ldarg_1); break;
+                    case 2: ctorIl.Emit(OpCodes.Ldarg_2); break;
+                    case 3: ctorIl.Emit(OpCodes.Ldarg_3); break;
+                    default: ctorIl.Emit(OpCodes.Ldarg_S, (byte)ilIdx); break;
+                }
+            }
+
+            ctorIl.Emit(OpCodes.Call, initMb);
+            if (initMb.ReturnType != typeof(void)) ctorIl.Emit(OpCodes.Pop);
+            
+            if (suspendLayout != null && resumeLayout != null)
+            {
+                ctorIl.Emit(OpCodes.Ldarg_0);
+                ctorIl.Emit(OpCodes.Ldc_I4_0); // false
+                ctorIl.Emit(OpCodes.Call, resumeLayout);
+            }
+
+            ctorIl.Emit(OpCodes.Ret);
+        }
+    }
+
+    // ── Instance method declaration ───────────────────────────────────────────
+
+    private (MethodBuilder mb, Type[] paramTypes, string uniqueName) DeclareInstanceMethod(
+        FunctionDef fn, TypeBuilder ct)
+    {
+        if (fn.IsAsync)
+            throw new CodeGenException("async/await is not yet supported in Naja.", fn.Line, fn.Column);
+
+        // First param is always 'self' — maps to instance reference
+        // Skip 'self' in the CLR param list (it becomes 'this')
+        var skipSelf = fn.Params.Count > 0 &&
+                       fn.Params[0].Name is "self" or "cls";
+        var clrParams = fn.Params
+            .Skip(skipSelf ? 1 : 0)
+            .Select(_ => typeof(object))
+            .ToArray();
+
+        var isStatic = fn.Decorators.Any(d =>
+            d is NameExpr { Name: "staticmethod" or "classmethod" });
+
+        var isMethodFinal = fn.Decorators.Any(d =>
+            d is NameExpr { Name: "final" } ||
+            (d is AttributeExpr a && a.Attribute == "final" && a.Object is NameExpr { Name: "typing" }));
+
+        var isProperty = fn.Decorators.Any(d => d is NameExpr { Name: "property" });
+        var isSetter = fn.Decorators.Any(d => d is AttributeExpr attr && attr.Attribute == "setter");
+
+        string uniqueName = fn.Name;
+        string emitName = fn.Name;
+
+        if (isProperty) { emitName = "get_" + fn.Name; uniqueName = "get_" + fn.Name; }
+        else if (isSetter) { emitName = "set_" + fn.Name; uniqueName = "set_" + fn.Name; }
+
+        bool isPriv = fn.Name.StartsWith("_") && !(fn.Name.StartsWith("__") && fn.Name.EndsWith("__"));
+
+        var attrs = isPriv ? MethodAttributes.Private : MethodAttributes.Public;
+
+        if (isStatic)
+            attrs |= MethodAttributes.Static;
+        else
+        {
+            attrs |= MethodAttributes.Virtual | MethodAttributes.HideBySig;
+            var baseMethod = ct.BaseType?.GetMethod(emitName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, null, clrParams, null);
+            if (baseMethod == null || !baseMethod.IsVirtual || baseMethod.IsFinal)
+                attrs |= MethodAttributes.NewSlot;
+        }
+
+        if (isMethodFinal && !isStatic)
+            attrs |= MethodAttributes.Final;
+
+        if (isProperty || isSetter) attrs |= MethodAttributes.SpecialName;
+
+        var mb = ct.DefineMethod(emitName, attrs, typeof(object), clrParams);
+
+        if (!isStatic)
+            for (int i = 0; i < clrParams.Length; i++)
+                mb.DefineParameter(i + 1, ParameterAttributes.None,
+                    fn.Params[i + (skipSelf ? 1 : 0)].Name);
+
+        return (mb, clrParams, uniqueName);
+    }
+
+    // ── Instance method body emission ─────────────────────────────────────────
+
+    private void EmitMethodBody(
+        FunctionDef fn,
+        MethodBuilder mb,
+        TypeBuilder ct,
+        ModuleBuilder modBuilder,
+        Dictionary<string, FieldBuilder> moduleFields,
+        Dictionary<string, MethodBuilder> moduleMethods,
+        Dictionary<string, Type[]> moduleParamTypes,
+        Dictionary<string, TypeBuilder> moduleClassTypes,
+        Dictionary<string, ConstructorBuilder> moduleClassConstructors,
+        Dictionary<string, FieldBuilder> instanceFields,
+        Dictionary<string, MethodBuilder> classMethods,
+        Dictionary<string, Type[]> classParamTypes,
+        Dictionary<string, (string TypeName, string AssemblyName)> importMap,
+        InferenceResult inferenceResult)
+    {
+        var il = mb.GetILGenerator();
+
+        // For instance methods, skip 'self' from param names
+        // (ldarg.0 = this, ldarg.1 = first real param)
+        var isStatic = fn.Decorators.Any(d =>
+            d is NameExpr { Name: "staticmethod" or "classmethod" });
+        var skipSelf = !isStatic && fn.Params.Count > 0 &&
+                       fn.Params[0].Name is "self" or "cls";
+
+        var paramNames = fn.Params
+            .Skip(skipSelf ? 1 : 0)
+            .Select(p => p.Name)
+            .ToList();
+
+        var ctx = new EmitContext(il, _model, ct, modBuilder,
+                                  typeof(object), paramNames)
+        {
+            Inference = inferenceResult
+        };
+        ctx.IsInstanceMethod = !isStatic;
+        ctx.SelfName = skipSelf ? fn.Params[0].Name : null;
+
+        foreach (var (k, v) in moduleFields) ctx.Fields[k] = v;
+        foreach (var (k, v) in moduleMethods) ctx.Methods[k] = v;
+        foreach (var (k, v) in moduleParamTypes) ctx.MethodParamTypes[k] = v;
+        foreach (var (k, v) in moduleClassTypes) ctx.ClassTypes[k] = v;
+        foreach (var (k, v) in moduleClassConstructors) ctx.ClassConstructors[k] = v;
+        foreach (var mn in _classMethodNames) ctx.ClassMethods.Add(mn);
+        foreach (var (k, v) in instanceFields) ctx.InstanceFields[k] = v;
+        foreach (var (k, v) in classMethods) ctx.Methods[k] = v;
+        foreach (var (k, v) in classParamTypes) ctx.MethodParamTypes[k] = v;
+        foreach (var (k, v) in importMap) ctx.ImportMap[k] = v;
+
+        var stmtEmitter = new StatementEmitter(ctx);
+        stmtEmitter.EmitAll(fn.Body);
+
+        bool endsWithReturn = fn.Body.Count > 0 && fn.Body[^1] is ReturnStatement;
+        if (!endsWithReturn)
+        {
+            il.Emit(OpCodes.Ldnull);
+            il.Emit(OpCodes.Ret);
+        }
+    }
+
+    // ── Function declaration (stub) ───────────────────────────────────────────
+
+    private (MethodBuilder mb, Type[] paramTypes) DeclareMethod(FunctionDef fn, TypeBuilder typeBuilder)
+    {
+        if (fn.IsAsync)
+            throw new CodeGenException("async/await is not yet supported in Naja.", fn.Line, fn.Column);
+
+        var sym = _model.ModuleScope.Lookup(fn.Name);
+        var fnType = sym?.Type as FunctionType;
+        var returnType = fnType is not null
+            ? TypeMapper.ToReturnType(fnType.ReturnType)
+            : typeof(object);
+
+        var pts = fn.Params
+            .Select((p, i) =>
+            {
+                var pType = fnType?.ParamTypes.ElementAtOrDefault(i);
+                var clr = pType is not null ? TypeMapper.ToClrType(pType) : typeof(object);
+                return clr == typeof(void) ? typeof(object) : clr;
+            }).ToArray();
+
+        var mb = typeBuilder.DefineMethod(
+            fn.Name,
+            MethodAttributes.Public | MethodAttributes.Static,
+            returnType,
+            pts);
+
+        for (int i = 0; i < fn.Params.Count; i++)
+            mb.DefineParameter(i + 1, ParameterAttributes.None, fn.Params[i].Name);
+
+        return (mb, pts);
+    }
+
+    // ── Function body emission ────────────────────────────────────────────────
+
+    private void EmitFunctionBody(
+        FunctionDef fn,
+        MethodBuilder mb,
+        TypeBuilder typeBuilder,
+        ModuleBuilder modBuilder,
+        Dictionary<string, FieldBuilder> moduleFields,
+        Dictionary<string, MethodBuilder> moduleMethods,
+        Dictionary<string, Type[]> moduleParamTypes,
+        Dictionary<string, (string TypeName, string AssemblyName)> importMap)
+    {
+        var il = mb.GetILGenerator();
+        var sym = _model.ModuleScope.Lookup(fn.Name);
+        var fnType = sym?.Type as FunctionType;
+        var returnType = fnType is not null
+            ? TypeMapper.ToReturnType(fnType.ReturnType)
+            : typeof(object);
+
+        var paramNames = fn.Params.Select(p => p.Name).ToList();
+
+        var ctx = new EmitContext(il, _model, typeBuilder, modBuilder,
+                                  returnType, paramNames);
+
+        foreach (var (k, v) in moduleFields) ctx.Fields[k] = v;
+        foreach (var (k, v) in moduleMethods) ctx.Methods[k] = v;
+        foreach (var (k, v) in moduleParamTypes) ctx.MethodParamTypes[k] = v;
+        foreach (var (k, v) in importMap) ctx.ImportMap[k] = v;
+
+        var stmtEmitter = new StatementEmitter(ctx);
+        stmtEmitter.EmitAll(fn.Body);
+
+        bool endsWithReturn = fn.Body.Count > 0 && fn.Body[^1] is ReturnStatement;
+        if (!endsWithReturn)
+        {
+            if (returnType == typeof(void))
+                il.Emit(OpCodes.Ret);
+            else
+            {
+                il.Emit(OpCodes.Ldnull);
+                il.Emit(OpCodes.Ret);
+            }
+        }
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private (AssemblyBuilder, ModuleBuilder) CreateBuilders(bool persisted)
+    {
+        var asmName = new AssemblyName(_assemblyName);
+        var asmBuilder = AssemblyBuilder.DefineDynamicAssembly(
+            asmName, AssemblyBuilderAccess.Run);
+        var modBuilder = asmBuilder.DefineDynamicModule(_assemblyName);
+        return (asmBuilder, modBuilder);
+    }
+}

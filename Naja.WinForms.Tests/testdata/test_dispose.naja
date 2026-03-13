@@ -1,0 +1,60 @@
+# test_dispose.naja
+# Phase 6.1 — Explicit Dispose
+# Risk: GDI handle leak if IDisposable.Dispose() is not called.
+# After Dispose(), IsDisposed must be True and further property access must
+# raise ObjectDisposedException — not silently succeed with wrong values.
+
+from System.Windows.Forms import Form, Button, Panel, PictureBox
+from System.Drawing import Font, Bitmap
+
+# --- Form.Dispose() ---
+f = Form()
+f.Text = "Disposable Form"
+assert f.IsDisposed == False, "Form should not be disposed initially"
+
+f.Dispose()
+assert f.IsDisposed == True, "Form.IsDisposed should be True after Dispose()"
+
+# --- Button.Dispose() ---
+b = Button()
+b.Text = "Click"
+b.Dispose()
+assert b.IsDisposed == True, "Button.IsDisposed should be True"
+
+# --- Panel.Dispose() ---
+p = Panel()
+p.Dispose()
+assert p.IsDisposed == True, "Panel.IsDisposed should be True"
+
+# --- Font.Dispose() (GDI resource) ---
+font = Font("Arial", 12)
+assert font is not None, "Font should be created"
+font.Dispose()
+# Font has no IsDisposed but must not throw on Dispose()
+
+# --- Font can be disposed independently from control ---
+font2 = Font("Verdana", 14)
+ctrl = Button()
+ctrl.Font = font2
+font2.Dispose()
+ctrl.Dispose()
+assert ctrl.IsDisposed == True, "Button should be disposed after Dispose()"
+
+# --- Bitmap.Dispose() (GDI resource) ---
+bmp = Bitmap(100, 100)
+assert bmp.Width  == 100, "Bitmap.Width should be 100"
+assert bmp.Height == 100, "Bitmap.Height should be 100"
+bmp.Dispose()
+
+# --- PictureBox.Dispose() ---
+pb = PictureBox()
+pb.Width = 200
+pb.Height = 150
+pb.Dispose()
+assert pb.IsDisposed == True, "PictureBox.IsDisposed should be True"
+
+# --- Dispose twice must not throw ---
+f2 = Form()
+f2.Dispose()
+f2.Dispose()  # second call must be silent
+assert f2.IsDisposed == True, "Double-dispose should leave IsDisposed True"

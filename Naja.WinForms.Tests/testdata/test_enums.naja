@@ -1,0 +1,56 @@
+# test_enums.naja
+# Phase 1.2 — Enum Coercion & Equality
+# Risk: Naja integers are Int64 but WinForms enums are Int32.
+# DynamicEq must unwrap enums. [Flags] enums need bitwise coercion.
+
+from System.Windows.Forms import TextBox, Form, Button, DialogResult, AnchorStyles, DockStyle, BorderStyle, FlatStyle
+
+# --- Simple enum write/read (int literal → enum) ---
+txt = TextBox()
+txt.Dock = 5  # DockStyle.Fill
+assert txt.Dock == 5, "DockStyle.Fill ordinal should be 5"
+
+# --- DialogResult ---
+f = Form()
+f.DialogResult = 1  # DialogResult.OK
+assert f.DialogResult == 1, "DialogResult.OK ordinal should be 1"
+
+f.DialogResult = 2  # DialogResult.Cancel
+assert f.DialogResult == 2, "DialogResult.Cancel ordinal should be 2"
+
+# --- [Flags] enum: AnchorStyles combination ---
+# AnchorStyles.Top = 1, AnchorStyles.Left = 4, combined = 5... 
+# Actually: Top=1, Bottom=2, Left=4, Right=8
+btn = Button()
+btn.Anchor = 9  # AnchorStyles.Top | AnchorStyles.Right (1 | 8)
+assert btn.Anchor == 9, "AnchorStyles flags combination should be 9"
+
+# --- BorderStyle ordinals ---
+txt2 = TextBox()
+txt2.BorderStyle = 0  # BorderStyle.None
+assert txt2.BorderStyle == 0, "BorderStyle.None ordinal should be 0"
+
+txt2.BorderStyle = 1  # BorderStyle.FixedSingle
+assert txt2.BorderStyle == 1, "BorderStyle.FixedSingle ordinal should be 1"
+
+txt2.BorderStyle = 2  # BorderStyle.Fixed3D
+assert txt2.BorderStyle == 2, "BorderStyle.Fixed3D ordinal should be 2"
+
+# --- Named enum write, int read (round-trip through named constant) ---
+txt3 = TextBox()
+txt3.Dock = DockStyle.Fill
+assert txt3.Dock == 5, "Named DockStyle.Fill should read back as 5"
+
+txt3.Dock = DockStyle.Top
+assert txt3.Dock == 1, "Named DockStyle.Top should read back as 1"
+
+txt3.Dock = DockStyle.None
+assert txt3.Dock == 0, "Named DockStyle.None should read back as 0"
+
+# --- FlatStyle enum on Button ---
+btn2 = Button()
+btn2.FlatStyle = FlatStyle.Flat
+assert btn2.FlatStyle == 0, "FlatStyle.Flat ordinal should be 0"
+
+btn2.FlatStyle = FlatStyle.Standard
+assert btn2.FlatStyle == 3, "FlatStyle.Standard ordinal should be 3"

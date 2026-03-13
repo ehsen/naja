@@ -1,0 +1,94 @@
+# canary_scoping.naja
+# Tests: local scope, nonlocal, closures, late binding, LEGB rule
+
+# Basic local scope
+def test_local():
+    x = 42
+    return x
+
+assert test_local() == 42
+
+# nonlocal
+def test_nonlocal():
+    x = 1
+    def inner():
+        nonlocal x
+        x = 2
+    inner()
+    return x
+
+assert test_nonlocal() == 2
+
+# nonlocal chain (two levels deep)
+def test_nonlocal_chain():
+    x = 0
+    def middle():
+        nonlocal x
+        x = 1
+        def inner():
+            nonlocal x
+            x = 2
+        inner()
+    middle()
+    return x
+
+assert test_nonlocal_chain() == 2
+
+# Late binding — classic Python gotcha
+# All lambdas capture 'i' by reference, so they all see the FINAL value
+def test_late_binding():
+    funcs = [lambda: i for i in range(5)]
+    results = [f() for f in funcs]
+    assert results == [4, 4, 4, 4, 4], f"Late binding should give [4,4,4,4,4], got {results}"
+
+test_late_binding()
+
+# Closure over mutable variable
+def make_counter():
+    count = 0
+    def increment():
+        nonlocal count
+        count = count + 1
+        return count
+    return increment
+
+counter = make_counter()
+assert counter() == 1
+assert counter() == 2
+assert counter() == 3
+
+# Two independent closures share nothing
+c1 = make_counter()
+c2 = make_counter()
+c1()
+c1()
+assert c1() == 3
+assert c2() == 1, "c2 should be independent from c1"
+
+# Closure captures loop variable by cell reference
+def test_closure_in_loop_fixed():
+    # Fix the late-binding problem with default arg
+    funcs = [lambda i=i: i for i in range(5)]
+    results = [f() for f in funcs]
+    assert results == [0, 1, 2, 3, 4], f"Fixed closures should give [0..4], got {results}"
+
+test_closure_in_loop_fixed()
+
+# Nested function that reads (but doesn't write) enclosing scope — no nonlocal needed
+def outer_read():
+    msg = "hello"
+    def inner():
+        return msg  # read-only — no nonlocal needed
+    return inner()
+
+assert outer_read() == "hello"
+
+# global keyword
+g_val = 0
+
+def set_global():
+    global g_val
+    g_val = 99
+
+set_global()
+assert g_val == 99

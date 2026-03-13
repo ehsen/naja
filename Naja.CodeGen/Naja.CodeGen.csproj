@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Reflection.MetadataLoadContext" Version="10.0.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Naja.Lexer\Naja.Lexer.csproj" />
+    <ProjectReference Include="..\Naja.Parser\Naja.Parser.csproj" />
+    <ProjectReference Include="..\Naja.Semantics\Naja.Semantics.csproj" />
+    <ProjectReference Include="..\Naja.Inference\Naja.Inference.csproj" />
+  </ItemGroup>
+
+</Project>

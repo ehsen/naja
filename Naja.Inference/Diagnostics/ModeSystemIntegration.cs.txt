@@ -1,0 +1,471 @@
+using System.Reflection;
+using System.Reflection.Emit;
+using Naja.Parser;
+using Naja.Semantics;
+using NajaModule = Naja.Parser.Module;
+
+namespace Naja.CodeGen;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Integration Patches
+//
+// This file contains the EXACT changes needed to four existing files.
+// Everything is clearly marked BEFORE / AFTER. No existing logic changes
+// except the three insertion points. All additions are additive.
+//
+// Files changed:
+//   1. EmitContext.cs           — add Diagnostics property
+//   2. AssemblyEmitter.cs       — run inference + analyser before emission
+//   3. ExpressionEmitter.cs     — handle dynamic() and cast() call expressions
+//   4. CLI / driver             — accept --strict / --balanced / --permissive flag
+// ═══════════════════════════════════════════════════════════════════════════════
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 1. EmitContext.cs  — add two properties after the existing `ImportMap` block
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// BEFORE (end of property block, before constructor):
+//
+//     public Dictionary<string, (string TypeName, string AssemblyName)> ImportMap { get; } = new();
+//
+//     public EmitContext(
+//
+// AFTER:
+//
+//     public Dictionary<string, (string TypeName, string AssemblyName)> ImportMap { get; } = new();
+//
+//     /// <summary>
+//     /// Inference results for this module. Null when constructing EmitContext
+//     /// directly in unit tests that bypass the inference pass.
+//     /// </summary>
+//     public InferenceResult? Inference { get; init; }
+//
+//     /// <summary>
+//     /// Diagnostic sink — receives dynamic-site reports from the expression emitter.
+//     /// Null = Permissive (no reporting). Set by AssemblyEmitter from CompilationOptions.
+//     /// </summary>
+//     public DiagnosticSink? Diagnostics { get; init; }
+//
+//     public EmitContext(
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 2. AssemblyEmitter.cs  — run inference + analyser at the top of EmitModule()
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// CHANGE 2a: Add CompilationOptions parameter to AssemblyEmitter constructor.
+//
+// BEFORE:
+//     public AssemblyEmitter(SemanticModel model, string assemblyName = "NajaOutput")
+//     {
+//         _model = model;
+//         _assemblyName = assemblyName;
+//     }
+//
+// AFTER:
+//     public AssemblyEmitter(SemanticModel model, string assemblyName = "NajaOutput",
+//                            CompilationOptions? options = null)
+//     {
+//         _model   = model;
+//         _assemblyName = assemblyName;
+//         _options = options ?? CompilationOptions.Default;
+//     }
+//
+//     private readonly CompilationOptions _options;
+//
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// CHANGE 2b: At the TOP of EmitModule(), BEFORE Pass 1, add the inference run:
+//
+// BEFORE (line 70 area):
+//     private TypeBuilder EmitModule(NajaModule module, ModuleBuilder modBuilder)
+//     {
+//         var typeBuilder = modBuilder.DefineType(
+//
+// AFTER:
+//     private TypeBuilder EmitModule(NajaModule module, ModuleBuilder modBuilder)
+//     {
+//         // ── Inference + dynamic-site analysis ────────────────────────────────
+//         var inferenceEngine = new TypeInferenceEngine(_model);
+//         var inferenceResult = inferenceEngine.Infer(module);
+//
+//         var sink = new DiagnosticSink(_options.Mode, _options.FilePath);
+//         var analyser = new DynamicSiteAnalyser(inferenceResult, sink);
+//         analyser.Analyse(module);
+//
+//         // In strict mode this throws CompilationModeException with all errors.
+//         // In balanced mode this is a no-op (warnings already recorded in sink).
+//         // In permissive mode sink is empty and this is always a no-op.
+//         sink.ThrowIfErrors();
+//
+//         // Print warnings (balanced mode) to stderr
+//         if (sink.Warnings.Count > 0)
+//         {
+//             Console.Error.WriteLine($"\nNaja: {sink.Warnings.Count} dynamic site(s) found:");
+//             sink.PrintAll();
+//             Console.Error.WriteLine();
+//         }
+//         // ─────────────────────────────────────────────────────────────────────
+//
+//         var typeBuilder = modBuilder.DefineType(
+//
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// CHANGE 2c: Thread inferenceResult and sink into every EmitContext.
+//
+// Find the two places where `new EmitContext(...)` is constructed (mainCtx and
+// the function body ctx) and add two init properties:
+//
+//     var mainCtx = new EmitContext(mainIL, _model, typeBuilder, modBuilder,
+//                                   typeof(void), [])
+//     {
+//         Inference   = inferenceResult,    // ← ADD
+//         Diagnostics = sink,               // ← ADD
+//         // ... existing init properties ...
+//     };
+//
+//     // Same for function body contexts:
+//     var ctx = new EmitContext(il, _model, ct, modBuilder, typeof(object), paramNames)
+//     {
+//         IsInstanceMethod = !isStatic,
+//         SelfName         = skipSelf ? fn.Params[0].Name : null,
+//         Inference        = inferenceResult,    // ← ADD
+//         Diagnostics      = sink,               // ← ADD
+//     };
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 3. ExpressionEmitter.cs  — handle dynamic() and cast() in EmitCall / EmitBuiltinCall
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// Find the EmitCall method (or wherever builtins are dispatched by name).
+// Add these two cases BEFORE the general builtin lookup, so they take priority.
+//
+// BEFORE (inside the builtin name dispatch, near the top):
+//     if (e.Func is NameExpr { Name: var fnName })
+//     {
+//         switch (fnName)
+//         {
+//             // ... existing cases ...
+//
+// AFTER (add at the very top of the switch or as early-return ifs):
+
+public static partial class ExpressionEmitterExtensions
+{
+    /// <summary>
+    /// Handle the <c>dynamic(expr)</c> escape hatch.
+    ///
+    /// dynamic(expr) explicitly opts into dynamic dispatch for one expression.
+    /// It:
+    ///   1. Records the site in the DiagnosticSink (Info in strict, nothing in others)
+    ///   2. Emits the inner expression using the normal emitter
+    ///   3. Boxes the result to object if needed
+    ///   4. Returns UnknownType (so subsequent operations use DynamicCall as expected)
+    ///
+    /// Usage in Python source:
+    ///   result = dynamic(some_untyped_call())
+    ///   value  = dynamic(obj.unknown_method())
+    /// </summary>
+    public static NajaType EmitDynamicCall(
+        CallExpr call, EmitContext ctx, ExpressionEmitter emitter)
+    {
+        if (call.Args.Count != 1)
+            throw new CodeGenException(
+                "dynamic() requires exactly one argument", call.Line, call.Column);
+
+        var inner = call.Args[0];
+
+        // Report to sink (Info in strict, no-op in balanced/permissive)
+        ctx.Diagnostics?.ReportExplicitDynamic(
+            DescribeExpr(inner), call.Line, call.Column);
+
+        // Emit the inner expression — it may itself be typed or untyped
+        var innerType = emitter.Emit(inner);
+
+        // Box to object so the result is always a heap reference
+        // (callers expecting dynamic dispatch always work with object)
+        TypeMapper.EmitBox(ctx.IL, innerType);
+
+        return NajaTypes.Unknown;
+    }
+
+    /// <summary>
+    /// Handle the <c>cast(T, expr)</c> type assertion.
+    ///
+    /// cast(T, expr) tells the compiler "trust me, this is type T".
+    /// It:
+    ///   1. Records the cast in the DiagnosticSink (Info — always)
+    ///   2. Emits the inner expression
+    ///   3. Emits an unbox/castclass to the asserted type
+    ///   4. Returns the asserted NajaType
+    ///
+    /// Valid type names: int, float, str, bool, list, dict, set, bytes
+    ///
+    /// Usage in Python source:
+    ///   x = cast(int, library_call())
+    ///   y = cast(str, obj.get_name())
+    ///
+    /// IL emitted (example: cast(int, expr)):
+    ///   [emit expr → leaves object on stack]
+    ///   unbox.any [int64]      ← if inner type is object
+    ///   -- or --
+    ///   conv.i8                ← if inner type is already numeric
+    /// </summary>
+    public static NajaType EmitCast(
+        CallExpr call, EmitContext ctx, ExpressionEmitter emitter)
+    {
+        if (call.Args.Count != 2)
+            throw new CodeGenException(
+                "cast() requires exactly two arguments: cast(type, expression)",
+                call.Line, call.Column);
+
+        var typeArg = call.Args[0];
+        var exprArg = call.Args[1];
+
+        // Parse the target type from the first argument
+        var targetType = ParseCastTarget(typeArg, call.Line, call.Column);
+
+        // Report to sink
+        ctx.Diagnostics?.ReportCast(
+            DescribeExpr(typeArg), DescribeExpr(exprArg), call.Line, call.Column);
+
+        // Emit the expression being cast
+        var innerType = emitter.Emit(exprArg);
+
+        // Emit the coercion opcodes
+        EmitCoercion(ctx.IL, innerType, targetType, call.Line, call.Column);
+
+        return targetType;
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    private static NajaType ParseCastTarget(Expression typeArg, int line, int col)
+    {
+        if (typeArg is not NameExpr n)
+            throw new CodeGenException(
+                $"cast() first argument must be a type name (int, float, str, bool, list, dict, set, bytes). " +
+                $"Got: {typeArg.GetType().Name}", line, col);
+
+        return n.Name switch
+        {
+            "int"   => NajaTypes.Int,
+            "float" => NajaTypes.Float,
+            "str"   => NajaTypes.Str,
+            "bool"  => NajaTypes.Bool,
+            "bytes" => NajaTypes.Bytes,
+            "list"  => new ListType(NajaTypes.Unknown),
+            "dict"  => new DictType(NajaTypes.Unknown, NajaTypes.Unknown),
+            "set"   => new SetType(NajaTypes.Unknown),
+            _ => throw new CodeGenException(
+                $"cast(): unknown target type '{n.Name}'. " +
+                $"Supported: int, float, str, bool, bytes, list, dict, set.", line, col)
+        };
+    }
+
+    private static void EmitCoercion(
+        ILGenerator il, NajaType from, NajaType to, int line, int col)
+    {
+        if (from.GetType() == to.GetType()) return;  // already correct type on stack
+
+        var clrTo = TypeMapper.ToClrType(to);
+
+        switch (to)
+        {
+            case IntType:
+                if (from is FloatType)           il.Emit(OpCodes.Conv_I8);
+                else if (from is BoolType)       il.Emit(OpCodes.Conv_I8);
+                else if (from is UnknownType)    il.Emit(OpCodes.Unbox_Any, typeof(long));
+                else if (from is StrType)
+                {
+                    // call NajaBuiltins.ToInt(string) → long
+                    il.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ToInt))!);
+                }
+                break;
+
+            case FloatType:
+                if (from is IntType or BoolType) il.Emit(OpCodes.Conv_R8);
+                else if (from is UnknownType)    il.Emit(OpCodes.Unbox_Any, typeof(double));
+                else if (from is StrType)
+                {
+                    il.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ToFloat))!);
+                }
+                break;
+
+            case BoolType:
+                if (from is UnknownType)
+                {
+                    il.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ToBool))!);
+                }
+                else
+                {
+                    // Numeric → bool: != 0
+                    il.Emit(OpCodes.Ldc_I4_0);
+                    if (from is IntType) { il.Emit(OpCodes.Conv_I8); }
+                    il.Emit(OpCodes.Ceq);
+                    il.Emit(OpCodes.Ldc_I4_0);
+                    il.Emit(OpCodes.Ceq);  // double-negate to get 0/1
+                }
+                break;
+
+            case StrType:
+                if (from is UnknownType)
+                    il.Emit(OpCodes.Castclass, typeof(string));
+                else
+                {
+                    TypeMapper.EmitBox(il, from);
+                    il.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ToStr))!);
+                }
+                break;
+
+            case ListType:
+                il.Emit(OpCodes.Castclass, typeof(System.Collections.Generic.List<object>));
+                break;
+
+            case DictType:
+                il.Emit(OpCodes.Castclass, typeof(System.Collections.Generic.Dictionary<object, object>));
+                break;
+
+            case SetType:
+                il.Emit(OpCodes.Castclass, typeof(System.Collections.Generic.HashSet<object>));
+                break;
+
+            case BytesType:
+                il.Emit(OpCodes.Castclass, typeof(byte[]));
+                break;
+        }
+    }
+
+    private static string DescribeExpr(Expression expr) => expr switch
+    {
+        NameExpr      e => e.Name,
+        CallExpr      e => $"{DescribeExpr(e.Func)}(...)",
+        AttributeExpr e => $"{DescribeExpr(e.Object)}.{e.Attribute}",
+        StringLiteral e => $"'{e.Value}'",
+        IntLiteral    e => e.Value.ToString(),
+        _               => expr.GetType().Name
+    };
+}
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 4. CompilationOptions  — carries mode + other AOT options through the pipeline
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// <summary>
+/// Compilation-wide settings passed from the CLI into AssemblyEmitter.
+/// </summary>
+public sealed class CompilationOptions
+{
+    public static readonly CompilationOptions Default = new();
+
+    /// <summary>How to handle unresolvable types. Default: Permissive (current behaviour).</summary>
+    public CompilationMode Mode { get; init; } = CompilationMode.Permissive;
+
+    /// <summary>Source file path — used in diagnostic messages.</summary>
+    public string FilePath { get; init; } = "<source>";
+
+    /// <summary>
+    /// Target platform. AOT and WASM targets force Strict mode regardless of --mode flag.
+    /// (You cannot emit DynamicCall/reflection for NativeAOT/WASM/Unity.)
+    /// </summary>
+    public CompilationTarget Target { get; init; } = CompilationTarget.Jit;
+
+    /// <summary>
+    /// Effective mode: if target is AOT/WASM/Unity, always Strict.
+    /// Otherwise use the user-specified Mode.
+    /// </summary>
+    public CompilationMode EffectiveMode =>
+        Target is CompilationTarget.Aot or CompilationTarget.Wasm or CompilationTarget.Il2Cpp
+            ? CompilationMode.Strict
+            : Mode;
+}
+
+/// <summary>Compilation target platform.</summary>
+public enum CompilationTarget
+{
+    /// <summary>Full JIT (.NET desktop/server). DynamicCall allowed.</summary>
+    Jit,
+    /// <summary>NativeAOT. No reflection at runtime. Strict mode forced.</summary>
+    Aot,
+    /// <summary>Browser/WASI WASM. No threading, no sockets. Strict mode forced.</summary>
+    Wasm,
+    /// <summary>Unity IL2CPP. No open generics, no Reflection.Emit. Strict mode forced.</summary>
+    Il2Cpp
+}
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 5. ExpressionEmitter  — where to add the dynamic() / cast() dispatch
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// In ExpressionEmitter.EmitCall() (or your equivalent EmitBuiltinCall method),
+// find where you dispatch on builtin function names and add at the very top:
+//
+//   private NajaType EmitCall(CallExpr e)
+//   {
+//       // ── Naja escape hatches — highest priority, before any other dispatch ──
+//       if (e.Func is NameExpr { Name: "dynamic" })
+//           return ExpressionEmitterExtensions.EmitDynamicCall(e, _ctx, this);
+//       if (e.Func is NameExpr { Name: "cast" })
+//           return ExpressionEmitterExtensions.EmitCast(e, _ctx, this);
+//       // ────────────────────────────────────────────────────────────────────────
+//
+//       // ... existing call dispatch logic unchanged ...
+//   }
+//
+// The `Emit` method on ExpressionEmitter is currently private — you need to make
+// it `internal` so ExpressionEmitterExtensions can call it, OR inline EmitDynamicCall
+// and EmitCast directly into EmitCall as local logic. Inlining is simpler:
+//
+//   if (e.Func is NameExpr { Name: "dynamic" } && e.Args.Count == 1)
+//   {
+//       _ctx.Diagnostics?.ReportExplicitDynamic(...);
+//       var t = Emit(e.Args[0]);
+//       TypeMapper.EmitBox(IL, t);
+//       return NajaTypes.Unknown;
+//   }
+//
+//   if (e.Func is NameExpr { Name: "cast" } && e.Args.Count == 2)
+//   {
+//       var target = ParseCastTarget(e.Args[0], e.Line, e.Column);
+//       _ctx.Diagnostics?.ReportCast(...);
+//       var inner = Emit(e.Args[1]);
+//       EmitCoercion(IL, inner, target, e.Line, e.Column);
+//       return target;
+//   }
+//
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 6. CLI driver  — parse --strict / --balanced / --permissive
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// In your CLI entry point (Program.cs / CommandLine.cs):
+//
+//   var mode = args.Contains("--strict")      ? CompilationMode.Strict     :
+//              args.Contains("--balanced")    ? CompilationMode.Balanced   :
+//              args.Contains("--permissive")  ? CompilationMode.Permissive :
+//              CompilationMode.Permissive;   // default: current behaviour unchanged
+//
+//   var target = args.Contains("--target=aot")   ? CompilationTarget.Aot   :
+//                args.Contains("--target=wasm")  ? CompilationTarget.Wasm  :
+//                args.Contains("--target=il2cpp")? CompilationTarget.Il2Cpp:
+//                CompilationTarget.Jit;
+//
+//   var options = new CompilationOptions
+//   {
+//       Mode     = mode,
+//       Target   = target,
+//       FilePath = sourceFilePath
+//   };
+//
+//   var emitter = new AssemblyEmitter(_model, assemblyName, options);
+//
+//
+// Example compiler invocations:
+//
+//   naja build app.py                        # permissive, existing behaviour
+//   naja build app.py --balanced             # warnings on dynamic sites
+//   naja build app.py --strict               # errors on dynamic sites
+//   naja build app.py --target=aot           # forces strict automatically
+//   naja build app.py --target=wasm          # forces strict automatically

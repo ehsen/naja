@@ -1,0 +1,7 @@
+<!--
+  build/Naja.Sdk.targets
+  Auto-imported by NuGet for projects that reference Naja.Sdk as a PackageReference.
+  Nothing needed here for now — all pipeline logic lives in Sdk/Sdk.targets.
+  Kept as a placeholder so NuGet's auto-import contract is fully satisfied.
+-->
+<Project />

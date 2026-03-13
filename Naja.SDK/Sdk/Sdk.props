@@ -1,0 +1,37 @@
+<!--
+  Sdk.props
+  Injected by MSBuild BEFORE the user's .najaproj body is evaluated.
+  Use this for defaults the user can override inside their project file.
+-->
+<Project>
+
+  <PropertyGroup>
+    <!-- Where the naja.exe compiler lives.
+         During local dev this resolves to the Naja.CLI output next to the solution.
+         When distributed as a NuGet package, point this at the tools/ folder inside
+         the package (set via a build\ target that knows the NuGet cache path). -->
+    <NajaCompilerPath Condition="'$(NajaCompilerPath)' == ''">naja</NajaCompilerPath>
+
+    <!-- Opt out of default .naja glob by setting this to false in your .najaproj -->
+    <EnableDefaultNajaItems Condition="'$(EnableDefaultNajaItems)' == ''">true</EnableDefaultNajaItems>
+
+    <!-- Default output type — mirrors Microsoft.NET.Sdk behaviour -->
+    <OutputType Condition="'$(OutputType)' == ''">Library</OutputType>
+
+    <!-- Target framework default — users should set this explicitly -->
+    <TargetFramework Condition="'$(TargetFramework)' == ''">net10.0-windows</TargetFramework>
+
+    <!--
+      Disable ALL default C# item globs — this is a Naja project, not a C# project.
+      Without this MSBuild would scan for *.cs files and find nothing (or worse,
+      find leftover files and try to compile them with Roslyn).
+    -->
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <EnableDefaultItems>false</EnableDefaultItems>
+
+    <!-- Intermediate output path — mirrors standard SDK convention -->
+    <IntermediateOutputPath Condition="'$(IntermediateOutputPath)' == ''">obj\$(Configuration)\$(TargetFramework)\</IntermediateOutputPath>
+    <OutputPath Condition="'$(OutputPath)' == ''">bin\$(Configuration)\$(TargetFramework)\</OutputPath>
+  </PropertyGroup>
+
+</Project>

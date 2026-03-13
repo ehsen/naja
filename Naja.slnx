@@ -1,0 +1,18 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="global.json" />
+  </Folder>
+  <Project Path="Naja.CLI/Naja.CLI.csproj" />
+  <Project Path="Naja.CodeGen.Tests/Naja.CodeGen.Tests.csproj" />
+  <Project Path="Naja.CodeGen/Naja.CodeGen.csproj" />
+  <Project Path="Naja.Inference.Tests/Naja.Inference.Tests.csproj" />
+  <Project Path="Naja.Inference/Naja.Inference.csproj" />
+  <Project Path="Naja.Lexer.Tests/Naja.Lexer.Tests.csproj" />
+  <Project Path="Naja.Lexer/Naja.Lexer.csproj" />
+  <Project Path="Naja.Parser.Tests/Naja.Parser.Tests.csproj" />
+  <Project Path="Naja.Parser/Naja.Parser.csproj" />
+  <Project Path="Naja.SDK/Naja.Sdk.csproj" Id="6c0a3ba4-a9cb-42e2-9e51-1d794ae32509" />
+  <Project Path="Naja.Semantics.Tests/Naja.Semantics.Tests.csproj" />
+  <Project Path="Naja.Semantics/Naja.Semantics.csproj" />
+  <Project Path="Naja.WinForms.Tests/Naja.WinForms.Tests.csproj" Id="b36505ff-e90f-4f4b-8d99-23fef4270e01" />
+</Solution>

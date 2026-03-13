@@ -1,0 +1,17 @@
+f:\Sources\Naja\Naja.Semantics\bin\Release\net10.0\Naja.Semantics.deps.json
+f:\Sources\Naja\Naja.Semantics\bin\Release\net10.0\Naja.Semantics.dll
+f:\Sources\Naja\Naja.Semantics\bin\Release\net10.0\Naja.Semantics.pdb
+f:\Sources\Naja\Naja.Semantics\bin\Release\net10.0\Naja.Lexer.dll
+f:\Sources\Naja\Naja.Semantics\bin\Release\net10.0\Naja.Parser.dll
+f:\Sources\Naja\Naja.Semantics\bin\Release\net10.0\Naja.Lexer.pdb
+f:\Sources\Naja\Naja.Semantics\bin\Release\net10.0\Naja.Parser.pdb
+f:\Sources\Naja\Naja.Semantics\obj\Release\net10.0\Naja.Semantics.csproj.AssemblyReference.cache
+f:\Sources\Naja\Naja.Semantics\obj\Release\net10.0\Naja.Semantics.GeneratedMSBuildEditorConfig.editorconfig
+f:\Sources\Naja\Naja.Semantics\obj\Release\net10.0\Naja.Semantics.AssemblyInfoInputs.cache
+f:\Sources\Naja\Naja.Semantics\obj\Release\net10.0\Naja.Semantics.AssemblyInfo.cs
+f:\Sources\Naja\Naja.Semantics\obj\Release\net10.0\Naja.Semantics.csproj.CoreCompileInputs.cache
+f:\Sources\Naja\Naja.Semantics\obj\Release\net10.0\Naja.Sem.B39D0C1E.Up2Date
+f:\Sources\Naja\Naja.Semantics\obj\Release\net10.0\Naja.Semantics.dll
+f:\Sources\Naja\Naja.Semantics\obj\Release\net10.0\refint\Naja.Semantics.dll
+f:\Sources\Naja\Naja.Semantics\obj\Release\net10.0\Naja.Semantics.pdb
+f:\Sources\Naja\Naja.Semantics\obj\Release\net10.0\ref\Naja.Semantics.dll

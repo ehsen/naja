@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "dgSpecHash": "6LuReq/6rRU=",
+  "success": true,
+  "projectFilePath": "F:\\Sources\\Naja\\Naja.CLI\\Naja.CLI.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\Ehsen\\.nuget\\packages\\system.reflection.metadataloadcontext\\10.0.4\\system.reflection.metadataloadcontext.10.0.4.nupkg.sha512"
+  ],
+  "logs": []
+}

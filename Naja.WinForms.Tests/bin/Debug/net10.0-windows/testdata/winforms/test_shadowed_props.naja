@@ -1,0 +1,55 @@
+# test_shadowed_props.naja
+# Phase 2.1 — AmbiguousMatchException Prevention
+# Risk: WinForms uses 'new' to hide base class properties.
+# Type.GetProperty() throws AmbiguousMatchException if not handled.
+# SetAttr must resolve to the most-derived property in the hierarchy.
+
+from System.Windows.Forms import Form, Button, Panel, GroupBox, TabPage
+from System.Drawing import Size
+
+# --- Form.Size hides Control.Size ---
+f = Form()
+f.Text = "Naja Form"
+f.Size = Size(400, 300)
+assert f.Text == "Naja Form",    "Form.Text round-trip failed"
+assert f.Size.Width  == 400,     "Form.Size.Width should be 400"
+assert f.Size.Height == 300,     "Form.Size.Height should be 300"
+
+# Overwrite and verify no stale value
+f.Size = Size(800, 600)
+assert f.Size.Width  == 800,     "Overwritten Form.Size.Width should be 800"
+assert f.Size.Height == 600,     "Overwritten Form.Size.Height should be 600"
+
+# --- Panel.Size (ScrollableControl → Control, shadowed) ---
+p = Panel()
+p.Size = Size(300, 200)
+assert p.Size.Width  == 300, "Panel.Size.Width should be 300"
+assert p.Size.Height == 200, "Panel.Size.Height should be 200"
+
+# --- Button.Text (shadowed through inheritance chain) ---
+b = Button()
+b.Text = "Click Me"
+assert b.Text == "Click Me", "Button.Text round-trip failed"
+
+b.Text = ""
+assert b.Text == "", "Button.Text should allow empty string"
+
+b.Text = "Updated"
+assert b.Text == "Updated", "Button.Text update failed"
+
+# --- GroupBox.Text (shadowed) ---
+gb = GroupBox()
+gb.Text = "Settings"
+assert gb.Text == "Settings", "GroupBox.Text round-trip failed"
+
+# --- TabPage.Text (shadowed) ---
+tp = TabPage()
+tp.Text = "Tab 1"
+assert tp.Text == "Tab 1", "TabPage.Text round-trip failed"
+
+# --- Mixed: Size + Text on same control ---
+f2 = Form()
+f2.Text = "Test Window"
+f2.Size = Size(640, 480)
+assert f2.Text        == "Test Window", "Form.Text after Size set failed"
+assert f2.Size.Width  == 640,           "Form.Size.Width after Text set failed"

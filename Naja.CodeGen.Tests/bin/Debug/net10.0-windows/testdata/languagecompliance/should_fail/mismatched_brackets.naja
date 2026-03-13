@@ -1,0 +1,3 @@
+# Syntax error: mismatched brackets
+def foo([x):
+    pass

@@ -1,0 +1,104 @@
+<!--
+  Sdk.targets
+  Injected by MSBuild AFTER the user's .najaproj body is evaluated.
+  This is where the Naja compile pipeline lives.
+-->
+<Project>
+
+  <!-- ── 1. Item type declaration ──────────────────────────────────────────────
+       Registers NajaCompile as a known MSBuild item type.
+       Users can add/remove files explicitly:
+         <NajaCompile Include="extra.naja" />
+         <NajaCompile Remove="generated.naja" />
+  -->
+  <ItemGroup Condition="'$(EnableDefaultNajaItems)' == 'true'">
+    <NajaCompile Include="**\*.naja"
+                 Exclude="obj\**;bin\**;**\*.Designer.naja" />
+  </ItemGroup>
+
+  <!-- ── 2. Clean target — remove Naja IL output on `dotnet clean` ─────────────
+  -->
+  <Target Name="NajaClean" AfterTargets="Clean">
+    <Delete Files="$(IntermediateOutputPath)$(AssemblyName).dll" />
+  </Target>
+
+  <!-- ── 3. CoreCompile — the main Naja → IL compilation target ───────────────
+       MSBuild calls CoreCompile as part of the standard build pipeline.
+       Inputs/Outputs enable incremental builds — only recompiles when
+       a .naja source file is newer than the output dll.
+  -->
+  <Target Name="CoreCompile"
+          Inputs="@(NajaCompile)"
+          Outputs="$(IntermediateOutputPath)$(AssemblyName).dll"
+          DependsOnTargets="ResolveReferences;PrepareForBuild">
+
+    <Error Condition="'@(NajaCompile)' == ''"
+           Text="No .naja source files found in project '$(MSBuildProjectFullPath)'. Add at least one .naja file or set EnableDefaultNajaItems=false." />
+
+    <Message Text="Naja: compiling @(NajaCompile->Count()) file(s) → $(AssemblyName).dll"
+             Importance="high" />
+
+    <!-- Ensure intermediate directory exists -->
+    <MakeDir Directories="$(IntermediateOutputPath)" />
+
+    <!--
+      Invoke the Naja compiler.
+      Passes every .naja source file, the output path, and the project type.
+      The compiler handles lex → parse → analyse → IL emit.
+    -->
+    <Exec Command="&quot;$(NajaCompilerPath)&quot; compile @(NajaCompile->'&quot;%(FullPath)&quot;', ' ') -o &quot;$(IntermediateOutputPath)$(AssemblyName).dll&quot; -t &quot;$(OutputType)&quot;"
+          WorkingDirectory="$(MSBuildProjectDirectory)"
+          ConsoleToMSBuild="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="NajaCompileOutput" />
+    </Exec>
+
+    <Message Text="$(NajaCompileOutput)" Importance="normal"
+             Condition="'$(NajaCompileOutput)' != ''" />
+
+    <!-- Register the emitted dll as the primary output assembly -->
+    <ItemGroup>
+      <IntermediateAssembly    Include="$(IntermediateOutputPath)$(AssemblyName).dll" />
+      <FileWrites              Include="$(IntermediateOutputPath)$(AssemblyName).dll" />
+    </ItemGroup>
+
+  </Target>
+
+  <!-- ── 4. Suppress C#-specific targets that don't apply to Naja ─────────────
+       MSBuild's Microsoft.Common.targets expects these to exist.
+       We override them as no-ops so the build doesn't fail looking for
+       Roslyn-specific pipeline steps.
+  -->
+  <Target Name="CreateManifestResourceNames" />
+  <Target Name="GenerateSupportedRuntime" />
+
+  <!-- ── 5. Copy output to final bin/ directory ────────────────────────────────
+       After CoreCompile, copy the dll from obj/ to bin/ alongside the
+       runtimeconfig and deps files that MSBuild generates automatically.
+  -->
+  <Target Name="CopyNajaOutputToOutputPath"
+          AfterTargets="CoreCompile"
+          Condition="Exists('$(IntermediateOutputPath)$(AssemblyName).dll')">
+
+    <Copy SourceFiles="$(IntermediateOutputPath)$(AssemblyName).dll"
+          DestinationFolder="$(OutputPath)"
+          SkipUnchangedFiles="true" />
+
+    <ItemGroup>
+      <FileWrites Include="$(OutputPath)$(AssemblyName).dll" />
+    </ItemGroup>
+
+  </Target>
+
+  <!-- ── 6. dotnet run support ─────────────────────────────────────────────────
+       `dotnet run` needs to know the entry point assembly.
+       This sets RunArguments so the host knows what to execute.
+  -->
+  <Target Name="NajaSetRunArguments"
+          BeforeTargets="_SetRunArguments"
+          Condition="'$(OutputType)' == 'Exe' Or '$(OutputType)' == 'WinExe'">
+    <PropertyGroup>
+      <RunCommand>$(OutputPath)$(AssemblyName).exe</RunCommand>
+    </PropertyGroup>
+  </Target>
+
+</Project>

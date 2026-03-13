@@ -1,0 +1,4 @@
+# Syntax error: keyword argument before positional
+def foo(x, y):
+    pass
+foo(y=1, 2)
