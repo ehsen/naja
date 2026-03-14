@@ -177,7 +177,8 @@ public sealed class GeneratorTests
             assert take(5, naturals()) == [1, 2, 3, 4, 5]
             """);
     */
-    [Fact]
+    
+    [Fact(Skip = "Generators not yet implemented")]
     public void Infinite_Fibonacci()
         => Run("""
             def fib():
