@@ -1,7 +1,6 @@
 # Build outputs
-bin/
-obj/
-out/
+**/bin/
+**/obj/
 
 # Visual Studio
 .vs/
@@ -9,42 +8,33 @@ out/
 *.suo
 *.userosscache
 *.sln.docstates
-*.userprefs
 
 # Rider
 .idea/
 
 # Test results
-TestResults/
-*.trx
-*.coverage
-*.coveragexml
-*.cobertura.xml
+**/TestResults/
+**/*.trx
+**/*.coverage
+**/*.coveragexml
 
 # NuGet
 packages/
 *.nupkg
-*.snupkg
-project.lock.json
 
 # Logs
 *.log
 *.txt
-logs/
-log/
+**/logs/
 
-# Build logs
-build_*.txt
-build_output*
-
-# Compiled outputs that may leak to root
+# Compiled outputs
 *.exe
 *.dll
 *.deps.json
 *.runtimeconfig.json
 *.pdb
 
-# Naja scratch/test files in root (testdata folders are excluded from this)
+# Naja scratch files
 *.naja
 !**/testdata/**/*.naja
 
@@ -53,9 +43,6 @@ build_output*
 Thumbs.db
 desktop.ini
 
-# Temp / debug artifacts
+# Debug artifacts
 *.il
 *.tmp
-*.cache
-NajaDebugAsm.*
-dump*.il
