@@ -105,7 +105,8 @@ public sealed class AssemblyEmitter
     public AssemblyEmitter(
         SemanticModel model,
         string assemblyName,
-        ProjectType projectType = ProjectType.Exe)
+        ProjectType projectType = ProjectType.Exe,
+        CompilationProfile console = default)
     {
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _assemblyName = assemblyName ?? throw new ArgumentNullException(nameof(assemblyName));
@@ -214,7 +215,7 @@ public sealed class AssemblyEmitter
     /// The resulting bytes are loaded via Assembly.Load so NajaEngine
     /// receives a live Assembly exactly as before.
     /// </summary>
-    public Assembly EmitToMemory(NajaParserModule najaModule)
+    public Assembly EmitToMemory(NajaParserModule najaModule, CompilationProfile console)
     {
         var asmName = new AssemblyName(_assemblyName);
         var asmBuilder = new PersistedAssemblyBuilder(asmName, typeof(object).Assembly);
