@@ -42,7 +42,7 @@ public sealed class NajaEngine
     ///     Compilation profile. Defaults to auto-detect from imports, but
     ///     can be forced to WinForms for tests that need the WinForms preamble.
     /// </param>
-    public void Eval(string scriptPath, CompilationProfile? profile = null)
+    public void Eval(string scriptPath, CompilationProfile profile = CompilationProfile.Console)
     {
         // ── 1. Read source ────────────────────────────────────────────────────
         if (!File.Exists(scriptPath))
@@ -96,8 +96,8 @@ public sealed class NajaEngine
         try
         {
             // EmitToMemory uses AssemblyBuilderAccess.Run — no files written.
-            // Profile is auto-detected from imports (WinForms, WPF, or Console).
-            assembly = emitter.EmitToMemory(ast);
+            
+            assembly = emitter.EmitToMemory(ast,profile);
         }
         catch (CodeGenException)
         {
