@@ -3,6 +3,7 @@ using System.Reflection;
 using Naja.Lexer;
 using Naja.Semantics;
 using Naja.CodeGen;
+using Naja.Parser;
 //using Naja.Inference;
 using NajaParser = Naja.Parser.Parser;
 using NajaModule = Naja.Parser.Module;
@@ -97,7 +98,7 @@ public static class Commands
 
         try
         {
-            var emitter = new AssemblyEmitter(model, asmName, opts.ProjectType);
+            var emitter = new AssemblyEmitter(model, asmName, opts.ProjectType, opts.Profile);
             emitter.EmitToFile(module, opts.OutputFile);
         }
         catch (Exception ex)
@@ -148,17 +149,37 @@ public static class Commands
 
         try
         {
-            var emitter = new AssemblyEmitter(model, asmName, ProjectType.Library);
-            var assembly = emitter.EmitToMemory(module);
+            // Detect only to give a useful error — not to change behavior.
+            bool hasAspNet = module.Body.OfType<FromImportStatement>()
+                .Any(s => s.Module.StartsWith("Microsoft.AspNetCore", StringComparison.OrdinalIgnoreCase));
+            if (hasAspNet)
+            {
+                PrintError(
+                    "ASP.NET Core applications cannot be run with 'naja run' because they require " +
+                    "the dotnet host and a properly initialized ASP.NET runtime environment.\n" +
+                    "Use a .najaproj with <NajaProfile>web</NajaProfile> and run with 'dotnet run' instead.");
+                return 1;
+            }
+
+            // naja run is for scripts and console/desktop apps.
+            // ASP.NET Core cannot run in-process — it requires the dotnet host.
+            // We do NOT detect profile from imports here. For ASP.NET projects,
+            // users must use `dotnet run` with a .najaproj, not `naja run`.
+            //
+            // The only thing we decide here is that scripts executed via `naja run`
+            // are always treated as Exe (entry point required) with Console profile
+            // unless the user explicitly passes --profile in the future.
+            // This matches `dotnet-script` and `csi.exe` behaviour.
+            var emitter = new AssemblyEmitter(model, asmName, ProjectType.Exe, CompilationProfile.Console);
+            var assembly = emitter.EmitToMemory(module, CompilationProfile.Console);
 
             sw.Stop();
             if (verbose) PrintInfo($"Compiled in {sw.ElapsedMilliseconds}ms — running...\n");
 
             var type = assembly.GetType(asmName)
                 ?? throw new Exception($"Module type '{asmName}' not found in emitted assembly");
-            var main = type.GetMethod("Main",
-                BindingFlags.Public | BindingFlags.Static)
-                ?? throw new Exception("Main method not found");
+            var main = type.GetMethod("Main", BindingFlags.Public | BindingFlags.Static)
+                ?? throw new Exception("No static Main() found — was the script compiled as Exe?");
 
             main.Invoke(null, null);
             return 0;
@@ -203,7 +224,7 @@ public static class Commands
         {
             var tempDll = Path.Combine(tempDir, asmName + ".dll");
 
-            if (!TryEmit(model, module, asmName, opts.ProjectType, opts.Verbose, tempDll))
+            if (!TryEmit(model, module, asmName, opts.ProjectType, opts.Profile, opts.Verbose, tempDll))
                 return 1;
 
             // Use the user's own .najaproj if available so PackageReferences survive.
@@ -216,7 +237,7 @@ public static class Commands
             }
             else
             {
-                tempProj = WriteTempProject(tempDir, asmName, opts.ProjectType);
+                tempProj = WriteTempProject(tempDir, asmName, opts.ProjectType, opts.Profile);
             }
 
             var outDir = opts.OutputDir
@@ -293,12 +314,13 @@ public static class Commands
         NajaModule module,
         string asmName,
         ProjectType projectType,
+        CompilationProfile profile,
         bool verbose,
         string outputPath)
     {
         try
         {
-            var emitter = new AssemblyEmitter(model, asmName, projectType);
+            var emitter = new AssemblyEmitter(model, asmName, projectType, profile);
             emitter.EmitToFile(module, outputPath);
             if (verbose) PrintStage("Emit", 0);
             return true;
@@ -338,7 +360,11 @@ public static class Commands
     /// Writes a minimal .najaproj for publish when the user only has a bare
     /// .naja file. MSBuild uses it for OutputType and TargetFramework.
     /// </summary>
-    private static string WriteTempProject(string tempDir, string asmName, ProjectType projectType)
+    private static string WriteTempProject(
+        string tempDir,
+        string asmName,
+        ProjectType projectType,
+        CompilationProfile profile)
     {
         var outputType = projectType switch
         {
@@ -347,18 +373,43 @@ public static class Commands
             _ => "Library"
         };
 
-        var winForms = projectType == ProjectType.WinExe
+        // Select the correct TFM for each profile.
+        // -windows suffix is ONLY for WinForms/WPF — it activates Microsoft.WindowsDesktop.App.
+        // Console and Web use plain net10.0.
+        var tfm = profile switch
+        {
+            CompilationProfile.WinForms => "net10.0-windows",
+            CompilationProfile.Wpf => "net10.0-windows",
+            _ => "net10.0"
+        };
+
+        // WinForms needs <UseWindowsForms> so MSBuild adds the WinForms references.
+        var winForms = profile == CompilationProfile.WinForms
             ? "\n    <UseWindowsForms>true</UseWindowsForms>" : string.Empty;
+
+        var wpf = profile == CompilationProfile.Wpf
+            ? "\n    <UseWPF>true</UseWPF>" : string.Empty;
+
+        // ASP.NET Core needs a FrameworkReference — this is how Microsoft.NET.Sdk.Web does it.
+        // Without this, dotnet publish will not include the ASP.NET shared framework.
+        var aspNetRef = profile == CompilationProfile.AspNetCore
+            ? """
+              <ItemGroup>
+                <FrameworkReference Include="Microsoft.AspNetCore.App" />
+              </ItemGroup>
+              """
+            : string.Empty;
 
         var xml = $"""
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup>
                 <OutputType>{outputType}</OutputType>
-                <TargetFramework>net10.0-windows</TargetFramework>
-                <AssemblyName>{asmName}</AssemblyName>{winForms}
+                <TargetFramework>{tfm}</TargetFramework>
+                <AssemblyName>{asmName}</AssemblyName>{winForms}{wpf}
                 <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
                 <EnableDefaultItems>false</EnableDefaultItems>
               </PropertyGroup>
+              {aspNetRef}
               <ItemGroup>
                 <Content Include="{asmName}.dll">
                   <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
@@ -411,6 +462,7 @@ public static class Commands
         List<string> InputFiles,
         string OutputFile,
         ProjectType ProjectType,
+        CompilationProfile Profile,
         string Configuration,
         bool Verbose);
 
@@ -420,6 +472,7 @@ public static class Commands
         string InputFile,
         string? OutputDir,
         ProjectType ProjectType,
+        CompilationProfile Profile,
         string RuntimeIdentifier,
         bool Verbose);
 
@@ -429,6 +482,7 @@ public static class Commands
         string? output = null;
         bool verbose = false;
         var projectType = ProjectType.Library;
+        var profile = CompilationProfile.Console;
         var config = "Debug";
 
         for (int i = 0; i < args.Length; i++)
@@ -443,6 +497,11 @@ public static class Commands
                     if (i + 1 >= args.Length) { Console.Error.WriteLine("error: -t requires a value"); return null; }
                     projectType = ParseProjectType(args[++i]);
                     if (projectType == (ProjectType)(-1)) return null;
+                    break;
+                case "--profile":
+                    if (i + 1 >= args.Length) { Console.Error.WriteLine("error: --profile requires a value"); return null; }
+                    profile = ParseProfile(args[++i]);
+                    if (profile == (CompilationProfile)(-1)) return null;
                     break;
                 case "-c" or "--configuration":
                     if (i + 1 >= args.Length) { Console.Error.WriteLine("error: -c requires a value"); return null; }
@@ -472,7 +531,7 @@ public static class Commands
             _ => Path.ChangeExtension(inputs[0], ".dll")
         };
 
-        return new CompileOptions(inputs, output, projectType, config, verbose);
+        return new CompileOptions(inputs, output, projectType, profile, config, verbose);
     }
 
     private static RunOptions? ParseRunArgs(string[] args)
@@ -506,12 +565,13 @@ public static class Commands
         var rid = "win-x64";
         bool verbose = false;
         var projectType = ProjectType.Exe;
+        var profile = CompilationProfile.Console;
 
         if (args.Length == 0)
         {
             input = Directory.GetFiles(".", "*.najaproj").FirstOrDefault();
             if (input is null) { Console.Error.WriteLine("error: no .najaproj found in current directory"); return null; }
-            return new PublishOptions(input, null, projectType, rid, verbose);
+            return new PublishOptions(input, null, projectType, CompilationProfile.Console, rid, verbose);
         }
 
         for (int i = 0; i < args.Length; i++)
@@ -526,6 +586,11 @@ public static class Commands
                     if (i + 1 >= args.Length) { Console.Error.WriteLine("error: -t requires a value"); return null; }
                     projectType = ParseProjectType(args[++i]);
                     if (projectType == (ProjectType)(-1)) return null;
+                    break;
+                case "--profile":
+                    if (i + 1 >= args.Length) { Console.Error.WriteLine("error: --profile requires a value"); return null; }
+                    profile = ParseProfile(args[++i]);
+                    if (profile == (CompilationProfile)(-1)) return null;
                     break;
                 case "-r" or "--runtime":
                     if (i + 1 >= args.Length) { Console.Error.WriteLine("error: -r requires a value"); return null; }
@@ -545,7 +610,7 @@ public static class Commands
         if (input is null) { Console.Error.WriteLine("error: no input file or .najaproj found"); return null; }
         if (!File.Exists(input)) { Console.Error.WriteLine($"error: file not found: '{input}'"); return null; }
 
-        return new PublishOptions(input, outputDir, projectType, rid, verbose);
+        return new PublishOptions(input, outputDir, projectType, profile, rid, verbose);
     }
 
     private static ProjectType ParseProjectType(string value)
@@ -560,6 +625,16 @@ public static class Commands
                 return (ProjectType)(-1);
         }
     }
+
+    private static CompilationProfile ParseProfile(string value) =>
+        value.ToLowerInvariant() switch
+        {
+            "console"  => CompilationProfile.Console,
+            "winforms" => CompilationProfile.WinForms,
+            "wpf"      => CompilationProfile.Wpf,
+            "web"      => CompilationProfile.AspNetCore,
+            _ => (CompilationProfile)(-1)   // sentinel for parse failure
+        };
 
     // ── Console output ────────────────────────────────────────────────────────
 
