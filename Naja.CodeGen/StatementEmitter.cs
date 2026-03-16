@@ -51,7 +51,7 @@ public sealed class StatementEmitter
             case ImportStatement _: break;
             case FromImportStatement _: break;
             case GlobalStatement _: break;
-            case NonlocalStatement _: break;
+            case NonlocalStatement s: Emit(s); break;
             case MatchStatement s: Emit(s); break;
             case TypeAliasStatement _: break;
 
@@ -129,7 +129,7 @@ public sealed class StatementEmitter
                     IL.Emit(OpCodes.Call, typeof(Type).GetMethod("GetTypeFromHandle")!);
                 }
                 IL.Emit(OpCodes.Ldstr, handlerMethod);
-                
+
                 var methodName = s.Op == BinaryOp.Add ? nameof(NajaBuiltins.AddEventHandler) : nameof(NajaBuiltins.RemoveEventHandler);
                 var evMethod = typeof(NajaBuiltins).GetMethod(methodName)!;
                 IL.Emit(OpCodes.Call, evMethod);
@@ -712,20 +712,20 @@ public sealed class StatementEmitter
             }
             else
             {
-            var existingLocal = _ctx.Locals.TryGet(loopVar.Name);
-            if (existingLocal != null && existingLocal.LocalType.IsValueType)
-            {
-                // Stack has object (boxed value), must unbox before storing into long/double local
-                IL.Emit(OpCodes.Unbox_Any, existingLocal.LocalType);
-                EmitStore(s.Target, existingLocal.LocalType == typeof(long) ? NajaTypes.Int :
-                                    existingLocal.LocalType == typeof(double) ? NajaTypes.Float :
-                                    NajaTypes.Unknown);
-            }
-            else
-            {
-                // Store as object (allows iterating strings, lists, tuples, etc.)
-                EmitStore(s.Target, NajaTypes.Unknown);
-            }
+                var existingLocal = _ctx.Locals.TryGet(loopVar.Name);
+                if (existingLocal != null && existingLocal.LocalType.IsValueType)
+                {
+                    // Stack has object (boxed value), must unbox before storing into long/double local
+                    IL.Emit(OpCodes.Unbox_Any, existingLocal.LocalType);
+                    EmitStore(s.Target, existingLocal.LocalType == typeof(long) ? NajaTypes.Int :
+                                        existingLocal.LocalType == typeof(double) ? NajaTypes.Float :
+                                        NajaTypes.Unknown);
+                }
+                else
+                {
+                    // Store as object (allows iterating strings, lists, tuples, etc.)
+                    EmitStore(s.Target, NajaTypes.Unknown);
+                }
             }
         }
         else
@@ -830,17 +830,19 @@ public sealed class StatementEmitter
         var hasFinally = s.Finally.Count > 0;
         var hasElse = s.Else.Count > 0;
 
-        // One outer exception block covers everything when finally is present
         if (hasFinally)
+        {
+            // Outer exception block for finally
             IL.BeginExceptionBlock();
+        }
 
         if (hasHandlers)
         {
-            // Declare noExFlag BEFORE opening the inner exception block
             LocalBuilder? noExFlag = null;
             if (hasElse)
                 noExFlag = _ctx.Locals.Declare($"__noex_{s.Line}", typeof(bool));
 
+            // Inner exception block for handlers
             IL.BeginExceptionBlock();
             EmitAll(s.Body);
 
@@ -852,19 +854,14 @@ public sealed class StatementEmitter
 
             foreach (var handler in s.Handlers)
             {
-                // Always open a single catch(Exception) block
-                // For tuple types, do runtime type filtering inside
                 IL.BeginCatchBlock(typeof(Exception));
 
                 var catchTypes = ResolveCatchTypes(handler);
-
-                // Temp local to hold the caught exception for type filtering
                 var exTmp = _ctx.Locals.Declare($"__ex_{s.Line}_{handler.Line}", typeof(Exception));
                 IL.Emit(OpCodes.Stloc, exTmp);
 
                 if (catchTypes.Count > 1 || catchTypes[0] != typeof(Exception))
                 {
-                    // Runtime type check — rethrow if not matched
                     var matchedLabel = IL.DefineLabel();
                     foreach (var ct in catchTypes)
                     {
@@ -894,7 +891,7 @@ public sealed class StatementEmitter
                 EmitAll(handler.Body);
             }
 
-            IL.EndExceptionBlock();
+            IL.EndExceptionBlock();  // end inner (handler) block
 
             if (hasElse && noExFlag is not null)
             {
@@ -907,7 +904,9 @@ public sealed class StatementEmitter
         }
         else
         {
-            // try/finally with no handlers — body is inside the outer block
+            // try/finally with no handlers:
+            // Body goes directly inside the outer exception block.
+            // The CLR guarantees the finally runs even if an exception escapes.
             EmitAll(s.Body);
         }
 
@@ -915,7 +914,7 @@ public sealed class StatementEmitter
         {
             IL.BeginFinallyBlock();
             EmitAll(s.Finally);
-            IL.EndExceptionBlock();
+            IL.EndExceptionBlock();  // end outer (finally) block
         }
     }
     private List<Type> ResolveCatchTypes(ExceptHandler handler)
@@ -944,34 +943,40 @@ public sealed class StatementEmitter
         if (s.IsAsync)
             throw new CodeGenException("async with is not yet supported in Naja.", s.Line, s.Column);
         // with expr as var: body
-        // Compiles to: try { var = expr.__enter__(); body } finally { var.__exit__(...) }
+        // Full Python semantics:
+        //   __enter__() called first; result bound to 'as' target.
+        //   __exit__(exc_type, exc_val, tb) called in a catch block.
+        //   If __exit__ returns truthy the exception is SUPPRESSED.
+        //   __exit__(None,None,None) is called when no exception occurred.
         foreach (var item in s.Items)
         {
             var ctxLocal = _ctx.Locals.Declare($"__with_{s.Line}_{item.GetHashCode()}", typeof(object));
+            var excLocal = _ctx.Locals.Declare($"__withex_{s.Line}_{item.GetHashCode()}", typeof(Exception));
+            var suppressLocal = _ctx.Locals.Declare($"__withsup_{s.Line}_{item.GetHashCode()}", typeof(bool));
 
+            // Evaluate context expression and store
             var ctxType = _expr.Emit(item.Context);
             TypeMapper.EmitBox(IL, ctxType);
-            
             IL.Emit(OpCodes.Stloc, ctxLocal);
+
+            // suppress = false
+            IL.Emit(OpCodes.Ldc_I4_0);
+            IL.Emit(OpCodes.Stloc, suppressLocal);
+
+            var exitMethod = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ContextExitWithException))!;
+            var enterMethod = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ContextEnter))!;
 
             IL.BeginExceptionBlock();
 
+            // __enter__()
             IL.Emit(OpCodes.Ldloc, ctxLocal);
-            var enter = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ContextEnter))!;
-            IL.Emit(OpCodes.Call, enter);
+            IL.Emit(OpCodes.Call, enterMethod);
 
-            if (item.Target is not null)
+            if (item.Target is NameExpr n)
             {
-                if (item.Target is NameExpr n)
-                {
-                    if (!_ctx.Locals.Contains(n.Name))
-                        _ctx.Locals.Declare(n.Name, typeof(object));
-                    _ctx.Locals.EmitStore(n.Name);
-                }
-                else
-                {
-                    IL.Emit(OpCodes.Pop);
-                }
+                if (!_ctx.Locals.Contains(n.Name))
+                    _ctx.Locals.Declare(n.Name, typeof(object));
+                _ctx.Locals.EmitStore(n.Name);
             }
             else
             {
@@ -980,16 +985,28 @@ public sealed class StatementEmitter
 
             EmitAll(s.Body);
 
-            IL.BeginFinallyBlock();
+            // Normal path: call __exit__(None, None, None), ignore return value
+            IL.Emit(OpCodes.Ldloc, ctxLocal);
+            IL.Emit(OpCodes.Ldnull);
+            IL.Emit(OpCodes.Call, exitMethod);
+            IL.Emit(OpCodes.Pop);  // discard — normal exit never suppresses
 
-            // Call __exit__(None, None, None) via runtime helper
-            if (_ctx.Locals.TryGet($"__with_{s.Line}_{item.GetHashCode()}") is { } withLocal)
-                IL.Emit(OpCodes.Ldloc, withLocal);
-            else
-                IL.Emit(OpCodes.Ldnull);
+            // Catch block: call __exit__ with the live exception
+            IL.BeginCatchBlock(typeof(Exception));
+            IL.Emit(OpCodes.Stloc, excLocal);
 
-            var exit = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ContextExit))!;
-            IL.Emit(OpCodes.Call, exit);
+            IL.Emit(OpCodes.Ldloc, ctxLocal);
+            IL.Emit(OpCodes.Ldloc, excLocal);
+            IL.Emit(OpCodes.Call, exitMethod);
+            IL.Emit(OpCodes.Stloc, suppressLocal);
+
+            // Re-throw if __exit__ returned false/None
+            var suppressedLabel = IL.DefineLabel();
+            IL.Emit(OpCodes.Ldloc, suppressLocal);
+            IL.Emit(OpCodes.Brtrue, suppressedLabel);
+            IL.Emit(OpCodes.Ldloc, excLocal);
+            IL.Emit(OpCodes.Throw);
+            IL.MarkLabel(suppressedLabel);
 
             IL.EndExceptionBlock();
         }
@@ -1017,21 +1034,51 @@ public sealed class StatementEmitter
                                     typeof(object), paramNames);
         fnCtx.IsInsideFunction = true;
 
+        // Propagate all outer-scope lookups into the nested function context
         foreach (var (k, v) in _ctx.Fields) fnCtx.Fields[k] = v;
         foreach (var (k, v) in _ctx.Methods) fnCtx.Methods[k] = v;
         foreach (var (k, v) in _ctx.MethodParamTypes) fnCtx.MethodParamTypes[k] = v;
+        foreach (var (k, v) in _ctx.ClassTypes) fnCtx.ClassTypes[k] = v;
+        foreach (var (k, v) in _ctx.ClassConstructors) fnCtx.ClassConstructors[k] = v;
+        foreach (var (k, v) in _ctx.InstanceFields) fnCtx.InstanceFields[k] = v;
+        foreach (var (k, v) in _ctx.AllClassMethods) fnCtx.AllClassMethods[k] = v;
+        foreach (var (k, v) in _ctx.AllClassMethodParamTypes) fnCtx.AllClassMethodParamTypes[k] = v;
+        foreach (var mn in _ctx.ClassMethods) fnCtx.ClassMethods.Add(mn);
+        foreach (var (k, v) in _ctx.ImportMap) fnCtx.ImportMap[k] = v;
+        foreach (var (k, v) in _ctx.NamespaceImports) fnCtx.NamespaceImports[k] = v;
+        fnCtx.SelfName = _ctx.SelfName;
+        fnCtx.IsInstanceMethod = _ctx.IsInstanceMethod;
+
+        // Pre-scan for nonlocal declarations in this function body and promote those
+        // variables to static fields NOW (before emitting the body) so any inner
+        // lambdas/closures also see them as fields.
+        var nonlocalNames = CollectNonlocalNames(s.Body);
+        foreach (var nlName in nonlocalNames)
+        {
+            if (!fnCtx.Fields.ContainsKey(nlName))
+            {
+                var nlField = _ctx.TypeBuilder.DefineField(
+                    $"__nl_{nlName}",
+                    typeof(object),
+                    FieldAttributes.Private | FieldAttributes.Static);
+                fnCtx.Fields[nlName] = nlField;
+                _ctx.Fields[nlName] = nlField;  // also visible in outer scope
+            }
+        }
 
         // Check if this function contains yield statements (is a generator)
         bool isGenerator = ContainsYield(s.Body);
         if (isGenerator)
         {
-            // Initialize the generator list at function entry
+            // Initialize the generator list at function entry — MUST use fnCtx.IL (the new method's ILGenerator)
             var listType = typeof(System.Collections.Generic.List<object>);
             var ctor = listType.GetConstructor(Type.EmptyTypes)!;
             fnCtx.GeneratorListLocal = fnCtx.Locals.Declare($"__generator_{s.Name}_{s.Line}", listType);
-            IL.Emit(OpCodes.Newobj, ctor);
-            IL.Emit(OpCodes.Stloc, fnCtx.GeneratorListLocal);
+            fnCtx.IL.Emit(OpCodes.Newobj, ctor);
+            fnCtx.IL.Emit(OpCodes.Stloc, fnCtx.GeneratorListLocal);
         }
+
+        var fnIL = fnCtx.IL;  // always use the nested function's ILGenerator for its body
 
         var bodyEmitter = new StatementEmitter(fnCtx);
         bodyEmitter.EmitAll(s.Body);
@@ -1041,20 +1088,14 @@ public sealed class StatementEmitter
         {
             if (isGenerator)
             {
-                // Return the generator list
-                IL.Emit(OpCodes.Ldloc, fnCtx.GeneratorListLocal);
+                // Return the generator list — using the function's own ILGenerator
+                fnIL.Emit(OpCodes.Ldloc, fnCtx.GeneratorListLocal);
             }
             else
             {
-                IL.Emit(OpCodes.Ldnull);
+                fnIL.Emit(OpCodes.Ldnull);
             }
-            IL.Emit(OpCodes.Ret);
-        }
-        else if (isGenerator)
-        {
-            // If the function ends with a return statement, we still need to return the list
-            // But the ReturnStatement already emitted Ret, so this won't be reached
-            // We need a different approach: modify return statement handling
+            fnIL.Emit(OpCodes.Ret);
         }
 
         // Register in current context so calls within scope find it
@@ -1064,6 +1105,9 @@ public sealed class StatementEmitter
         // Push null as the "function object" value — local variable holds method ref
         // Full delegate creation in Phase 7
     }
+
+    /// <summary>Check if a statement list contains any yield expressions (public wrapper for AssemblyEmitter).</summary>
+    public static bool ContainsYieldStatic(IReadOnlyList<Statement> statements) => ContainsYield(statements);
 
     /// <summary>Check if a statement list contains any yield expressions.</summary>
     private static bool ContainsYield(IReadOnlyList<Statement> statements)
@@ -1082,9 +1126,9 @@ public sealed class StatementEmitter
         {
             ExprStatement es => ContainsYieldInExpression(es.Expr),
             ReturnStatement rs => rs.Value is not null && ContainsYieldInExpression(rs.Value),
-        IfStatement ifs => ContainsYield(ifs.Then) || 
-                          ifs.Elifs.Any(e => ContainsYield(e.Body)) ||
-                          ContainsYield(ifs.Else),
+            IfStatement ifs => ContainsYield(ifs.Then) ||
+                              ifs.Elifs.Any(e => ContainsYield(e.Body)) ||
+                              ContainsYield(ifs.Else),
             WhileStatement ws => ContainsYield(ws.Body) || ContainsYield(ws.Else),
             ForStatement fs => ContainsYield(fs.Body) || ContainsYield(fs.Else),
             TryStatement ts => ContainsYield(ts.Body) ||
@@ -1137,6 +1181,71 @@ public sealed class StatementEmitter
             }
         }
         return false;
+    }
+
+    // ── Nonlocal name collection ──────────────────────────────────────────────
+
+    private static HashSet<string> CollectNonlocalNames(IReadOnlyList<Statement> body)
+    {
+        var names = new HashSet<string>();
+        foreach (var stmt in body)
+            CollectNonlocalNamesInStmt(stmt, names);
+        return names;
+    }
+
+    private static void CollectNonlocalNamesInStmt(Statement stmt, HashSet<string> names)
+    {
+        switch (stmt)
+        {
+            case NonlocalStatement nl:
+                foreach (var n in nl.Names) names.Add(n);
+                break;
+            case IfStatement ifs:
+                foreach (var s in ifs.Then) CollectNonlocalNamesInStmt(s, names);
+                foreach (var (_, b) in ifs.Elifs) foreach (var s in b) CollectNonlocalNamesInStmt(s, names);
+                foreach (var s in ifs.Else) CollectNonlocalNamesInStmt(s, names);
+                break;
+            case WhileStatement ws:
+                foreach (var s in ws.Body) CollectNonlocalNamesInStmt(s, names);
+                break;
+            case ForStatement fs:
+                foreach (var s in fs.Body) CollectNonlocalNamesInStmt(s, names);
+                break;
+            case TryStatement ts:
+                foreach (var s in ts.Body) CollectNonlocalNamesInStmt(s, names);
+                foreach (var h in ts.Handlers) foreach (var s in h.Body) CollectNonlocalNamesInStmt(s, names);
+                break;
+            case WithStatement wts:
+                foreach (var s in wts.Body) CollectNonlocalNamesInStmt(s, names);
+                break;
+                // Do NOT recurse into nested FunctionDef — they have their own nonlocal scopes
+        }
+    }
+
+    // ── Nonlocal ──────────────────────────────────────────────────────────────
+
+    private void Emit(NonlocalStatement s)
+    {
+        // For each nonlocal name, ensure it is backed by a module-level static field
+        // so both the outer function and this inner function share the same storage cell.
+        // If the outer function has already promoted the variable to _ctx.Fields (done
+        // by EmitFunctionBody/EmitModule), this is a no-op. If it hasn't (e.g. when a
+        // nonlocal refers to a variable that is only assigned inside the outer function
+        // and wasn't seen yet), we declare a synthetic static field on the module type.
+        foreach (var name in s.Names)
+        {
+            if (!_ctx.Fields.ContainsKey(name))
+            {
+                // Promote to a new static field on the module TypeBuilder
+                var syntheticField = _ctx.TypeBuilder.DefineField(
+                    $"__nl_{name}",
+                    typeof(object),
+                    FieldAttributes.Private | FieldAttributes.Static);
+                _ctx.Fields[name] = syntheticField;
+            }
+            // Remove from locals if accidentally declared as a local so field wins
+            // (LocalsManager doesn't support removal, but EmitName checks Fields first)
+        }
     }
 
     // ── Class def ─────────────────────────────────────────────────────────────
@@ -1205,224 +1314,227 @@ public sealed class StatementEmitter
                 break;
 
             case OrPattern op:
-            {
-                var matched = IL.DefineLabel();
-                foreach (var p in op.Patterns)
                 {
-                    var tryNext = IL.DefineLabel();
-                    EmitPatternCheck(p, subject, tryNext);
-                    IL.Emit(OpCodes.Br, matched);
-                    IL.MarkLabel(tryNext);
+                    var matched = IL.DefineLabel();
+                    foreach (var p in op.Patterns)
+                    {
+                        var tryNext = IL.DefineLabel();
+                        EmitPatternCheck(p, subject, tryNext);
+                        IL.Emit(OpCodes.Br, matched);
+                        IL.MarkLabel(tryNext);
+                    }
+                    IL.Emit(OpCodes.Br, noMatch);
+                    IL.MarkLabel(matched);
+                    break;
                 }
-                IL.Emit(OpCodes.Br, noMatch);
-                IL.MarkLabel(matched);
-                break;
-            }
 
             case SequencePattern sp:
-            {
-                // Check that subject is IEnumerable with matching length, then match each element
-                // Load subject as List<object?> via UnpackIterable
-                var seqLocal = _ctx.Locals.Declare($"__seq_{pattern.Line}_{pattern.Column}", typeof(System.Collections.Generic.List<object?>));
-                IL.Emit(OpCodes.Ldloc, subject);
-                IL.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.UnpackIterable))!);
-                IL.Emit(OpCodes.Stloc, seqLocal);
-
-                var countProp = typeof(System.Collections.Generic.List<object?>).GetProperty("Count")!.GetGetMethod()!;
-                var getItem = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.GetItem))!;
-                var getSlice = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.GetUnpackSlice))!;
-
-                // Find star pattern index if any
-                int starIdx = -1;
-                for (int i = 0; i < sp.Patterns.Count; i++)
-                    if (sp.Patterns[i] is StarPattern) { starIdx = i; break; }
-
-                // Length check
-                IL.Emit(OpCodes.Ldloc, seqLocal);
-                IL.Emit(OpCodes.Callvirt, countProp);
-                if (starIdx < 0)
                 {
-                    // Exact match required
-                    IL.Emit(OpCodes.Ldc_I4, sp.Patterns.Count);
-                    IL.Emit(OpCodes.Bne_Un, noMatch);
-                }
-                else
-                {
-                    // Minimum length: non-star elements
-                    IL.Emit(OpCodes.Ldc_I4, sp.Patterns.Count - 1);
-                    IL.Emit(OpCodes.Blt, noMatch);
-                }
+                    // Check that subject is IEnumerable with matching length, then match each element
+                    // Load subject as List<object?> via UnpackIterable
+                    var seqLocal = _ctx.Locals.Declare($"__seq_{pattern.Line}_{pattern.Column}", typeof(System.Collections.Generic.List<object?>));
+                    IL.Emit(OpCodes.Ldloc, subject);
+                    IL.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.UnpackIterable))!);
+                    IL.Emit(OpCodes.Stloc, seqLocal);
 
-                int prefix = starIdx < 0 ? sp.Patterns.Count : starIdx;
+                    var countProp = typeof(System.Collections.Generic.List<object?>).GetProperty("Count")!.GetGetMethod()!;
+                    var getItem = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.GetItem))!;
+                    var getSlice = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.GetUnpackSlice))!;
 
-                // Emit prefix elements
-                for (int i = 0; i < prefix; i++)
-                {
-                    var elemLocal = _ctx.Locals.Declare($"__seqe_{pattern.Line}_{pattern.Column}_{i}", typeof(object));
+                    // Find star pattern index if any
+                    int starIdx = -1;
+                    for (int i = 0; i < sp.Patterns.Count; i++)
+                        if (sp.Patterns[i] is StarPattern) { starIdx = i; break; }
+
+                    // Length check
                     IL.Emit(OpCodes.Ldloc, seqLocal);
-                    IL.Emit(OpCodes.Ldc_I4, i);
-                    IL.Emit(OpCodes.Box, typeof(int));
-                    IL.Emit(OpCodes.Call, getItem);
-                    IL.Emit(OpCodes.Stloc, elemLocal);
-                    EmitPatternCheck(sp.Patterns[i], elemLocal, noMatch);
-                }
-
-                if (starIdx >= 0)
-                {
-                    var starPat = (StarPattern)sp.Patterns[starIdx];
-                    int suffixCount = sp.Patterns.Count - starIdx - 1;
-
-                    // Bind the star name if not discard
-                    if (starPat.Name is not null && starPat.Name != "_")
+                    IL.Emit(OpCodes.Callvirt, countProp);
+                    if (starIdx < 0)
                     {
-                        if (!_ctx.Locals.Contains(starPat.Name))
-                            _ctx.Locals.Declare(starPat.Name, typeof(object));
-                        IL.Emit(OpCodes.Ldloc, seqLocal);
-                        IL.Emit(OpCodes.Ldc_I4, starIdx);
-                        IL.Emit(OpCodes.Ldc_I4, suffixCount);
-                        IL.Emit(OpCodes.Call, getSlice);
-                        IL.Emit(OpCodes.Castclass, typeof(object));
-                        _ctx.Locals.EmitStore(starPat.Name);
+                        // Exact match required
+                        IL.Emit(OpCodes.Ldc_I4, sp.Patterns.Count);
+                        IL.Emit(OpCodes.Bne_Un, noMatch);
+                    }
+                    else
+                    {
+                        // Minimum length: non-star elements
+                        IL.Emit(OpCodes.Ldc_I4, sp.Patterns.Count - 1);
+                        IL.Emit(OpCodes.Blt, noMatch);
                     }
 
-                    // Emit suffix elements (indexed from end)
-                    for (int i = 0; i < suffixCount; i++)
+                    int prefix = starIdx < 0 ? sp.Patterns.Count : starIdx;
+
+                    // Emit prefix elements
+                    for (int i = 0; i < prefix; i++)
                     {
-                        int patIdx = starIdx + 1 + i;
-                        var idxLocal = _ctx.Locals.Declare($"__sqit_{pattern.Line}_{pattern.Column}_{i}", typeof(int));
-                        var elemLocal = _ctx.Locals.Declare($"__seqs_{pattern.Line}_{pattern.Column}_{i}", typeof(object));
-
-                        // index = seqLocal.Count - suffixCount + i
+                        var elemLocal = _ctx.Locals.Declare($"__seqe_{pattern.Line}_{pattern.Column}_{i}", typeof(object));
                         IL.Emit(OpCodes.Ldloc, seqLocal);
-                        IL.Emit(OpCodes.Callvirt, countProp);
-                        IL.Emit(OpCodes.Ldc_I4, suffixCount - i);
-                        IL.Emit(OpCodes.Sub);
-                        IL.Emit(OpCodes.Stloc, idxLocal);
-
-                        IL.Emit(OpCodes.Ldloc, seqLocal);
-                        IL.Emit(OpCodes.Ldloc, idxLocal);
+                        IL.Emit(OpCodes.Ldc_I4, i);
                         IL.Emit(OpCodes.Box, typeof(int));
                         IL.Emit(OpCodes.Call, getItem);
                         IL.Emit(OpCodes.Stloc, elemLocal);
-                        EmitPatternCheck(sp.Patterns[patIdx], elemLocal, noMatch);
+                        EmitPatternCheck(sp.Patterns[i], elemLocal, noMatch);
                     }
+
+                    if (starIdx >= 0)
+                    {
+                        var starPat = (StarPattern)sp.Patterns[starIdx];
+                        int suffixCount = sp.Patterns.Count - starIdx - 1;
+
+                        // Bind the star name if not discard
+                        if (starPat.Name is not null && starPat.Name != "_")
+                        {
+                            if (!_ctx.Locals.Contains(starPat.Name))
+                                _ctx.Locals.Declare(starPat.Name, typeof(object));
+                            IL.Emit(OpCodes.Ldloc, seqLocal);
+                            IL.Emit(OpCodes.Ldc_I4, starIdx);
+                            IL.Emit(OpCodes.Ldc_I4, suffixCount);
+                            IL.Emit(OpCodes.Call, getSlice);
+                            IL.Emit(OpCodes.Castclass, typeof(object));
+                            _ctx.Locals.EmitStore(starPat.Name);
+                        }
+
+                        // Emit suffix elements (indexed from end)
+                        for (int i = 0; i < suffixCount; i++)
+                        {
+                            int patIdx = starIdx + 1 + i;
+                            var idxLocal = _ctx.Locals.Declare($"__sqit_{pattern.Line}_{pattern.Column}_{i}", typeof(int));
+                            var elemLocal = _ctx.Locals.Declare($"__seqs_{pattern.Line}_{pattern.Column}_{i}", typeof(object));
+
+                            // index = seqLocal.Count - suffixCount + i
+                            IL.Emit(OpCodes.Ldloc, seqLocal);
+                            IL.Emit(OpCodes.Callvirt, countProp);
+                            IL.Emit(OpCodes.Ldc_I4, suffixCount - i);
+                            IL.Emit(OpCodes.Sub);
+                            IL.Emit(OpCodes.Stloc, idxLocal);
+
+                            IL.Emit(OpCodes.Ldloc, seqLocal);
+                            IL.Emit(OpCodes.Ldloc, idxLocal);
+                            IL.Emit(OpCodes.Box, typeof(int));
+                            IL.Emit(OpCodes.Call, getItem);
+                            IL.Emit(OpCodes.Stloc, elemLocal);
+                            EmitPatternCheck(sp.Patterns[patIdx], elemLocal, noMatch);
+                        }
+                    }
+                    break;
                 }
-                break;
-            }
 
             case MappingPattern mp:
-            {
-                // For each key, check that subject contains it and value matches
-                var containsKey = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Contains))!;
-                var getItem2 = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.GetItem))!;
-
-                foreach (var (key, valuePattern) in mp.Pairs)
                 {
-                    // Check key exists
-                    var keyType = _expr.Emit(key);
-                    TypeMapper.EmitBox(IL, keyType);
-                    var keyLocal = _ctx.Locals.Declare($"__mpk_{pattern.Line}_{pattern.Column}", typeof(object));
-                    IL.Emit(OpCodes.Stloc, keyLocal);
+                    // For each key, check that subject contains it and value matches
+                    var containsKey = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Contains))!;
+                    var getItem2 = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.GetItem))!;
 
-                    IL.Emit(OpCodes.Ldloc, keyLocal);
-                    IL.Emit(OpCodes.Ldloc, subject);
-                    IL.Emit(OpCodes.Call, containsKey);
-                    IL.Emit(OpCodes.Brfalse, noMatch);
+                    foreach (var (key, valuePattern) in mp.Pairs)
+                    {
+                        // Check key exists
+                        var keyType = _expr.Emit(key);
+                        TypeMapper.EmitBox(IL, keyType);
+                        var keyLocal = _ctx.Locals.Declare($"__mpk_{pattern.Line}_{pattern.Column}", typeof(object));
+                        IL.Emit(OpCodes.Stloc, keyLocal);
 
-                    // Get value and match pattern
-                    var valLocal = _ctx.Locals.Declare($"__mpv_{pattern.Line}_{pattern.Column}", typeof(object));
-                    IL.Emit(OpCodes.Ldloc, subject);
-                    IL.Emit(OpCodes.Ldloc, keyLocal);
-                    IL.Emit(OpCodes.Call, getItem2);
-                    IL.Emit(OpCodes.Stloc, valLocal);
-                    EmitPatternCheck(valuePattern, valLocal, noMatch);
+                        IL.Emit(OpCodes.Ldloc, keyLocal);
+                        IL.Emit(OpCodes.Ldloc, subject);
+                        IL.Emit(OpCodes.Call, containsKey);
+                        IL.Emit(OpCodes.Brfalse, noMatch);
+
+                        // Get value and match pattern
+                        var valLocal = _ctx.Locals.Declare($"__mpv_{pattern.Line}_{pattern.Column}", typeof(object));
+                        IL.Emit(OpCodes.Ldloc, subject);
+                        IL.Emit(OpCodes.Ldloc, keyLocal);
+                        IL.Emit(OpCodes.Call, getItem2);
+                        IL.Emit(OpCodes.Stloc, valLocal);
+                        EmitPatternCheck(valuePattern, valLocal, noMatch);
+                    }
+
+                    // Bind **rest if present
+                    if (mp.Rest is not null)
+                    {
+                        // Simply capture whole subject for now (full rest filtering complex)
+                        IL.Emit(OpCodes.Ldloc, subject);
+                        if (!_ctx.Locals.Contains(mp.Rest))
+                            _ctx.Locals.Declare(mp.Rest, typeof(object));
+                        _ctx.Locals.EmitStore(mp.Rest);
+                    }
+                    break;
                 }
-
-                // Bind **rest if present
-                if (mp.Rest is not null)
-                {
-                    // Simply capture whole subject for now (full rest filtering complex)
-                    IL.Emit(OpCodes.Ldloc, subject);
-                    if (!_ctx.Locals.Contains(mp.Rest))
-                        _ctx.Locals.Declare(mp.Rest, typeof(object));
-                    _ctx.Locals.EmitStore(mp.Rest);
-                }
-                break;
-            }
 
             case ClassPattern clp:
-            {
-                // Check subject is an instance of the class
-                var isInstanceMethod = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.IsInstance))!;
-                var clsType = _expr.Emit(clp.Cls);
-                TypeMapper.EmitBox(IL, clsType);
-                var clsLocal = _ctx.Locals.Declare($"__clsp_{pattern.Line}_{pattern.Column}", typeof(object));
-                IL.Emit(OpCodes.Stloc, clsLocal);
-
-                IL.Emit(OpCodes.Ldloc, subject);
-                IL.Emit(OpCodes.Ldloc, clsLocal);
-                IL.Emit(OpCodes.Call, isInstanceMethod);
-                IL.Emit(OpCodes.Brfalse, noMatch);
-
-                var getAttr = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.GetAttr))!;
-
-                // Match positional patterns using __match_args__
-                if (clp.Positional.Count > 0)
                 {
-                    // Fetch __match_args__ from the class
-                    IL.Emit(OpCodes.Ldloc, clsLocal);
-                    IL.Emit(OpCodes.Ldstr, "__match_args__");
-                    IL.Emit(OpCodes.Call, getAttr);
-                    var matchArgsLocal = _ctx.Locals.Declare($"__ma_{pattern.Line}_{pattern.Column}", typeof(object));
-                    IL.Emit(OpCodes.Stloc, matchArgsLocal);
+                    // Check subject is an instance of the class
+                    var isInstanceMethod = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.IsInstance))!;
+                    var clsType = _expr.Emit(clp.Cls);
+                    TypeMapper.EmitBox(IL, clsType);
+                    var clsLocal = _ctx.Locals.Declare($"__clsp_{pattern.Line}_{pattern.Column}", typeof(object));
+                    IL.Emit(OpCodes.Stloc, clsLocal);
 
-                    // Map each positional pattern to its attribute name
-                    for (int i = 0; i < clp.Positional.Count; i++)
-                    {
-                        var attrNameLocal = _ctx.Locals.Declare($"__man_{pattern.Line}_{pattern.Column}_{i}", typeof(object));
-                        IL.Emit(OpCodes.Ldloc, matchArgsLocal);
-                        IL.Emit(OpCodes.Ldc_I4, i);
-                        IL.Emit(OpCodes.Box, typeof(int));
-                        var getItem = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.GetItem))!;
-                        IL.Emit(OpCodes.Call, getItem);
-                        IL.Emit(OpCodes.Stloc, attrNameLocal);
-
-                        // Load attribute value from subject
-                        var valLocal = _ctx.Locals.Declare($"__cpv_{pattern.Line}_{pattern.Column}_{i}", typeof(object));
-                        IL.Emit(OpCodes.Ldloc, subject);
-                        IL.Emit(OpCodes.Ldloc, attrNameLocal);
-                        IL.Emit(OpCodes.Castclass, typeof(string));
-                        IL.Emit(OpCodes.Call, getAttr);
-                        IL.Emit(OpCodes.Stloc, valLocal);
-
-                        EmitPatternCheck(clp.Positional[i], valLocal, noMatch);
-                    }
-                }
-
-                // Match keyword patterns against attributes
-                foreach (var (name, valPat) in clp.Keyword)
-                {
-                    var attrLocal = _ctx.Locals.Declare($"__cpa_{pattern.Line}_{pattern.Column}_{name}", typeof(object));
                     IL.Emit(OpCodes.Ldloc, subject);
-                    IL.Emit(OpCodes.Ldstr, name);
-                    IL.Emit(OpCodes.Call, getAttr);
-                    IL.Emit(OpCodes.Stloc, attrLocal);
-                    EmitPatternCheck(valPat, attrLocal, noMatch);
+                    IL.Emit(OpCodes.Ldloc, clsLocal);
+                    IL.Emit(OpCodes.Call, isInstanceMethod);
+                    IL.Emit(OpCodes.Brfalse, noMatch);
+
+                    var getAttr = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.GetAttr))!;
+
+                    // Match positional patterns using __match_args__
+                    if (clp.Positional.Count > 0)
+                    {
+                        // Fetch __match_args__ from the CLASS (static field), not the instance.
+                        // clsLocal holds the result of EmitName for the class, which is a Type object.
+                        IL.Emit(OpCodes.Ldloc, clsLocal);
+                        IL.Emit(OpCodes.Castclass, typeof(Type));
+                        IL.Emit(OpCodes.Ldstr, "__match_args__");
+                        var getStaticAttr = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.GetStaticAttr))!;
+                        IL.Emit(OpCodes.Call, getStaticAttr);
+                        var matchArgsLocal = _ctx.Locals.Declare($"__ma_{pattern.Line}_{pattern.Column}", typeof(object));
+                        IL.Emit(OpCodes.Stloc, matchArgsLocal);
+
+                        // Map each positional pattern to its attribute name
+                        for (int i = 0; i < clp.Positional.Count; i++)
+                        {
+                            var attrNameLocal = _ctx.Locals.Declare($"__man_{pattern.Line}_{pattern.Column}_{i}", typeof(object));
+                            IL.Emit(OpCodes.Ldloc, matchArgsLocal);
+                            IL.Emit(OpCodes.Ldc_I4, i);
+                            IL.Emit(OpCodes.Box, typeof(int));
+                            var getItem = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.GetItem))!;
+                            IL.Emit(OpCodes.Call, getItem);
+                            IL.Emit(OpCodes.Stloc, attrNameLocal);
+
+                            // Load attribute value from subject
+                            var valLocal = _ctx.Locals.Declare($"__cpv_{pattern.Line}_{pattern.Column}_{i}", typeof(object));
+                            IL.Emit(OpCodes.Ldloc, subject);
+                            IL.Emit(OpCodes.Ldloc, attrNameLocal);
+                            IL.Emit(OpCodes.Castclass, typeof(string));
+                            IL.Emit(OpCodes.Call, getAttr);
+                            IL.Emit(OpCodes.Stloc, valLocal);
+
+                            EmitPatternCheck(clp.Positional[i], valLocal, noMatch);
+                        }
+                    }
+
+                    // Match keyword patterns against attributes
+                    foreach (var (name, valPat) in clp.Keyword)
+                    {
+                        var attrLocal = _ctx.Locals.Declare($"__cpa_{pattern.Line}_{pattern.Column}_{name}", typeof(object));
+                        IL.Emit(OpCodes.Ldloc, subject);
+                        IL.Emit(OpCodes.Ldstr, name);
+                        IL.Emit(OpCodes.Call, getAttr);
+                        IL.Emit(OpCodes.Stloc, attrLocal);
+                        EmitPatternCheck(valPat, attrLocal, noMatch);
+                    }
+                    break;
                 }
-                break;
-            }
 
             case AsPattern asp:
-            {
-                // Run the inner pattern check; if it passes, bind the name
-                EmitPatternCheck(asp.Inner, subject, noMatch);
-                // Bind the name
-                IL.Emit(OpCodes.Ldloc, subject);
-                if (!_ctx.Locals.Contains(asp.Name))
-                    _ctx.Locals.Declare(asp.Name, typeof(object));
-                _ctx.Locals.EmitStore(asp.Name);
-                break;
-            }
+                {
+                    // Run the inner pattern check; if it passes, bind the name
+                    EmitPatternCheck(asp.Inner, subject, noMatch);
+                    // Bind the name
+                    IL.Emit(OpCodes.Ldloc, subject);
+                    if (!_ctx.Locals.Contains(asp.Name))
+                        _ctx.Locals.Declare(asp.Name, typeof(object));
+                    _ctx.Locals.EmitStore(asp.Name);
+                    break;
+                }
 
             default:
                 break;  // unhandled — treat as wildcard

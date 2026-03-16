@@ -1,48 +1,29 @@
-# Build outputs
-**/bin/
-**/obj/
-
-# Visual Studio
+# Build output directories — these are the only things that need ignoring
+bin/
+obj/
 .vs/
+.idea/
+TestResults/
+
+# User-specific files
 *.user
 *.suo
 *.userosscache
 *.sln.docstates
 
-# Rider
-.idea/
-
-# Test results
-**/TestResults/
-**/*.trx
-**/*.coverage
-**/*.coveragexml
-
 # NuGet
 packages/
 *.nupkg
-
-# Logs
-*.log
-*.txt
-**/logs/
-
-# Compiled outputs
-*.exe
-*.dll
-*.deps.json
-*.runtimeconfig.json
-*.pdb
-
-# Naja scratch files
-*.naja
-!**/testdata/**/*.naja
 
 # OS
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# Debug artifacts
-*.il
-*.tmp
+# Logs
+*.log
+
+# Test artifacts
+*.trx
+*.coverage
+*.coveragexml

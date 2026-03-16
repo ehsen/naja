@@ -18,8 +18,15 @@
     <!-- Default output type — mirrors Microsoft.NET.Sdk behaviour -->
     <OutputType Condition="'$(OutputType)' == ''">Library</OutputType>
 
-    <!-- Target framework default — users should set this explicitly -->
-    <TargetFramework Condition="'$(TargetFramework)' == ''">net10.0-windows</TargetFramework>
+    <!-- Default is plain net10.0 — no Windows Desktop framework unless the project needs it.
+         WinForms projects must set net10.0-windows explicitly, just as C# projects do.
+         Naja.Sdk.targets will set this automatically when UseWindowsForms or UseWPF is true. -->
+    <TargetFramework Condition="'$(TargetFramework)' == ''">net10.0</TargetFramework>
+
+    <!-- NajaProfile controls which framework pack and compiler flags are used.
+         Values: console (default), winforms, wpf, web
+         Set this in your .najaproj to match your application type. -->
+    <NajaProfile Condition="'$(NajaProfile)' == ''">console</NajaProfile>
 
     <!--
       Disable ALL default C# item globs — this is a Naja project, not a C# project.

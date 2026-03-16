@@ -5,6 +5,32 @@
 -->
 <Project>
 
+  <!-- ── 0. Derive NajaProfile from standard MSBuild properties ────────────────
+       This mirrors how Microsoft.NET.Sdk.Web infers the web profile from the SDK name.
+       Users who set NajaProfile explicitly in their .najaproj take precedence because
+       all conditions check '$(NajaProfile)' == '' first.
+  -->
+  <PropertyGroup>
+    <!-- WinForms: standard property, same as Microsoft.NET.Sdk.WindowsDesktop -->
+    <NajaProfile Condition="'$(NajaProfile)' == '' and '$(UseWindowsForms)' == 'true'">winforms</NajaProfile>
+
+    <!-- WPF: standard property -->
+    <NajaProfile Condition="'$(NajaProfile)' == '' and '$(UseWPF)' == 'true'">wpf</NajaProfile>
+
+    <!-- Default: console for everything else -->
+    <NajaProfile Condition="'$(NajaProfile)' == ''">console</NajaProfile>
+  </PropertyGroup>
+
+  <!-- ── 0.5. Enforce correct TargetFramework for each profile ─────────────────
+       WinForms and WPF require the -windows suffix to activate Microsoft.WindowsDesktop.App.
+       This only fires when the user has NOT already set TargetFramework in their .najaproj.
+  -->
+  <PropertyGroup>
+    <TargetFramework Condition="'$(TargetFramework)' == 'net10.0'
+                                 and ('$(NajaProfile)' == 'winforms'
+                                      or '$(NajaProfile)' == 'wpf')">net10.0-windows</TargetFramework>
+  </PropertyGroup>
+
   <!-- ── 1. Item type declaration ──────────────────────────────────────────────
        Registers NajaCompile as a known MSBuild item type.
        Users can add/remove files explicitly:
@@ -27,6 +53,15 @@
        Inputs/Outputs enable incremental builds — only recompiles when
        a .naja source file is newer than the output dll.
   -->
+  <!-- ── Framework references ──────────────────────────────────────────────────
+       This is exactly what Microsoft.NET.Sdk.Web does in its own targets file.
+       Without this ItemGroup, dotnet publish will not include the ASP.NET shared
+       framework and the published binary will throw on startup.
+  -->
+  <ItemGroup Condition="'$(NajaProfile)' == 'web'">
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
   <Target Name="CoreCompile"
           Inputs="@(NajaCompile)"
           Outputs="$(IntermediateOutputPath)$(AssemblyName).dll"
@@ -43,10 +78,10 @@
 
     <!--
       Invoke the Naja compiler.
-      Passes every .naja source file, the output path, and the project type.
+      Passes every .naja source file, the output path, the project type, and the profile.
       The compiler handles lex → parse → analyse → IL emit.
     -->
-    <Exec Command="&quot;$(NajaCompilerPath)&quot; compile @(NajaCompile->'&quot;%(FullPath)&quot;', ' ') -o &quot;$(IntermediateOutputPath)$(AssemblyName).dll&quot; -t &quot;$(OutputType)&quot;"
+    <Exec Command=""$(NajaCompilerPath)" compile @(NajaCompile->'"%(FullPath)"', ' ') -o "$(IntermediateOutputPath)$(AssemblyName).dll" -t "$(OutputType)" --profile "$(NajaProfile)""
           WorkingDirectory="$(MSBuildProjectDirectory)"
           ConsoleToMSBuild="true">
       <Output TaskParameter="ConsoleOutput" PropertyName="NajaCompileOutput" />
@@ -79,12 +114,26 @@
           AfterTargets="CoreCompile"
           Condition="Exists('$(IntermediateOutputPath)$(AssemblyName).dll')">
 
+    <!-- Copy all three companion files. Use Condition on each so a missing
+         runtimeconfig or deps file does not fail the build (e.g. library output). -->
     <Copy SourceFiles="$(IntermediateOutputPath)$(AssemblyName).dll"
           DestinationFolder="$(OutputPath)"
           SkipUnchangedFiles="true" />
 
+    <Copy SourceFiles="$(IntermediateOutputPath)$(AssemblyName).runtimeconfig.json"
+          DestinationFolder="$(OutputPath)"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(IntermediateOutputPath)$(AssemblyName).runtimeconfig.json')" />
+
+    <Copy SourceFiles="$(IntermediateOutputPath)$(AssemblyName).deps.json"
+          DestinationFolder="$(OutputPath)"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(IntermediateOutputPath)$(AssemblyName).deps.json')" />
+
     <ItemGroup>
       <FileWrites Include="$(OutputPath)$(AssemblyName).dll" />
+      <FileWrites Include="$(OutputPath)$(AssemblyName).runtimeconfig.json" />
+      <FileWrites Include="$(OutputPath)$(AssemblyName).deps.json" />
     </ItemGroup>
 
   </Target>

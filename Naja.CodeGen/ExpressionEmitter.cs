@@ -180,11 +180,11 @@ public sealed class ExpressionEmitter
         }
 
         // 4b. User-defined class used as a value (e.g. isinstance(err, AppError)).
-        // In these cases we need the System.Type object for the generated CLR type.
-        if (_ctx.ClassTypes.TryGetValue(e.Name, out var classType))
+        // Use runtime type resolution instead of Ldtoken, which fails on unfinished TypeBuilders.
+        if (_ctx.ClassTypes.ContainsKey(e.Name))
         {
-            IL.Emit(OpCodes.Ldtoken, classType);
-            IL.Emit(OpCodes.Call, typeof(Type).GetMethod("GetTypeFromHandle")!);
+            IL.Emit(OpCodes.Ldstr, e.Name);
+            IL.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ResolveTypeByName))!);
             return NajaTypes.Unknown;
         }
 
@@ -746,7 +746,7 @@ public sealed class ExpressionEmitter
         if ((op == CompareOp.Eq || op == CompareOp.NotEq) &&
             (leftType is ListType || rightType is ListType ||
              leftType is DictType || rightType is DictType ||
-             leftType is SetType  || rightType is SetType  ||
+             leftType is SetType || rightType is SetType ||
              leftType is TupleType || rightType is TupleType))
         {
             // Box both sides to object and dispatch through DynamicEq/DynamicNotEq.
@@ -892,11 +892,35 @@ public sealed class ExpressionEmitter
             if (_ctx.Methods.TryGetValue(name, out var method))
             {
                 _ctx.MethodParamTypes.TryGetValue(name, out var pts);
+                // Emit supplied arguments
                 for (int i = 0; i < e.Args.Count; i++)
                 {
                     var argType = Emit(e.Args[i].Value);
                     if (pts is not null && i < pts.Length && pts[i] == typeof(object))
                         TypeMapper.EmitBox(IL, argType);
+                }
+                // Fill in missing optional parameters with their compile-time default values
+                // GetParameters() is safe to call on a MethodBuilder only after the type is created;
+                // during emit we rely on the fact that DeclareMethod stored default values via
+                // DefineParameter + SetConstant. We use MethodParamTypes for count, and fall back
+                // to ldnull for any missing args beyond what was explicitly supplied.
+                int totalParams = pts?.Length ?? 0;
+                for (int i = e.Args.Count; i < totalParams; i++)
+                {
+                    // Try to get the default value from the MethodBuilder's parameter info
+                    // We attempt GetParameters() safely; if it throws we just emit ldnull.
+                    try
+                    {
+                        var mParams = method.GetParameters();
+                        if (i < mParams.Length && mParams[i].HasDefaultValue)
+                            EmitDefaultValue(mParams[i].DefaultValue);
+                        else
+                            IL.Emit(OpCodes.Ldnull);
+                    }
+                    catch
+                    {
+                        IL.Emit(OpCodes.Ldnull);
+                    }
                 }
                 IL.Emit(OpCodes.Call, method);
                 return NajaTypes.Unknown;
@@ -959,7 +983,7 @@ public sealed class ExpressionEmitter
         {
             // Build full type name: Namespace.Type
             var fullTypeName = nsName.Name + "." + attr.Attribute;
-            
+
             // Try to resolve the type from loaded assemblies
             var resolvedType = AppDomain.CurrentDomain.GetAssemblies()
                 .Select(a => a.GetType(fullTypeName, throwOnError: false, ignoreCase: true))
@@ -986,7 +1010,7 @@ public sealed class ExpressionEmitter
                 IL.Emit(OpCodes.Ldtoken, resolvedType);
                 var getTypeFromHandle = typeof(Type).GetMethod("GetTypeFromHandle")!;
                 IL.Emit(OpCodes.Call, getTypeFromHandle);
-                
+
                 IL.Emit(OpCodes.Ldloc, ctorArgs);
                 var create = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.CreateDotNet),
                     new[] { typeof(Type), typeof(object[]) })!;
@@ -1104,7 +1128,7 @@ public sealed class ExpressionEmitter
             if (candidates.Count == 0 && attr.Attribute == "__init__")
             {
                 var ctors = baseType.GetConstructors(flags).ToList();
-                var ctor = ctors.FirstOrDefault(c => 
+                var ctor = ctors.FirstOrDefault(c =>
                 {
                     if (c is ConstructorBuilder && _ctx.ClassCtorArgCounts.TryGetValue(baseType.Name, out var count))
                         return count == args.Count;
@@ -1115,11 +1139,11 @@ public sealed class ExpressionEmitter
                     throw new CodeGenException($"[L{attr.Line}:C{attr.Column}] No matching base constructor for '__init__' found on '{baseType.Name}'");
 
                 IL.Emit(OpCodes.Ldarg_0); // 'this'
-                
+
                 Type[]? pts3 = null;
                 if (ctor is ConstructorBuilder && _ctx.ClassCtorArgCounts.TryGetValue(baseType.Name, out var pc))
                     pts3 = Enumerable.Repeat(typeof(object), pc).ToArray();
-                
+
                 var ps = pts3 ?? ctor.GetParameters().Select(p => p.ParameterType).ToArray();
 
                 for (int i = 0; i < args.Count; i++)
@@ -1146,7 +1170,7 @@ public sealed class ExpressionEmitter
                 return NajaTypes.None;
             }
 
-            var method = candidates.FirstOrDefault(m => 
+            var method = candidates.FirstOrDefault(m =>
             {
                 if (_ctx.AllClassMethodParamTypes.TryGetValue($"{baseType.Name}.{m.Name}", out var pts4))
                     return pts4.Length == args.Count;
@@ -1157,11 +1181,11 @@ public sealed class ExpressionEmitter
             if (method == null) throw new CodeGenException($"[L{attr.Line}:C{attr.Column}] No matching base method '{attr.Attribute}' found on '{baseType.Name}'");
 
             IL.Emit(OpCodes.Ldarg_0); // 'this'
-            
+
             Type[]? pts = null;
             if (_ctx.AllClassMethods.TryGetValue(methodKey, out var _))
                 _ctx.AllClassMethodParamTypes.TryGetValue(methodKey, out pts);
-            
+
             var ps2 = pts != null ? null : method.GetParameters();
             int pCount = pts?.Length ?? ps2!.Length;
 
@@ -1191,7 +1215,7 @@ public sealed class ExpressionEmitter
                 IL.Emit(OpCodes.Ldnull);
                 return NajaTypes.None;
             }
-            
+
             if (method.ReturnType == typeof(long)) return NajaTypes.Int;
             if (method.ReturnType == typeof(double)) return NajaTypes.Float;
             if (method.ReturnType == typeof(bool)) return NajaTypes.Bool;
@@ -1347,10 +1371,10 @@ public sealed class ExpressionEmitter
         {
             // Build full type name: Namespace.Type
             var fullTypeName = nsName.Name + "." + e.Attribute;
-            
+
             // Try to resolve the type from loaded assemblies
             Type? resolvedType = null;
-            
+
             if (string.IsNullOrEmpty(nsAsmName))
             {
                 // No specific assembly - search all loaded assemblies
@@ -1363,7 +1387,7 @@ public sealed class ExpressionEmitter
                 // Try with the specified assembly name first
                 resolvedType = Type.GetType(fullTypeName + ", " + nsAsmName, throwOnError: false, ignoreCase: true);
             }
-            
+
             // Fallback: try without assembly qualification
             resolvedType ??= Type.GetType(fullTypeName, throwOnError: false, ignoreCase: true);
 
@@ -1375,7 +1399,7 @@ public sealed class ExpressionEmitter
                 IL.Emit(OpCodes.Call, getTypeFromHandle);
                 return NajaTypes.Unknown;
             }
-            
+
             // If we can't resolve the type, fall through to dynamic handling
         }
 
@@ -1726,12 +1750,13 @@ public sealed class ExpressionEmitter
 
     private NajaType EmitYield(YieldExpr e)
     {
-        // Check yield is inside a function
         if (!_ctx.IsInsideFunction)
             throw new CodeGenException("'yield' outside function", e.Line, e.Column);
 
+        if (e.IsFrom)
+            return EmitYieldFrom(e);
+
         // Add yielded value to the generator list that was initialized at function entry
-        // The list is maintained in _ctx.GeneratorListLocal by the function emitter
         if (_ctx.GeneratorListLocal != null)
         {
             IL.Emit(OpCodes.Ldloc, _ctx.GeneratorListLocal);
@@ -1742,13 +1767,52 @@ public sealed class ExpressionEmitter
         }
         else
         {
-            // Fallback: If generator list not initialized, just emit the value and discard it
+            // Fallback: generator list not initialized, just discard the value
             var valueType = Emit(e.Value);
             IL.Emit(OpCodes.Pop);
         }
 
-        // Yield expressions don't have a meaningful return value in the execution model
-        // Return None to balance the stack
+        // Yield expressions leave None on the stack (the send() value — not yet supported)
+        IL.Emit(OpCodes.Ldnull);
+        return NajaTypes.None;
+    }
+
+    // ── Yield from  (generator delegation) ────────────────────────────────────
+
+    private NajaType EmitYieldFrom(YieldExpr e)
+    {
+        if (_ctx.GeneratorListLocal is null)
+            throw new CodeGenException("'yield from' used in non-generator function", e.Line, e.Column);
+
+        // Iterate the sub-iterable and add every value to the generator list
+        var iterType = Emit(e.Value);
+        TypeMapper.EmitBox(IL, iterType);
+        IL.Emit(OpCodes.Castclass, typeof(System.Collections.IEnumerable));
+        var getEnum = typeof(System.Collections.IEnumerable).GetMethod("GetEnumerator")!;
+        IL.Emit(OpCodes.Callvirt, getEnum);
+
+        var enumLocal = _ctx.Locals.Declare($"__yf_enum_{e.Line}_{e.Column}", typeof(System.Collections.IEnumerator));
+        IL.Emit(OpCodes.Stloc, enumLocal);
+
+        var loopStart = IL.DefineLabel();
+        var loopEnd = IL.DefineLabel();
+        var moveNext = typeof(System.Collections.IEnumerator).GetMethod("MoveNext")!;
+        var current = typeof(System.Collections.IEnumerator).GetProperty("Current")!.GetGetMethod()!;
+        var addMethod = typeof(System.Collections.Generic.List<object>).GetMethod("Add")!;
+
+        IL.MarkLabel(loopStart);
+        IL.Emit(OpCodes.Ldloc, enumLocal);
+        IL.Emit(OpCodes.Callvirt, moveNext);
+        IL.Emit(OpCodes.Brfalse, loopEnd);
+
+        IL.Emit(OpCodes.Ldloc, _ctx.GeneratorListLocal);
+        IL.Emit(OpCodes.Ldloc, enumLocal);
+        IL.Emit(OpCodes.Callvirt, current);
+        IL.Emit(OpCodes.Callvirt, addMethod);
+
+        IL.Emit(OpCodes.Br, loopStart);
+        IL.MarkLabel(loopEnd);
+
         IL.Emit(OpCodes.Ldnull);
         return NajaTypes.None;
     }
@@ -1844,7 +1908,6 @@ public sealed class ExpressionEmitter
     private NajaType EmitFString(FStringExpr e)
     {
         // Parse {expr} segments out of the raw template and build string via concat
-        // Format:  f"Hello {name}, you are {age} years old"
         var parts = ParseFStringParts(e.RawTemplate);
 
         if (parts.Count == 0)
@@ -1858,13 +1921,14 @@ public sealed class ExpressionEmitter
         IL.Emit(OpCodes.Newarr, typeof(object));
 
         var toStr = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ToStr))!;
+        var repr = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Repr))!;
 
         for (int i = 0; i < parts.Count; i++)
         {
             IL.Emit(OpCodes.Dup);
             IL.Emit(OpCodes.Ldc_I4, i);
 
-            var (isExpr, text, formatSpec) = parts[i];
+            var (isExpr, text, formatSpec, conversion) = parts[i];
             if (isExpr)
             {
                 // Parse and emit the expression inside {}
@@ -1873,38 +1937,44 @@ public sealed class ExpressionEmitter
                     var tokens = new Naja.Lexer.Lexer(text).Tokenize();
                     var expr = new Naja.Parser.Parser(tokens).ParseExpression();
 
-                if (!string.IsNullOrEmpty(formatSpec))
-                {
-                    string csFmt = formatSpec;
-                    // Convert Python format specs to C# format specs
-                    // .2f -> F2, .10f -> F10, etc.
-                    if (csFmt.EndsWith("f") && csFmt.StartsWith("."))
+                    if (!string.IsNullOrEmpty(formatSpec))
                     {
-                        // Extract the precision number between '.' and 'f'
-                        string precision = csFmt.Substring(1, csFmt.Length - 2);
-                        csFmt = "F" + precision;
-                    }
-                    else if (csFmt.EndsWith("f") && csFmt.Contains("."))
-                    {
-                        // Handle cases like {width.prec}f - for now just extract precision
-                        int dotIndex = csFmt.LastIndexOf('.');
-                        if (dotIndex >= 0 && dotIndex < csFmt.Length - 1)
+                        string csFmt = formatSpec;
+                        // Convert Python format specs to C# format specs
+                        if (csFmt.EndsWith("f") && csFmt.StartsWith("."))
                         {
-                            string precision = csFmt.Substring(dotIndex + 1, csFmt.Length - dotIndex - 2);
+                            string precision = csFmt.Substring(1, csFmt.Length - 2);
                             csFmt = "F" + precision;
                         }
+                        else if (csFmt.EndsWith("f") && csFmt.Contains("."))
+                        {
+                            int dotIndex = csFmt.LastIndexOf('.');
+                            if (dotIndex >= 0 && dotIndex < csFmt.Length - 1)
+                            {
+                                string precision = csFmt.Substring(dotIndex + 1, csFmt.Length - dotIndex - 2);
+                                csFmt = "F" + precision;
+                            }
+                        }
+                        else if (csFmt.EndsWith("e")) { csFmt = "E6"; }
+                        else if (csFmt.EndsWith("g") || csFmt.EndsWith("G")) { csFmt = "G"; }
+                        else if (csFmt.EndsWith("d")) { csFmt = "D"; }
+                        else if (csFmt.EndsWith("x")) { csFmt = "x"; }
+                        else if (csFmt.EndsWith("X")) { csFmt = "X"; }
+
+                        IL.Emit(OpCodes.Ldstr, "{0:" + csFmt + "}");
+                        var t = Emit(expr);
+                        TypeMapper.EmitBox(IL, t);
+                        IL.Emit(OpCodes.Call, typeof(string).GetMethod("Format", new[] { typeof(string), typeof(object) })!);
                     }
-                    
-                    IL.Emit(OpCodes.Ldstr, "{0:" + csFmt + "}");
-                    var t = Emit(expr);
-                    TypeMapper.EmitBox(IL, t);
-                    IL.Emit(OpCodes.Call, typeof(string).GetMethod("Format", new[] { typeof(string), typeof(object) })!);
-                }
                     else
                     {
                         var t = Emit(expr);
                         TypeMapper.EmitBox(IL, t);
-                        IL.Emit(OpCodes.Call, toStr);
+                        // Apply !r / !s / !a conversion
+                        if (conversion == 'r' || conversion == 'a')
+                            IL.Emit(OpCodes.Call, repr);
+                        else
+                            IL.Emit(OpCodes.Call, toStr);
                     }
                 }
                 catch
@@ -1920,15 +1990,14 @@ public sealed class ExpressionEmitter
             IL.Emit(OpCodes.Stelem_Ref);
         }
 
-        var concat = typeof(string).GetMethod("Concat",
-            new[] { typeof(object[]) })!;
+        var concat = typeof(string).GetMethod("Concat", new[] { typeof(object[]) })!;
         IL.Emit(OpCodes.Call, concat);
         return NajaTypes.Str;
     }
 
-    private static List<(bool IsExpr, string Text, string? FormatSpec)> ParseFStringParts(string template)
+    private static List<(bool IsExpr, string Text, string? FormatSpec, char Conversion)> ParseFStringParts(string template)
     {
-        var parts = new List<(bool, string, string?)>();
+        var parts = new List<(bool, string, string?, char)>();
         var sb = new System.Text.StringBuilder();
         int i = 0;
 
@@ -1944,17 +2013,30 @@ public sealed class ExpressionEmitter
             }
             else if (template[i] == '{')
             {
-                if (sb.Length > 0) { parts.Add((false, sb.ToString(), null)); sb.Clear(); }
+                if (sb.Length > 0) { parts.Add((false, sb.ToString(), null, '\0')); sb.Clear(); }
                 i++;
                 int depth = 1;
                 bool inFormat = false;
+                char conversion = '\0';
+                var exprSb = new System.Text.StringBuilder();
                 var fmtSb = new System.Text.StringBuilder();
 
                 while (i < template.Length && depth > 0)
                 {
-                    if (template[i] == '{') depth++;
-                    else if (template[i] == '}') { depth--; if (depth == 0) break; }
-                    else if (depth == 1 && template[i] == ':' && !inFormat)
+                    char ch = template[i];
+                    if (ch == '{') { depth++; }
+                    else if (ch == '}') { depth--; if (depth == 0) break; }
+                    else if (depth == 1 && ch == '!' && !inFormat)
+                    {
+                        // Peek for conversion char: r, s, or a
+                        if (i + 1 < template.Length && (template[i + 1] == 'r' || template[i + 1] == 's' || template[i + 1] == 'a'))
+                        {
+                            conversion = template[i + 1];
+                            i += 2;
+                            continue;
+                        }
+                    }
+                    else if (depth == 1 && ch == ':' && !inFormat)
                     {
                         inFormat = true; i++; continue;
                     }
@@ -1962,10 +2044,10 @@ public sealed class ExpressionEmitter
                     if (depth > 0)
                     {
                         if (inFormat) fmtSb.Append(template[i++]);
-                        else sb.Append(template[i++]);
+                        else exprSb.Append(template[i++]);
                     }
                 }
-                parts.Add((true, sb.ToString(), inFormat ? fmtSb.ToString() : null));
+                parts.Add((true, exprSb.ToString(), inFormat ? fmtSb.ToString() : null, conversion));
                 sb.Clear();
                 i++; // skip closing }
             }
@@ -1975,7 +2057,7 @@ public sealed class ExpressionEmitter
             }
         }
 
-        if (sb.Length > 0) parts.Add((false, sb.ToString(), null));
+        if (sb.Length > 0) parts.Add((false, sb.ToString(), null, '\0'));
         return parts;
     }
 
@@ -1994,95 +2076,208 @@ public sealed class ExpressionEmitter
 
     private NajaType EmitListComp(ListCompExpr e)
     {
-        var listType = typeof(System.Collections.Generic.List<object>);
-        var ctor = listType.GetConstructor(Type.EmptyTypes)!;
-        var addMethod = listType.GetMethod("Add")!;
-
-        // Create result list
-        var resultLocal = _ctx.Locals.Declare($"__lc_{e.Line}", listType);
-        IL.Emit(OpCodes.Newobj, ctor);
-        IL.Emit(OpCodes.Stloc, resultLocal);
-
-        // Emit nested loops for each generator
-        EmitComprehensionLoops(e.Generators, 0, () =>
-        {
-            IL.Emit(OpCodes.Ldloc, resultLocal);
-            var elemType = Emit(e.Element);
-            TypeMapper.EmitBox(IL, elemType);
-            IL.Emit(OpCodes.Callvirt, addMethod);
-        });
-
-        IL.Emit(OpCodes.Ldloc, resultLocal);
-        return new ListType(NajaTypes.Unknown);
+        return EmitComprehensionHelper(e.Line, e.Column, e.Generators, e.Element, isSet: false, isDict: false, null, null);
     }
 
     private NajaType EmitSetComp(SetCompExpr e)
     {
-        var setType = typeof(System.Collections.Generic.HashSet<object>);
-        var ctor = setType.GetConstructor(Type.EmptyTypes)!;
-        var add = setType.GetMethod("Add")!;
-
-        var resultLocal = _ctx.Locals.Declare($"__sc_{e.Line}", setType);
-        IL.Emit(OpCodes.Newobj, ctor);
-        IL.Emit(OpCodes.Stloc, resultLocal);
-
-        EmitComprehensionLoops(e.Generators, 0, () =>
-        {
-            IL.Emit(OpCodes.Ldloc, resultLocal);
-            var t = Emit(e.Element);
-            TypeMapper.EmitBox(IL, t);
-            IL.Emit(OpCodes.Callvirt, add);
-            IL.Emit(OpCodes.Pop);
-        });
-
-        IL.Emit(OpCodes.Ldloc, resultLocal);
-        return new SetType(NajaTypes.Unknown);
+        return EmitComprehensionHelper(e.Line, e.Column, e.Generators, e.Element, isSet: true, isDict: false, null, null);
     }
 
     private NajaType EmitDictComp(DictCompExpr e)
     {
-        var dictType = typeof(System.Collections.Generic.Dictionary<object, object>);
-        var ctor = dictType.GetConstructor(Type.EmptyTypes)!;
-        var setItem = dictType.GetMethod("set_Item")!;
-
-        var resultLocal = _ctx.Locals.Declare($"__dc_{e.Line}", dictType);
-        IL.Emit(OpCodes.Newobj, ctor);
-        IL.Emit(OpCodes.Stloc, resultLocal);
-
-        EmitComprehensionLoops(e.Generators, 0, () =>
-        {
-            IL.Emit(OpCodes.Ldloc, resultLocal);
-            var kt = Emit(e.Key); TypeMapper.EmitBox(IL, kt);
-            var vt = Emit(e.Value); TypeMapper.EmitBox(IL, vt);
-            IL.Emit(OpCodes.Callvirt, setItem);
-        });
-
-        IL.Emit(OpCodes.Ldloc, resultLocal);
-        return new DictType(NajaTypes.Unknown, NajaTypes.Unknown);
+        return EmitComprehensionHelper(e.Line, e.Column, e.Generators, null, isSet: false, isDict: true, e.Key, e.Value);
     }
 
     private NajaType EmitGenerator(GeneratorExpr e)
     {
         // Compile generators eagerly as List<object> for now
-        // Full lazy generator support requires coroutines (Phase 7)
-        var listType = typeof(System.Collections.Generic.List<object>);
-        var ctor = listType.GetConstructor(Type.EmptyTypes)!;
-        var addMethod = listType.GetMethod("Add")!;
+        return EmitComprehensionHelper(e.Line, e.Column, e.Generators, e.Element, isSet: false, isDict: false, null, null);
+    }
 
-        var resultLocal = _ctx.Locals.Declare($"__gen_{e.Line}", listType);
-        IL.Emit(OpCodes.Newobj, ctor);
-        IL.Emit(OpCodes.Stloc, resultLocal);
+    /// <summary>
+    /// Emits a comprehension (list/set/dict/generator) by creating a private static helper
+    /// method on the same type.  The helper method receives the outer iterable(s) as
+    /// parameters so that comprehension-scoped loop variables never leak into the
+    /// calling method's locals — exactly matching Python 3's comprehension scoping rules.
+    /// </summary>
+    private NajaType EmitComprehensionHelper(
+        int line, int col,
+        IReadOnlyList<Comprehension> generators,
+        Expression? element,
+        bool isSet, bool isDict,
+        Expression? dictKey, Expression? dictValue)
+    {
+        // Determine return type
+        Type returnClrType = isSet
+            ? typeof(System.Collections.Generic.HashSet<object>)
+            : isDict
+                ? typeof(System.Collections.Generic.Dictionary<object, object>)
+                : typeof(System.Collections.Generic.List<object>);
 
-        EmitComprehensionLoops(e.Generators, 0, () =>
+        // The outermost generator's iterable is evaluated in the CALLER's scope.
+        // We pass it as a parameter to the helper method.
+        // All other iterables and the element expression are evaluated inside the helper.
+        // We also pass captured outer variables as additional object parameters.
+
+        // --- Emit outer iterable in the CALLING context ---
+        var outerIterType = Emit(generators[0].Iter);
+        TypeMapper.EmitBox(IL, outerIterType);
+
+        // --- Define helper method ---
+        var helperName = $"<comp>_{line}_{col}";
+        var helperPts = new[] { typeof(object) };  // single param: the outer iterable
+        var helperMb = _ctx.TypeBuilder.DefineMethod(
+            helperName,
+            MethodAttributes.Private | MethodAttributes.Static,
+            returnClrType,
+            helperPts);
+        helperMb.DefineParameter(1, ParameterAttributes.None, "__iter0");
+
+        // --- Build EmitContext for helper (NO outer locals — scope isolation) ---
+        var hIL = helperMb.GetILGenerator();
+        var hCtx = new EmitContext(hIL, _ctx.Model, _ctx.TypeBuilder, _ctx.Module,
+                                   returnClrType, new[] { "__iter0" });
+        hCtx.IsInsideFunction = true;
+        // Copy module-level fields, methods, class info — but NOT locals
+        foreach (var (k, v) in _ctx.Fields) hCtx.Fields[k] = v;
+        foreach (var (k, v) in _ctx.Methods) hCtx.Methods[k] = v;
+        foreach (var (k, v) in _ctx.MethodParamTypes) hCtx.MethodParamTypes[k] = v;
+        foreach (var (k, v) in _ctx.ClassTypes) hCtx.ClassTypes[k] = v;
+        foreach (var (k, v) in _ctx.ClassConstructors) hCtx.ClassConstructors[k] = v;
+        foreach (var (k, v) in _ctx.InstanceFields) hCtx.InstanceFields[k] = v;
+        foreach (var (k, v) in _ctx.AllClassMethods) hCtx.AllClassMethods[k] = v;
+        foreach (var (k, v) in _ctx.AllClassMethodParamTypes) hCtx.AllClassMethodParamTypes[k] = v;
+        foreach (var mn in _ctx.ClassMethods) hCtx.ClassMethods.Add(mn);
+        foreach (var (k, v) in _ctx.ImportMap) hCtx.ImportMap[k] = v;
+        foreach (var (k, v) in _ctx.NamespaceImports) hCtx.NamespaceImports[k] = v;
+        hCtx.SelfName = _ctx.SelfName;
+        hCtx.IsInstanceMethod = false;  // helper is static, no 'self'
+
+        // --- Build the collection inside the helper ---
+        var hExpr = new ExpressionEmitter(hCtx);
+        var resultLocal = hCtx.Locals.Declare("__result", returnClrType);
+
+        if (isSet)
         {
-            IL.Emit(OpCodes.Ldloc, resultLocal);
-            var t = Emit(e.Element);
-            TypeMapper.EmitBox(IL, t);
-            IL.Emit(OpCodes.Callvirt, addMethod);
-        });
+            hIL.Emit(OpCodes.Newobj, returnClrType.GetConstructor(Type.EmptyTypes)!);
+        }
+        else if (isDict)
+        {
+            hIL.Emit(OpCodes.Newobj, returnClrType.GetConstructor(Type.EmptyTypes)!);
+        }
+        else
+        {
+            hIL.Emit(OpCodes.Newobj, returnClrType.GetConstructor(Type.EmptyTypes)!);
+        }
+        hIL.Emit(OpCodes.Stloc, resultLocal);
 
-        IL.Emit(OpCodes.Ldloc, resultLocal);
-        return new ListType(NajaTypes.Unknown);
+        // Rewrite the first generator to use the __iter0 parameter
+        var rewrittenGenerators = new List<Comprehension>(generators);
+
+        hExpr.EmitComprehensionLoopsHelper(
+            rewrittenGenerators, 0, isFirstFromParam: true,
+            body: () =>
+            {
+                hIL.Emit(OpCodes.Ldloc, resultLocal);
+                if (isDict)
+                {
+                    var kt = hExpr.Emit(dictKey!); TypeMapper.EmitBox(hIL, kt);
+                    var vt = hExpr.Emit(dictValue!); TypeMapper.EmitBox(hIL, vt);
+                    hIL.Emit(OpCodes.Callvirt, returnClrType.GetMethod("set_Item")!);
+                }
+                else if (isSet)
+                {
+                    var t = hExpr.Emit(element!);
+                    TypeMapper.EmitBox(hIL, t);
+                    hIL.Emit(OpCodes.Callvirt, returnClrType.GetMethod("Add")!);
+                    hIL.Emit(OpCodes.Pop); // HashSet.Add returns bool
+                }
+                else
+                {
+                    var t = hExpr.Emit(element!);
+                    TypeMapper.EmitBox(hIL, t);
+                    hIL.Emit(OpCodes.Callvirt, returnClrType.GetMethod("Add")!);
+                }
+            });
+
+        hIL.Emit(OpCodes.Ldloc, resultLocal);
+        hIL.Emit(OpCodes.Ret);
+
+        // --- Call helper from the original context (outer iterable already on stack) ---
+        IL.Emit(OpCodes.Call, helperMb);
+
+        return isSet ? (NajaType)new SetType(NajaTypes.Unknown)
+             : isDict ? new DictType(NajaTypes.Unknown, NajaTypes.Unknown)
+             : new ListType(NajaTypes.Unknown);
+    }
+
+    /// <summary>
+    /// Variant of EmitComprehensionLoops used inside isolated helper methods.
+    /// When <paramref name="isFirstFromParam"/> is true, the first generator reads
+    /// from ldarg.0 (the passed-in iterable) instead of evaluating its Iter expression.
+    /// </summary>
+    internal void EmitComprehensionLoopsHelper(
+        IReadOnlyList<Comprehension> generators,
+        int depth,
+        bool isFirstFromParam,
+        Action body)
+    {
+        if (depth >= generators.Count)
+        {
+            body();
+            return;
+        }
+
+        var gen = generators[depth];
+        var loopStart = IL.DefineLabel();
+        var loopEnd = IL.DefineLabel();
+
+        if (depth == 0 && isFirstFromParam)
+        {
+            // Load the iterable from the method parameter (ldarg.0)
+            IL.Emit(OpCodes.Ldarg_0);
+            IL.Emit(OpCodes.Castclass, typeof(System.Collections.IEnumerable));
+        }
+        else
+        {
+            var iterType = Emit(gen.Iter);
+            TypeMapper.EmitBox(IL, iterType);
+            IL.Emit(OpCodes.Castclass, typeof(System.Collections.IEnumerable));
+        }
+
+        var getEnum = typeof(System.Collections.IEnumerable).GetMethod("GetEnumerator")!;
+        IL.Emit(OpCodes.Callvirt, getEnum);
+
+        var enumLocal = _ctx.Locals.Declare($"__cenum_{depth}_{gen.Iter.Line}_{gen.Iter.Column}",
+            typeof(System.Collections.IEnumerator));
+        IL.Emit(OpCodes.Stloc, enumLocal);
+
+        IL.MarkLabel(loopStart);
+        IL.Emit(OpCodes.Ldloc, enumLocal);
+        var moveNext = typeof(System.Collections.IEnumerator).GetMethod("MoveNext")!;
+        IL.Emit(OpCodes.Callvirt, moveNext);
+        IL.Emit(OpCodes.Brfalse, loopEnd);
+
+        IL.Emit(OpCodes.Ldloc, enumLocal);
+        var current = typeof(System.Collections.IEnumerator).GetProperty("Current")!.GetGetMethod()!;
+        IL.Emit(OpCodes.Callvirt, current);
+
+        StoreComprehensionTarget(gen.Target);
+
+        foreach (var cond in gen.Conditions)
+        {
+            Emit(cond);
+            var condTrueLabel = IL.DefineLabel();
+            IL.Emit(OpCodes.Brtrue_S, condTrueLabel);
+            IL.Emit(OpCodes.Br, loopStart);
+            IL.MarkLabel(condTrueLabel);
+        }
+
+        EmitComprehensionLoopsHelper(generators, depth + 1, false, body);
+
+        IL.Emit(OpCodes.Br, loopStart);
+        IL.MarkLabel(loopEnd);
     }
 
     /// <summary>
@@ -2178,16 +2373,31 @@ public sealed class ExpressionEmitter
         }
     }
 
+    // ── Default value emitter ─────────────────────────────────────────────────
+
+    private void EmitDefaultValue(object? value)
+    {
+        if (value is null || value == System.Type.Missing)
+            IL.Emit(OpCodes.Ldnull);
+        else if (value is long l) { IL.Emit(OpCodes.Ldc_I8, l); }
+        else if (value is int i2) { IL.Emit(OpCodes.Ldc_I4, i2); IL.Emit(OpCodes.Conv_I8); }
+        else if (value is double d) { IL.Emit(OpCodes.Ldc_R8, d); }
+        else if (value is float f) { IL.Emit(OpCodes.Ldc_R8, (double)f); }
+        else if (value is bool b) { IL.Emit(b ? OpCodes.Ldc_I4_1 : OpCodes.Ldc_I4_0); }
+        else if (value is string s) { IL.Emit(OpCodes.Ldstr, s); }
+        else { IL.Emit(OpCodes.Ldnull); }
+    }
+
     // ── Helpers for dynamic() and cast() ─────────────────────────────────────
 
     private static string DescribeExpr(Expression expr) => expr switch
     {
-        NameExpr      e => e.Name,
-        CallExpr      e => $"{DescribeExpr(e.Func)}(...)",
+        NameExpr e => e.Name,
+        CallExpr e => $"{DescribeExpr(e.Func)}(...)",
         AttributeExpr e => $"{DescribeExpr(e.Object)}.{e.Attribute}",
         StringLiteral e => $"'{e.Value}'",
-        IntLiteral    e => e.Value.ToString(),
-        _               => expr.GetType().Name
+        IntLiteral e => e.Value.ToString(),
+        _ => expr.GetType().Name
     };
 
     private static NajaType ParseCastTarget(Expression typeArg, int line, int col)
@@ -2199,14 +2409,14 @@ public sealed class ExpressionEmitter
 
         return n.Name switch
         {
-            "int"   => NajaTypes.Int,
+            "int" => NajaTypes.Int,
             "float" => NajaTypes.Float,
-            "str"   => NajaTypes.Str,
-            "bool"  => NajaTypes.Bool,
+            "str" => NajaTypes.Str,
+            "bool" => NajaTypes.Bool,
             "bytes" => NajaTypes.Bytes,
-            "list"  => new ListType(NajaTypes.Unknown),
-            "dict"  => new DictType(NajaTypes.Unknown, NajaTypes.Unknown),
-            "set"   => new SetType(NajaTypes.Unknown),
+            "list" => new ListType(NajaTypes.Unknown),
+            "dict" => new DictType(NajaTypes.Unknown, NajaTypes.Unknown),
+            "set" => new SetType(NajaTypes.Unknown),
             _ => throw new CodeGenException(
                 $"cast(): unknown target type '{n.Name}'. " +
                 $"Supported: int, float, str, bool, bytes, list, dict, set.", line, col)
@@ -2223,9 +2433,9 @@ public sealed class ExpressionEmitter
         switch (to)
         {
             case IntType:
-                if (from is FloatType)           il.Emit(OpCodes.Conv_I8);
-                else if (from is BoolType)       il.Emit(OpCodes.Conv_I8);
-                else if (from is UnknownType)    il.Emit(OpCodes.Unbox_Any, typeof(long));
+                if (from is FloatType) il.Emit(OpCodes.Conv_I8);
+                else if (from is BoolType) il.Emit(OpCodes.Conv_I8);
+                else if (from is UnknownType) il.Emit(OpCodes.Unbox_Any, typeof(long));
                 else if (from is StrType)
                 {
                     // call NajaBuiltins.ToInt(string) → long
@@ -2235,7 +2445,7 @@ public sealed class ExpressionEmitter
 
             case FloatType:
                 if (from is IntType or BoolType) il.Emit(OpCodes.Conv_R8);
-                else if (from is UnknownType)    il.Emit(OpCodes.Unbox_Any, typeof(double));
+                else if (from is UnknownType) il.Emit(OpCodes.Unbox_Any, typeof(double));
                 else if (from is StrType)
                 {
                     il.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ToFloat))!);

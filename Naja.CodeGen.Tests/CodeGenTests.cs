@@ -1844,6 +1844,8 @@ public class CodeGenTests
             
             ienum.MoveNext()
             print(ienum.Current)
+            ienum.MoveNext()
+            print(ienum.Current)
             """));
     }
     

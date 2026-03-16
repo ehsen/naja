@@ -13,10 +13,10 @@ public static class NajaBuiltins
     public static object DynamicAdd(object a, object b)
     {
         if (a is string sa && b is string sb) return sa + sb;
-        
+
         // Try __add__ on left operand
         var addM = a?.GetType().GetMethod("__add__", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-        if (addM is not null) 
+        if (addM is not null)
         {
             try
             {
@@ -29,10 +29,10 @@ public static class NajaBuiltins
                 throw tie.InnerException;
             }
         }
-        
+
         // Try __radd__ on right operand
         var raddM = b?.GetType().GetMethod("__radd__", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-        if (raddM is not null) 
+        if (raddM is not null)
         {
             try
             {
@@ -45,7 +45,7 @@ public static class NajaBuiltins
                 throw tie.InnerException;
             }
         }
-        
+
         // Only convert to numeric if both operands are IConvertible (primitives)
         if (a is IConvertible && b is IConvertible)
         {
@@ -53,7 +53,7 @@ public static class NajaBuiltins
                 return Convert.ToDouble(a) + Convert.ToDouble(b);
             return Convert.ToInt64(a) + Convert.ToInt64(b);
         }
-        
+
         throw new InvalidOperationException($"Unsupported operand types for +: '{a?.GetType().Name}' and '{b?.GetType().Name}'");
     }
 
@@ -61,14 +61,14 @@ public static class NajaBuiltins
     {
         // Try __sub__ on left operand
         var subM = a?.GetType().GetMethod("__sub__");
-        if (subM is not null) 
+        if (subM is not null)
             return subM.Invoke(a, new[] { b }) ?? throw new Exception("TypeError: __sub__ returned None");
-        
+
         // Try __rsub__ on right operand
         var rsubM = b?.GetType().GetMethod("__rsub__");
-        if (rsubM is not null) 
+        if (rsubM is not null)
             return rsubM.Invoke(b, new[] { a }) ?? throw new Exception("TypeError: __rsub__ returned None");
-        
+
         // Only convert to numeric if both operands are IConvertible (primitives)
         if (a is IConvertible && b is IConvertible)
         {
@@ -76,7 +76,7 @@ public static class NajaBuiltins
                 return Convert.ToDouble(a) - Convert.ToDouble(b);
             return Convert.ToInt64(a) - Convert.ToInt64(b);
         }
-        
+
         throw new InvalidOperationException($"Unsupported operand types for -: '{a?.GetType().Name}' and '{b?.GetType().Name}'");
     }
 
@@ -90,14 +90,14 @@ public static class NajaBuiltins
 
         // Try __mul__ on left operand
         var mulM = a?.GetType().GetMethod("__mul__");
-        if (mulM is not null) 
+        if (mulM is not null)
             return mulM.Invoke(a, new[] { b }) ?? throw new Exception("TypeError: __mul__ returned None");
-        
+
         // Try __rmul__ on right operand
         var rmulM = b?.GetType().GetMethod("__rmul__");
-        if (rmulM is not null) 
+        if (rmulM is not null)
             return rmulM.Invoke(b, new[] { a }) ?? throw new Exception("TypeError: __rmul__ returned None");
-        
+
         // Only convert to numeric if both operands are IConvertible (primitives)
         if (a is IConvertible && b is IConvertible)
         {
@@ -105,7 +105,7 @@ public static class NajaBuiltins
                 return Convert.ToDouble(a) * Convert.ToDouble(b);
             return Convert.ToInt64(a) * Convert.ToInt64(b);
         }
-        
+
         throw new InvalidOperationException($"Unsupported operand types for *: '{a?.GetType().Name}' and '{b?.GetType().Name}'");
     }
 
@@ -113,14 +113,14 @@ public static class NajaBuiltins
     {
         // Try __mod__ on left operand
         var modM = a?.GetType().GetMethod("__mod__");
-        if (modM is not null) 
+        if (modM is not null)
             return modM.Invoke(a, new[] { b }) ?? throw new Exception("TypeError: __mod__ returned None");
-        
+
         // Try __rmod__ on right operand
         var rmodM = b?.GetType().GetMethod("__rmod__");
-        if (rmodM is not null) 
+        if (rmodM is not null)
             return rmodM.Invoke(b, new[] { a }) ?? throw new Exception("TypeError: __rmod__ returned None");
-        
+
         // Only convert to numeric if both operands are IConvertible (primitives)
         if (a is IConvertible && b is IConvertible)
         {
@@ -128,7 +128,7 @@ public static class NajaBuiltins
                 return PyModF(Convert.ToDouble(a), Convert.ToDouble(b));
             return (object)PyMod(Convert.ToInt64(a), Convert.ToInt64(b));
         }
-        
+
         throw new InvalidOperationException($"Unsupported operand types for %: '{a?.GetType().Name}' and '{b?.GetType().Name}'");
     }
 
@@ -421,9 +421,9 @@ public static class NajaBuiltins
         {
             var ps = c.GetParameters();
             bool hasParams = ps.Length > 0 && ps[ps.Length - 1].GetCustomAttributes(typeof(ParamArrayAttribute), false).Length > 0;
-            
+
             if (args.Length > ps.Length && !hasParams) continue;
-            
+
             int requiredParams = ps.Count(p => !p.IsOptional && p.GetCustomAttributes(typeof(ParamArrayAttribute), false).Length == 0);
             if (args.Length < requiredParams) continue;
 
@@ -442,7 +442,7 @@ public static class NajaBuiltins
                     {
                         var elementType = p.ParameterType.GetElementType()!;
                         int paramsCount = args.Length - i;
-                        
+
                         // Check if the user passed an array directly
                         if (paramsCount == 1 && args[i] != null && p.ParameterType.IsInstanceOfType(args[i]))
                         {
@@ -523,7 +523,7 @@ public static class NajaBuiltins
     {
         converted = null;
         score = 0;
-        
+
         var isByRef = targetType.IsByRef;
         var nnTarget = isByRef ? targetType.GetElementType()! : targetType;
         nnTarget = Nullable.GetUnderlyingType(nnTarget) ?? nnTarget;
@@ -561,11 +561,11 @@ public static class NajaBuiltins
                               value is double || value is float || value is decimal;
         bool targetIsString = nnTarget == typeof(string);
         bool targetIsNumeric = nnTarget.IsPrimitive && (nnTarget != typeof(bool) && nnTarget != typeof(char));
-        
+
         // Numeric values should NOT convert to strings during constructor/method resolution
         if (valueIsNumeric && targetIsString)
             return false;
-        
+
         // Strings should NOT convert to numbers during constructor/method resolution
         // (parse failures are expensive and usually indicate wrong overload)
         if (value is string && targetIsNumeric)
@@ -578,12 +578,12 @@ public static class NajaBuiltins
             if (invoke != null)
             {
                 var invokeParams = invoke.GetParameters();
-                
+
                 // Check if any parameter types or return type contain generic parameters
                 // If so, we cannot create a lambda expression and should skip this conversion
-                bool hasOpenGenericParams = invokeParams.Any(p => p.ParameterType.ContainsGenericParameters) 
+                bool hasOpenGenericParams = invokeParams.Any(p => p.ParameterType.ContainsGenericParameters)
                     || invoke.ReturnType.ContainsGenericParameters;
-                
+
                 if (hasOpenGenericParams)
                 {
                     // Cannot convert to delegate with open generic parameters
@@ -680,12 +680,12 @@ public static class NajaBuiltins
         System.Reflection.MethodInfo? methodToCallOverride = null;
         Type methodLookupType;
         System.Reflection.BindingFlags methodLookupFlags;
-        
+
         if (handlerTarget is Type moduleType)
         {
             // Module-level static method — look it up by name on the type
             methodLookupType = moduleType;
-            methodLookupFlags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | 
+            methodLookupFlags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic |
                                 System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.IgnoreCase;
             resolvedTarget = null;   // static — no instance needed
         }
@@ -694,7 +694,7 @@ public static class NajaBuiltins
             if (handlerTarget is null)
                 throw new Exception($"TypeError: event handler target is null for '{eventName}' (expected something like self.method)");
             methodLookupType = handlerTarget.GetType();
-            methodLookupFlags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | 
+            methodLookupFlags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic |
                                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.IgnoreCase;
         }
 
@@ -713,8 +713,8 @@ public static class NajaBuiltins
             else
             {
                 // Static method direct binding
-                var direct = Delegate.CreateDelegate(handlerType, methodLookupType.GetMethod(handlerMethodName, methodLookupFlags) ?? 
-                    methodLookupType.GetMethods(methodLookupFlags).FirstOrDefault(m => 
+                var direct = Delegate.CreateDelegate(handlerType, methodLookupType.GetMethod(handlerMethodName, methodLookupFlags) ??
+                    methodLookupType.GetMethods(methodLookupFlags).FirstOrDefault(m =>
                         string.Equals(m.Name, handlerMethodName, StringComparison.OrdinalIgnoreCase)));
                 if (direct is not null)
                 {
@@ -736,7 +736,7 @@ public static class NajaBuiltins
             throw new Exception($"TypeError: event '{eventName}' delegate return type is not supported");
 
         var invokeParams = invoke.GetParameters();
-        
+
         // Find the method to call
         System.Reflection.MethodInfo methodToCall;
         if (methodToCallOverride is not null)
@@ -798,12 +798,12 @@ public static class NajaBuiltins
         object? resolvedTarget = handlerTarget;
         Type methodLookupType;
         System.Reflection.BindingFlags methodLookupFlags;
-        
+
         if (handlerTarget is Type moduleType)
         {
             // Module-level static method — look it up by name on the type
             methodLookupType = moduleType;
-            methodLookupFlags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | 
+            methodLookupFlags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic |
                                 System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.IgnoreCase;
             resolvedTarget = null;   // static — no instance needed
         }
@@ -812,7 +812,7 @@ public static class NajaBuiltins
             if (handlerTarget is null)
                 throw new Exception($"TypeError: event handler target is null for '{eventName}' (expected something like self.method)");
             methodLookupType = handlerTarget.GetType();
-            methodLookupFlags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | 
+            methodLookupFlags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic |
                                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.IgnoreCase;
         }
 
@@ -831,8 +831,8 @@ public static class NajaBuiltins
             else
             {
                 // Static method direct binding
-                var direct = Delegate.CreateDelegate(handlerType, methodLookupType.GetMethod(handlerMethodName, methodLookupFlags) ?? 
-                    methodLookupType.GetMethods(methodLookupFlags).FirstOrDefault(m => 
+                var direct = Delegate.CreateDelegate(handlerType, methodLookupType.GetMethod(handlerMethodName, methodLookupFlags) ??
+                    methodLookupType.GetMethods(methodLookupFlags).FirstOrDefault(m =>
                         string.Equals(m.Name, handlerMethodName, StringComparison.OrdinalIgnoreCase)));
                 if (direct is not null)
                 {
@@ -904,11 +904,11 @@ public static class NajaBuiltins
     public static object? GetStaticAttr(Type type, string name)
     {
         if (type is null) return null;
-        
+
         // 1. Static property (Color.White, SystemInformation.WorkingArea, etc.)
         var prop = type.GetProperty(name,
             System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.FlattenHierarchy);
-        if (prop?.GetGetMethod() is { } getter) 
+        if (prop?.GetGetMethod() is { } getter)
             return getter.Invoke(null, null);
 
         // 2. Enum member by name — must come before GetField because enum
@@ -920,12 +920,23 @@ public static class NajaBuiltins
         }
 
         // 3. Static field (non-enum, e.g. Color.Empty, IntPtr.Zero)
-        var field = type.GetField(name,
-            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.FlattenHierarchy);
-        if (field is not null) 
+        System.Reflection.FieldInfo? field = null;
+        try
+        {
+            field = type.GetField(name,
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.FlattenHierarchy);
+        }
+        catch (System.Reflection.AmbiguousMatchException)
+        {
+            // Multiple fields with same name in hierarchy - use first match
+            field = type.GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.FlattenHierarchy)
+                .FirstOrDefault(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase));
+        }
+        if (field is not null)
             return field.GetValue(null);
 
-        throw new MissingFieldException($"Field not found: '{type.FullName}.{name}'");
+        // Return null instead of throwing - caller should handle missing fields
+        return null;
     }
 
     public static object? GetAttr(object obj, string name)
@@ -1145,35 +1156,134 @@ public static class NajaBuiltins
         return obj;
     }
 
-    public static void ContextExit(object? obj)
+    /// <summary>
+    /// Calls __exit__ with the given exception (null for normal exit).
+    /// Returns true if __exit__ returned a truthy value (exception suppressed).
+    /// </summary>
+    public static bool ContextExitWithException(object? obj, Exception? exc)
     {
-        if (obj is null) return;
+        if (obj is null) return false;
 
-        // 1. Try Naja __exit__ protocol
         var exitM = obj.GetType().GetMethod("__exit__");
         if (exitM is not null)
         {
             var ps = exitM.GetParameters();
-            exitM.Invoke(obj, new object?[ps.Length]);
-            return;
-        }
-
-        // 2. Try Naja-emitted Dispose override (typed as object, not bool)
-        //    Naja subclasses emit: public object Dispose(object disposing)
-        var najaDispose = obj.GetType().GetMethod("Dispose",
-            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly);
-        if (najaDispose is not null)
-        {
-            var ps = najaDispose.GetParameters();
+            object?[] exitArgs;
             if (ps.Length == 0)
-                najaDispose.Invoke(obj, null);
+                exitArgs = Array.Empty<object?>();
+            else if (ps.Length >= 3)
+                exitArgs = new object?[] {
+                    exc?.GetType() as object,  // exc_type (Type or null)
+                    exc as object,             // exc_val
+                    null                       // traceback (no CLR equivalent)
+                };
             else
-                najaDispose.Invoke(obj, new object?[] { true });
-            return;
+                exitArgs = new object?[ps.Length];
+
+            object? result;
+            try { result = exitM.Invoke(obj, exitArgs); }
+            catch (System.Reflection.TargetInvocationException tie) when (tie.InnerException is not null)
+            { throw tie.InnerException; }
+
+            return ToBool(result);
         }
 
-        // 3. Standard IDisposable fallback
-        if (obj is IDisposable d) d.Dispose();
+        // Standard IDisposable fallback — never suppresses
+        if (exc is null)
+        {
+            // Naja-emitted Dispose override
+            var najaDispose = obj.GetType().GetMethod("Dispose",
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly);
+            if (najaDispose is not null)
+            {
+                var ps = najaDispose.GetParameters();
+                if (ps.Length == 0) najaDispose.Invoke(obj, null);
+                else najaDispose.Invoke(obj, new object?[] { true });
+            }
+            else if (obj is IDisposable d) d.Dispose();
+        }
+        return false;
+    }
+
+    public static void ContextExit(object? obj) => ContextExitWithException(obj, null);
+
+    // ── Iterator protocol helper ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Resolves the IEnumerator from the result of __iter__.
+    /// If __iter__ returned self (common Python pattern), uses self directly.
+    /// Otherwise wraps the result in a NajaIteratorAdapter.
+    /// </summary>
+    public static System.Collections.IEnumerator GetIteratorFromResult(object? iterResult, object self)
+    {
+        var target = iterResult ?? self;
+        if (target is System.Collections.IEnumerator en) return en;
+        // target may be a Naja object that has __next__ but doesn't yet implement IEnumerator at the
+        // CLR level (e.g. TypeBuilder not finished).  Wrap it.
+        return new NajaIteratorAdapter(target);
+    }
+
+    private sealed class NajaIteratorAdapter : System.Collections.IEnumerator
+    {
+        private readonly object _target;
+        private object? _current;
+        private bool _exhausted;
+        private System.Reflection.MethodInfo? _nextMethod;
+
+        public NajaIteratorAdapter(object target)
+        {
+            _target = target;
+            _nextMethod = target.GetType().GetMethod("__next__",
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic |
+                System.Reflection.BindingFlags.Instance);
+        }
+
+        public object? Current => _current;
+
+        public bool MoveNext()
+        {
+            if (_exhausted) return false;
+            if (_nextMethod is null) { _exhausted = true; return false; }
+            try
+            {
+                _current = _nextMethod.Invoke(_target, null);
+                return true;
+            }
+            catch (System.Reflection.TargetInvocationException tie)
+            {
+                var inner = tie.InnerException;
+                if (inner is InvalidOperationException || (inner?.Message?.Contains("StopIteration") == true))
+                { _exhausted = true; return false; }
+                if (inner is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(inner).Throw();
+                throw;
+            }
+            catch (Exception ex) when (ex.Message.Contains("StopIteration"))
+            {
+                _exhausted = true; return false;
+            }
+        }
+
+        public void Reset() => throw new NotSupportedException("Python iterators do not support Reset()");
+    }
+
+    // ── Type resolution helper (avoids Ldtoken on unfinished TypeBuilders) ────
+
+    /// <summary>
+    /// Resolves a Naja user-defined class by simple name from all loaded assemblies.
+    /// Used by EmitName instead of ldtoken, which fails on unfinished TypeBuilders.
+    /// </summary>
+    public static Type? ResolveTypeByName(string name)
+    {
+        foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            try
+            {
+                var t = asm.GetType(name, throwOnError: false, ignoreCase: false);
+                if (t is not null) return t;
+            }
+            catch { }
+        }
+        return null;
     }
 
     // ── enumerate() ──────────────────────────────────────────────────────────
@@ -1319,7 +1429,7 @@ public static class NajaBuiltins
             throw new Exception($"object of type 'NoneType' has no len()");
 
         // Check for Count property first (handles __len__ dunder method)
-        var countProp = obj.GetType().GetProperty("Count", 
+        var countProp = obj.GetType().GetProperty("Count",
             System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
         if (countProp is not null && countProp.PropertyType == typeof(int))
         {
@@ -1529,9 +1639,12 @@ public static class NajaBuiltins
             var invokeArgs = new object?[ps.Length];
             for (int i = 0; i < Math.Min(args.Length, ps.Length); i++)
             {
-                try { invokeArgs[i] = Convert.ChangeType(args[i],
+                try
+                {
+                    invokeArgs[i] = Convert.ChangeType(args[i],
                     Nullable.GetUnderlyingType(ps[i].ParameterType) ?? ps[i].ParameterType,
-                    System.Globalization.CultureInfo.InvariantCulture); }
+                    System.Globalization.CultureInfo.InvariantCulture);
+                }
                 catch { invokeArgs[i] = args[i]; }
             }
             return mi.Invoke(null, invokeArgs);
@@ -1587,9 +1700,16 @@ public static class NajaBuiltins
     public static bool Contains(object item, object collection) => collection switch
     {
         string s => s.Contains(ToStr(item)),
-        System.Collections.Generic.List<object> l => l.Contains(item),
-        System.Collections.Generic.Dictionary<object, object> d => d.ContainsKey(item),
-        System.Collections.IEnumerable e => e.Cast<object>().Contains(item),
+        // Use DynamicEq for structural equality — CLR object[].Equals is reference-only,
+        // so `(0,0) in [(0,0)]` would fail without this.
+        System.Collections.Generic.List<object> l =>
+            l.Any(x => DynamicEq(x, item)),
+        System.Collections.Generic.Dictionary<object, object> d =>
+            d.Keys.Any(k => DynamicEq(k, item)),
+        System.Collections.Generic.HashSet<object> h =>
+            h.Any(x => DynamicEq(x, item)),
+        System.Collections.IEnumerable e =>
+            e.Cast<object>().Any(x => DynamicEq(x, item)),
         _ => false
     };
 
@@ -1636,7 +1756,50 @@ public static class NajaBuiltins
     public static long Id(object obj) =>
         System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj);
 
-    public static long Hash(object obj) => obj?.GetHashCode() ?? 0;
+    public static long Hash(object? obj)
+    {
+        if (obj is null) return 0;
+
+        // object[] → Python tuple hash: combine element hashes
+        if (obj is object[] arr)
+        {
+            // Use the same mixing as Python's tuple hash (simplified FNV-like)
+            unchecked
+            {
+                long h = 0x345678L;
+                foreach (var item in arr)
+                {
+                    long ih = Hash(item);
+                    h = (h ^ ih) * 1000003L;
+                }
+                h ^= arr.Length;
+                if (h == -1) h = -2;
+                return h;
+            }
+        }
+
+        // List<object> → NOT hashable in Python, but handle gracefully
+        if (obj is System.Collections.Generic.List<object> list)
+        {
+            unchecked
+            {
+                long h = 0x345678L;
+                foreach (var item in list) h = (h ^ Hash(item)) * 1000003L;
+                h ^= list.Count;
+                return h;
+            }
+        }
+
+        // Primitives: use value-based hash
+        if (obj is long l) return l;
+        if (obj is int i) return i;
+        if (obj is double d) return d.GetHashCode();
+        if (obj is bool b) return b ? 1L : 0L;
+        if (obj is string s) return s.GetHashCode();
+
+        // Everything else: CLR default (reference-based for user objects)
+        return obj.GetHashCode();
+    }
 
     // ── hasattr() / callable() ────────────────────────────────────────────────
 
@@ -1738,7 +1901,7 @@ public static class NajaBuiltins
     public static bool IteratorMoveNext(Func<object> nextMethod, ref object currentValue, ref bool exhausted)
     {
         if (exhausted) return false;
-        
+
         try
         {
             currentValue = nextMethod();
@@ -1755,12 +1918,18 @@ public static class NajaBuiltins
 
     public static bool IsInstance(object obj, object typeOrTuple)
     {
-        var types = typeOrTuple is object[] arr
-            ? arr.OfType<Type>()
-            : typeOrTuple is Type t
-                ? new[] { t }.AsEnumerable()
-                : Enumerable.Empty<Type>();
-        return types.Any(ty => ty.IsInstanceOfType(obj));
+        if (obj is null) return false;
+        if (typeOrTuple is null) return false;
+
+        // Tuple/array of types: isinstance(x, (A, B))
+        if (typeOrTuple is object[] arr)
+            return arr.OfType<Type>().Any(ty => ty.IsInstanceOfType(obj));
+
+        if (typeOrTuple is Type t)
+            return t.IsInstanceOfType(obj);
+
+        // Fallback: typeOrTuple might be a Type? returned as object from ResolveTypeByName
+        return false;
     }
 
     // ── String method bridge ──────────────────────────────────────────────────
@@ -1876,5 +2045,3 @@ public static class NajaBuiltins
         return s.Contains('.') || s.Contains('E') ? s : s + ".0";
     }
 }
-
-
