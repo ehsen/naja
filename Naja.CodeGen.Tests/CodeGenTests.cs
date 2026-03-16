@@ -49,7 +49,7 @@ public class CodeGenTests
         var model = new SemanticAnalyzer().Analyze(module);
         var assemblyName = "NajaTest_" + Guid.NewGuid().ToString("N")[..8];
         var emitter = new AssemblyEmitter(model, assemblyName);
-        var assembly = emitter.EmitToMemory(module);
+        var assembly = emitter.EmitToMemory(module,CompilationProfile.Console);
 
         var type = assembly.GetType(assemblyName)
             ?? assembly.GetType("NajaModule") // fallback
@@ -78,7 +78,7 @@ public class CodeGenTests
         var model = new SemanticAnalyzer().Analyze(module);
         var assemblyName = "NajaTest_" + Guid.NewGuid().ToString("N")[..8];
         var emitter = new AssemblyEmitter(model, assemblyName);
-        return emitter.EmitToMemory(module);
+        return emitter.EmitToMemory(module,CompilationProfile.Console);
     }
 
     // =========================================================================
@@ -1641,7 +1641,7 @@ public class CodeGenTests
         var module = new NajaParser(tokens).ParseModule();
         var model = new SemanticAnalyzer().Analyze(module);
         var emitter = new AssemblyEmitter(model, "TestDunders");
-        var assembly = emitter.EmitToMemory(module);
+        var assembly = emitter.EmitToMemory(module, CompilationProfile.Console);
         
         var type = assembly.GetType("MyObj");
         Assert.NotNull(type);
@@ -1675,7 +1675,7 @@ public class CodeGenTests
         var module = new NajaParser(tokens).ParseModule();
         var model = new SemanticAnalyzer().Analyze(module);
         var emitter = new AssemblyEmitter(model, "TestSealed");
-        var assembly = emitter.EmitToMemory(module);
+        var assembly = emitter.EmitToMemory(module,CompilationProfile.Console);
         
         var type = assembly.GetType("SealedClass");
         Assert.NotNull(type);
@@ -1701,7 +1701,7 @@ public class CodeGenTests
         var module = new NajaParser(tokens).ParseModule();
         var model = new SemanticAnalyzer().Analyze(module);
         var emitter = new AssemblyEmitter(model, "TestInitOnly");
-        var assembly = emitter.EmitToMemory(module);
+        var assembly = emitter.EmitToMemory(module,CompilationProfile.Console);
         
         var type = assembly.GetType("ConstValues");
         Assert.NotNull(type);
