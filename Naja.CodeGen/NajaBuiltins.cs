@@ -986,6 +986,10 @@ public static class NajaBuiltins
         if (targetType.IsAssignableFrom(value.GetType())) return value;
         if (TryConvertArg(value, targetType, false, out var converted, out _)) return converted;
 
+        // Allow explicit coercion to string for attribute assignment: Python semantics
+        // commonly expect things like lbl.Text = 100 to become "100".
+        if (targetType == typeof(string)) return ToStr(value);
+
         // Last-resort: if value is long and target is int32/int16/byte/sbyte, narrow it
         if (value is long l)
         {
