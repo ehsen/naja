@@ -151,6 +151,7 @@ public sealed class AssemblyEmitter
         _classConstructors.Clear();
         _classMethodNames.Clear();
         _pendingCtorIL.Clear();
+        
 
         // ── 4. Emit all IL ────────────────────────────────────────────────────
         var typeBuilder = EmitModule(najaModule, modBuilder, profile);
@@ -215,7 +216,7 @@ public sealed class AssemblyEmitter
     /// The resulting bytes are loaded via Assembly.Load so NajaEngine
     /// receives a live Assembly exactly as before.
     /// </summary>
-    public Assembly EmitToMemory(NajaParserModule najaModule, CompilationProfile console)
+    public Assembly EmitToMemory(NajaParserModule najaModule, CompilationProfile profile)
     {
         var asmName = new AssemblyName(_assemblyName);
         var asmBuilder = new PersistedAssemblyBuilder(asmName, typeof(object).Assembly);
@@ -228,7 +229,7 @@ public sealed class AssemblyEmitter
         _classMethodNames.Clear();
         _pendingCtorIL.Clear();
 
-        var typeBuilder = EmitModule(najaModule, modBuilder, CompilationProfile.Console);
+        var typeBuilder = EmitModule(najaModule, modBuilder, profile);
 
         // Finalise all class types then the module type
         foreach (var ct in _classTypes.Values)
@@ -496,6 +497,34 @@ public sealed class AssemblyEmitter
                                         // Emit as public static field on the class
                                         ct.DefineField(cn.Name, typeof(object), FieldAttributes.Public | FieldAttributes.Static);
                                     }
+                                }
+                            }
+                             else if (member is AnnAssignStatement ann && ann.Target is NameExpr an)
+                            {
+                                // Handle class-level annotated assignments
+                                // typing.Final fields should be instance fields with InitOnly
+                                bool isFinal =
+                                    ann.Annotation is NameExpr { Name: "Final" }
+                                    || (ann.Annotation is AttributeExpr fa
+                                        && fa.Attribute == "Final"
+                                        && fa.Object is NameExpr { Name: "typing" })
+                                    || (ann.Annotation is SubscriptExpr sub
+                                        && (sub.Object is NameExpr { Name: "Final" }
+                                            || (sub.Object is AttributeExpr sa
+                                                && sa.Attribute == "Final"
+                                                && sa.Object is NameExpr { Name: "typing" })));
+
+                                if (isFinal)
+                                {
+                                    // typing.Final fields are instance fields with InitOnly flag
+                                    var fbAttrs = FieldAttributes.Public | FieldAttributes.InitOnly;
+                                    ct.DefineField(an.Name, typeof(object), fbAttrs);
+                                }
+                                else
+                                {
+                                    // Non-Final class variables are static
+                                    var fbAttrs = FieldAttributes.Public | FieldAttributes.Static;
+                                    ct.DefineField(an.Name, typeof(object), fbAttrs);
                                 }
                             }
                         }
@@ -1028,6 +1057,32 @@ public sealed class AssemblyEmitter
         var classMethods = new Dictionary<string, MethodBuilder>();
         var classParamTs = new Dictionary<string, Type[]>();
 
+        // ── Scan for class-level field declarations (AssignStatement and AnnAssignStatement) ──
+        foreach (var member in cls.Body)
+        {
+            switch (member)
+            {
+                case AssignStatement assign:
+                    foreach (var target in assign.Targets)
+                        TryDeclareInstanceField(target, instanceFields, ct);
+                    break;
+
+                case AnnAssignStatement ann:
+                    bool isFinal =
+                        ann.Annotation is NameExpr { Name: "Final" }
+                        || (ann.Annotation is AttributeExpr fa
+                            && fa.Attribute == "Final"
+                            && fa.Object is NameExpr { Name: "typing" })
+                        || (ann.Annotation is SubscriptExpr sub
+                            && (sub.Object is NameExpr { Name: "Final" }
+                                || (sub.Object is AttributeExpr sa
+                                    && sa.Attribute == "Final"
+                                    && sa.Object is NameExpr { Name: "typing" })));
+                    TryDeclareInstanceField(ann.Target, instanceFields, ct, isFinal);
+                    break;
+            }
+        }
+
         // ── Scan for all instance fields (deep — covers if/for/try/with) ──────
         foreach (var member in cls.Body)
             if (member is FunctionDef fn)
@@ -1352,8 +1407,7 @@ public sealed class AssemblyEmitter
                 typeof(bool), Type.EmptyTypes);
             var mnIl = moveNextMb.GetILGenerator();
 
-            // Call NajaBuiltins.IteratorMoveNext(this, __next__ method, currentField, exhaustedField)
-            mnIl.Emit(OpCodes.Ldarg_0);  // this
+            // Call NajaBuiltins.IteratorMoveNext(__next__ method delegate, currentField, exhaustedField)
             mnIl.Emit(OpCodes.Ldarg_0);  // this (for method call)
             mnIl.Emit(OpCodes.Ldftn, nextMb);  // method pointer
             mnIl.Emit(OpCodes.Newobj, typeof(Func<object>).GetConstructor(new[] { typeof(object), typeof(IntPtr) })!);
