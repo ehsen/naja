@@ -245,8 +245,27 @@ public static class NajaBuiltins
     }
 
     public static bool DynamicNotEq(object? a, object? b) => !DynamicEq(a, b);
+    private static readonly System.Reflection.BindingFlags DunderFlags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.IgnoreCase;
+
     public static bool DynamicLt(object? a, object? b)
     {
+        // Prefer Python dunder dispatch when available
+        try
+        {
+            if (a is not null)
+            {
+                var m = a.GetType().GetMethod("__lt__", DunderFlags);
+                if (m != null) return ToBool(DynamicCall(a, "__lt__", new object[] { b }));
+            }
+            if (b is not null)
+            {
+                // try reflected operation: b.__gt__(a)
+                var m2 = b.GetType().GetMethod("__gt__", DunderFlags);
+                if (m2 != null) return ToBool(DynamicCall(b, "__gt__", new object[] { a }));
+            }
+        }
+        catch { /* fall back */ }
+
         if (a is string sa && b is string sb) return string.CompareOrdinal(sa, sb) < 0;
         if (IsNumeric(a) && IsNumeric(b))
         {
@@ -258,6 +277,21 @@ public static class NajaBuiltins
 
     public static bool DynamicLtEq(object? a, object? b)
     {
+        try
+        {
+            if (a is not null)
+            {
+                var m = a.GetType().GetMethod("__le__", DunderFlags);
+                if (m != null) return ToBool(DynamicCall(a, "__le__", new object[] { b }));
+            }
+            if (b is not null)
+            {
+                var m2 = b.GetType().GetMethod("__ge__", DunderFlags);
+                if (m2 != null) return ToBool(DynamicCall(b, "__ge__", new object[] { a }));
+            }
+        }
+        catch { }
+
         if (a is string sa && b is string sb) return string.CompareOrdinal(sa, sb) <= 0;
         if (IsNumeric(a) && IsNumeric(b))
         {
@@ -269,6 +303,21 @@ public static class NajaBuiltins
 
     public static bool DynamicGt(object? a, object? b)
     {
+        try
+        {
+            if (a is not null)
+            {
+                var m = a.GetType().GetMethod("__gt__", DunderFlags);
+                if (m != null) return ToBool(DynamicCall(a, "__gt__", new object[] { b }));
+            }
+            if (b is not null)
+            {
+                var m2 = b.GetType().GetMethod("__lt__", DunderFlags);
+                if (m2 != null) return ToBool(DynamicCall(b, "__lt__", new object[] { a }));
+            }
+        }
+        catch { }
+
         if (a is string sa && b is string sb) return string.CompareOrdinal(sa, sb) > 0;
         if (IsNumeric(a) && IsNumeric(b))
         {
@@ -280,6 +329,21 @@ public static class NajaBuiltins
 
     public static bool DynamicGtEq(object? a, object? b)
     {
+        try
+        {
+            if (a is not null)
+            {
+                var m = a.GetType().GetMethod("__ge__", DunderFlags);
+                if (m != null) return ToBool(DynamicCall(a, "__ge__", new object[] { b }));
+            }
+            if (b is not null)
+            {
+                var m2 = b.GetType().GetMethod("__le__", DunderFlags);
+                if (m2 != null) return ToBool(DynamicCall(b, "__le__", new object[] { a }));
+            }
+        }
+        catch { }
+
         if (a is string sa && b is string sb) return string.CompareOrdinal(sa, sb) >= 0;
         if (IsNumeric(a) && IsNumeric(b))
         {
@@ -1496,35 +1560,77 @@ public static class NajaBuiltins
         _ => Convert.ToDouble(obj)
     };
 
-    public static string ToStr(object? obj) => obj switch
+    public static string ToStr(object? obj)
     {
-        null => "None",
-        bool b => b ? "True" : "False",
-        string s => s,
-        long l => l.ToString(),
-        int i => ((long)i).ToString(),
-        double d => FormatFloat(d),
-        float f => FormatFloat(f),
-        Exception ex => ex.Message,
-        System.Collections.Generic.List<object> l =>
-            "[" + string.Join(", ", l.Select(x => Repr(x))) + "]",
-        object[] arr =>
-            "(" + string.Join(", ", arr.Select(x => Repr(x))) + ")",
-        _ when obj.GetType().IsPrimitive =>
-            Convert.ToString(obj, System.Globalization.CultureInfo.InvariantCulture) ?? "None",
-        _ => obj.ToString() ?? "None"
-    };
+        if (obj is null) return "None";
+        if (obj is bool b) return b ? "True" : "False";
+        if (obj is string s) return s;
+        if (obj is long l) return l.ToString();
+        if (obj is int i) return ((long)i).ToString();
+        if (obj is double d) return FormatFloat(d);
+        if (obj is float f) return FormatFloat(f);
+        if (obj is Exception ex) return ex.Message;
+        if (obj is System.Collections.Generic.List<object> listVal)
+            return "[" + string.Join(", ", listVal.Select(x => Repr(x))) + "]";
+        if (obj is object[] arrVal)
+            return "(" + string.Join(", ", arrVal.Select(x => Repr(x))) + ")";
 
-    public static bool ToBool(object? obj) => obj switch
+        // If object defines __str__, prefer that
+        try
+        {
+            var t = obj.GetType();
+            var m = t.GetMethod("__str__", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.IgnoreCase);
+            if (m != null)
+            {
+                var res = DynamicCall(obj, "__str__", System.Array.Empty<object>());
+                return ToStr(res);
+            }
+        }
+        catch { /* fall back to ToString() */ }
+
+        if (obj.GetType().IsPrimitive)
+            return Convert.ToString(obj, System.Globalization.CultureInfo.InvariantCulture) ?? "None";
+        return obj.ToString() ?? "None";
+    }
+
+    public static bool ToBool(object? obj)
     {
-        null => false,
-        bool b => b,
-        long l => l != 0,
-        double d => d != 0.0,
-        string s => s.Length > 0,
-        System.Collections.ICollection c => c.Count > 0,
-        _ => true
-    };
+        if (obj is null) return false;
+
+        // If the object defines a Python-level __bool__, call it and coerce the result
+        try
+        {
+            var t = obj.GetType();
+            var m = t.GetMethod("__bool__", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.IgnoreCase);
+            if (m != null)
+            {
+                var res = DynamicCall(obj, "__bool__", System.Array.Empty<object>());
+                return ToBool(res);
+            }
+        }
+        catch { /* fall back to default behaviour */ }
+
+        // Also support CLR-style boolean operator overrides (op_True/op_False/op_Implicit)
+        try
+        {
+            var t2 = obj.GetType();
+            var opTrue = t2.GetMethod("op_True", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+            if (opTrue != null)
+            {
+                var val = (bool?)opTrue.Invoke(null, new[] { obj });
+                if (val.HasValue) return val.Value;
+            }
+        }
+        catch { /* ignore */ }
+
+        // Primitive and collection fallbacks
+        if (obj is bool b) return b;
+        if (obj is long l) return l != 0;
+        if (obj is double d) return d != 0.0;
+        if (obj is string s) return s.Length > 0;
+        if (obj is System.Collections.ICollection c) return c.Count > 0;
+        return true;
+    }
 
     // ── Math ──────────────────────────────────────────────────────────────────
 
@@ -1602,25 +1708,39 @@ public static class NajaBuiltins
 
     // ── Type checking (legacy — kept for IL call sites) ───────────────────────
 
-    public static string Repr(object? obj) => obj switch
+    public static string Repr(object? obj)
     {
-        null => "None",
-        bool b => b ? "True" : "False",
-        string s => $"'{s}'",
-        long l => l.ToString(),
-        double d => FormatFloat(d),
-        System.Collections.Generic.List<object> l =>
-            "[" + string.Join(", ", l.Select(x => Repr(x))) + "]",
-        object[] arr =>
-            "(" + string.Join(", ", arr.Select(x => Repr(x))) + ")",
-        System.Collections.Generic.Dictionary<object, object> dict =>
-            "{" + string.Join(", ", dict.Select(kv => $"{Repr(kv.Key)}: {Repr(kv.Value)}")) + "}",
-        System.Collections.Generic.HashSet<object> set =>
-            "{" + string.Join(", ", set.Select(x => Repr(x))) + "}",
-        System.Collections.Immutable.ImmutableHashSet<object> fset =>
-            "frozenset({" + string.Join(", ", fset.Select(x => Repr(x))) + "})",
-        _ => obj.ToString() ?? "None"
-    };
+        if (obj is null) return "None";
+        if (obj is bool b) return b ? "True" : "False";
+        if (obj is string s) return $"'{s}'";
+        if (obj is long lnum) return lnum.ToString();
+        if (obj is double dnum) return FormatFloat(dnum);
+        if (obj is System.Collections.Generic.List<object> listVal)
+            return "[" + string.Join(", ", listVal.Select(x => Repr(x))) + "]";
+        if (obj is object[] arrVal)
+            return "(" + string.Join(", ", arrVal.Select(x => Repr(x))) + ")";
+        if (obj is System.Collections.Generic.Dictionary<object, object> dictVal)
+            return "{" + string.Join(", ", dictVal.Select(kv => $"{Repr(kv.Key)}: {Repr(kv.Value)}")) + "}";
+        if (obj is System.Collections.Generic.HashSet<object> setVal)
+            return "{" + string.Join(", ", setVal.Select(x => Repr(x))) + "}";
+        if (obj is System.Collections.Immutable.ImmutableHashSet<object> fsetVal)
+            return "frozenset({" + string.Join(", ", fsetVal.Select(x => Repr(x))) + "})";
+
+        // If the object defines a Python-level __repr__, prefer calling that
+        try
+        {
+            var t = obj.GetType();
+            var m = t.GetMethod("__repr__", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.IgnoreCase);
+            if (m != null)
+            {
+                var res = DynamicCall(obj, "__repr__", System.Array.Empty<object>());
+                return ToStr(res);
+            }
+        }
+        catch { /* fall back to ToString() */ }
+
+        return obj.ToString() ?? "None";
+    }
 
     public static object TypeOf(object obj) => obj?.GetType() ?? typeof(void);
 
@@ -1701,21 +1821,39 @@ public static class NajaBuiltins
 
     // ── Membership ────────────────────────────────────────────────────────────
 
-    public static bool Contains(object item, object collection) => collection switch
+    public static bool Contains(object item, object collection)
     {
-        string s => s.Contains(ToStr(item)),
-        // Use DynamicEq for structural equality — CLR object[].Equals is reference-only,
-        // so `(0,0) in [(0,0)]` would fail without this.
-        System.Collections.Generic.List<object> l =>
-            l.Any(x => DynamicEq(x, item)),
-        System.Collections.Generic.Dictionary<object, object> d =>
-            d.Keys.Any(k => DynamicEq(k, item)),
-        System.Collections.Generic.HashSet<object> h =>
-            h.Any(x => DynamicEq(x, item)),
-        System.Collections.IEnumerable e =>
-            e.Cast<object>().Any(x => DynamicEq(x, item)),
-        _ => false
-    };
+        if (collection is null) return false;
+
+        // If the object defines a Python-level __contains__, call it
+        try
+        {
+            var t = collection.GetType();
+            var m = t.GetMethod("__contains__", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.IgnoreCase);
+            if (m != null)
+            {
+                var res = DynamicCall(collection, "__contains__", new object[] { item });
+                return ToBool(res);
+            }
+        }
+        catch { /* fall back to other behaviours */ }
+
+        return collection switch
+        {
+            string s => s.Contains(ToStr(item)),
+            // Use DynamicEq for structural equality — CLR object[].Equals is reference-only,
+            // so `(0,0) in [(0,0)]` would fail without this.
+            System.Collections.Generic.List<object> l =>
+                l.Any(x => DynamicEq(x, item)),
+            System.Collections.Generic.Dictionary<object, object> d =>
+                d.Keys.Any(k => DynamicEq(k, item)),
+            System.Collections.Generic.HashSet<object> h =>
+                h.Any(x => DynamicEq(x, item)),
+            System.Collections.IEnumerable e =>
+                e.Cast<object>().Any(x => DynamicEq(x, item)),
+            _ => false
+        };
+    }
 
     // ── Collections (remaining) ───────────────────────────────────────────────
 

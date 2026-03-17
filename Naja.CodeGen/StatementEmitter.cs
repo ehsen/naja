@@ -813,9 +813,12 @@ public sealed class StatementEmitter
             _expr.Emit(s.Message);
             var toStr = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ToStr))!;
             IL.Emit(OpCodes.Call, toStr);
+            // Append source location for easier diagnostics
+            IL.Emit(OpCodes.Ldstr, $" (at {s.Line}:{s.Column})");
+            IL.Emit(OpCodes.Call, typeof(string).GetMethod("Concat", new[] { typeof(string), typeof(string) })!);
         }
         else
-            IL.Emit(OpCodes.Ldstr, "AssertionError");
+            IL.Emit(OpCodes.Ldstr, $"AssertionError (at {s.Line}:{s.Column})");
 
         IL.Emit(OpCodes.Newobj, ctor);
         IL.Emit(OpCodes.Throw);
