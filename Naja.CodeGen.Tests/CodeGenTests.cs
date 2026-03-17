@@ -9,6 +9,7 @@ namespace Naja.CodeGen.Tests;
 
 public class CodeGenTests
 {
+    private static readonly object _runLock = new();
     /// <summary>
     /// Normalizes source code by stripping common leading whitespace.
     /// This allows verbatim strings with indentation to be parsed correctly.
@@ -59,9 +60,12 @@ public class CodeGenTests
 
         var sw = new System.IO.StringWriter();
         var prev = Console.Out;
-        Console.SetOut(sw);
-        try { main.Invoke(null, null); }
-        finally { Console.SetOut(prev); }
+        lock (_runLock)
+        {
+            Console.SetOut(sw);
+            try { main.Invoke(null, null); }
+            finally { Console.SetOut(prev); }
+        }
 
         return sw.ToString().TrimEnd().Replace("\r\n", "\n");
     }
