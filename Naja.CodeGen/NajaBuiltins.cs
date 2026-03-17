@@ -986,6 +986,10 @@ public static class NajaBuiltins
         if (targetType.IsAssignableFrom(value.GetType())) return value;
         if (TryConvertArg(value, targetType, false, out var converted, out _)) return converted;
 
+        // Allow explicit coercion to string for attribute assignment: Python semantics
+        // commonly expect things like lbl.Text = 100 to become "100".
+        if (targetType == typeof(string)) return ToStr(value);
+
         // Last-resort: if value is long and target is int32/int16/byte/sbyte, narrow it
         if (value is long l)
         {
@@ -1760,6 +1764,8 @@ public static class NajaBuiltins
     {
         if (obj is null) return 0;
 
+        long res;
+
         // object[] → Python tuple hash: combine element hashes
         if (obj is object[] arr)
         {
@@ -1774,31 +1780,35 @@ public static class NajaBuiltins
                 }
                 h ^= arr.Length;
                 if (h == -1) h = -2;
-                return h;
+                res = h;
             }
         }
-
         // List<object> → NOT hashable in Python, but handle gracefully
-        if (obj is System.Collections.Generic.List<object> list)
+        else if (obj is System.Collections.Generic.List<object> list)
         {
             unchecked
             {
                 long h = 0x345678L;
                 foreach (var item in list) h = (h ^ Hash(item)) * 1000003L;
                 h ^= list.Count;
-                return h;
+                res = h;
             }
         }
+        else if (obj is long l) res = l;
+        else if (obj is int i) res = i;
+        else if (obj is double d) res = d.GetHashCode();
+        else if (obj is bool b) res = b ? 1L : 0L;
+        else if (obj is string s) res = s.GetHashCode();
+        else
+        {
+            // Everything else: CLR default (reference-based for user objects)
+            res = obj.GetHashCode();
+        }
 
-        // Primitives: use value-based hash
-        if (obj is long l) return l;
-        if (obj is int i) return i;
-        if (obj is double d) return d.GetHashCode();
-        if (obj is bool b) return b ? 1L : 0L;
-        if (obj is string s) return s.GetHashCode();
-
-        // Everything else: CLR default (reference-based for user objects)
-        return obj.GetHashCode();
+        // Ensure we return a value that fits in a 32-bit int to avoid
+        // Convert.ToInt32 throwing for very large long results. Truncate
+        // to 32 bits (unchecked wrap) which mirrors typical hash behaviour.
+        return (long)(int)res;
     }
 
     // ── hasattr() / callable() ────────────────────────────────────────────────
