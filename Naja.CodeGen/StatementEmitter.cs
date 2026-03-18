@@ -62,6 +62,151 @@ public sealed class StatementEmitter
         }
     }
 
+    // Collect names that are assigned to (targets of assignments) within the given statement list.
+    public static HashSet<string> CollectAssignedNames(IReadOnlyList<Statement> body)
+    {
+        var names = new HashSet<string>();
+        foreach (var stmt in body)
+        {
+            switch (stmt)
+            {
+                case AssignStatement a:
+                    foreach (var t in a.Targets)
+                        if (t is NameExpr ne) names.Add(ne.Name);
+                    break;
+                case AnnAssignStatement aa:
+                    if (aa.Target is NameExpr ne2) names.Add(ne2.Name);
+                    break;
+                case ForStatement fs:
+                    if (fs.Target is NameExpr ne3) names.Add(ne3.Name);
+                    foreach (var s in fs.Body) foreach (var n in CollectAssignedNames(new[] { s })) names.Add(n);
+                    break;
+                case IfStatement ifs:
+                    foreach (var s in ifs.Then) foreach (var n in CollectAssignedNames(new[] { s })) names.Add(n);
+                    foreach (var (_, b) in ifs.Elifs) foreach (var s in b) foreach (var n in CollectAssignedNames(new[] { s })) names.Add(n);
+                    foreach (var s in ifs.Else) foreach (var n in CollectAssignedNames(new[] { s })) names.Add(n);
+                    break;
+                default:
+                    break;
+            }
+        }
+        return names;
+    }
+
+    // Helper: find referenced NameExpr identifiers in a statement list (simple conservative scan).
+    public static HashSet<string> CollectReferencedNames(IReadOnlyList<Statement> body)
+    {
+        var names = new HashSet<string>();
+        foreach (var stmt in body)
+            CollectReferencedNamesInStmt(stmt, names);
+        return names;
+    }
+
+    // Collect names that are referenced inside any nested FunctionDef bodies within the provided statements.
+    public static HashSet<string> CollectNamesReferencedByNestedFunctions(IReadOnlyList<Statement> body)
+    {
+        var names = new HashSet<string>();
+        foreach (var stmt in body)
+        {
+            if (stmt is FunctionDef fn)
+            {
+                var nested = CollectReferencedNames(fn.Body);
+                foreach (var n in nested) names.Add(n);
+            }
+            else if (stmt is IfStatement ifs)
+            {
+                foreach (var s in ifs.Then) foreach (var n in CollectNamesReferencedByNestedFunctions(new[] { s })) names.Add(n);
+                foreach (var (_, b) in ifs.Elifs) foreach (var s in b) foreach (var n in CollectNamesReferencedByNestedFunctions(new[] { s })) names.Add(n);
+                foreach (var s in ifs.Else) foreach (var n in CollectNamesReferencedByNestedFunctions(new[] { s })) names.Add(n);
+            }
+            else if (stmt is ForStatement fs)
+            {
+                foreach (var s in fs.Body) foreach (var n in CollectNamesReferencedByNestedFunctions(new[] { s })) names.Add(n);
+            }
+            else if (stmt is WhileStatement ws)
+            {
+                foreach (var s in ws.Body) foreach (var n in CollectNamesReferencedByNestedFunctions(new[] { s })) names.Add(n);
+            }
+            else if (stmt is TryStatement ts)
+            {
+                foreach (var s in ts.Body) foreach (var n in CollectNamesReferencedByNestedFunctions(new[] { s })) names.Add(n);
+                foreach (var h in ts.Handlers) foreach (var s in h.Body) foreach (var n in CollectNamesReferencedByNestedFunctions(new[] { s })) names.Add(n);
+            }
+            else if (stmt is WithStatement w)
+            {
+                foreach (var s in w.Body) foreach (var n in CollectNamesReferencedByNestedFunctions(new[] { s })) names.Add(n);
+            }
+        }
+        return names;
+    }
+
+    private static void CollectReferencedNamesInStmt(Statement stmt, HashSet<string> names)
+    {
+        switch (stmt)
+        {
+            case ExprStatement es:
+                CollectNamesInExpr(es.Expr, names);
+                break;
+            case AssignStatement a:
+                CollectNamesInExpr(a.Value, names);
+                break;
+            case AnnAssignStatement aa:
+                if (aa.Value is not null) CollectNamesInExpr(aa.Value, names);
+                break;
+            case IfStatement ifs:
+                CollectNamesInExpr(ifs.Condition, names);
+                foreach (var s in ifs.Then) CollectReferencedNamesInStmt(s, names);
+                foreach (var (_, b) in ifs.Elifs) foreach (var s in b) CollectReferencedNamesInStmt(s, names);
+                foreach (var s in ifs.Else) CollectReferencedNamesInStmt(s, names);
+                break;
+            case ReturnStatement rs:
+                if (rs.Value is not null) CollectNamesInExpr(rs.Value, names);
+                break;
+            case ForStatement fs:
+                CollectNamesInExpr(fs.Iter, names);
+                foreach (var s in fs.Body) CollectReferencedNamesInStmt(s, names);
+                break;
+            case WhileStatement ws:
+                CollectNamesInExpr(ws.Condition, names);
+                foreach (var s in ws.Body) CollectReferencedNamesInStmt(s, names);
+                break;
+            case WithStatement w:
+                foreach (var item in w.Items) CollectNamesInExpr(item.Context, names);
+                foreach (var s in w.Body) CollectReferencedNamesInStmt(s, names);
+                break;
+            case TryStatement ts:
+                foreach (var s in ts.Body) CollectReferencedNamesInStmt(s, names);
+                foreach (var h in ts.Handlers) foreach (var s in h.Body) CollectReferencedNamesInStmt(s, names);
+                break;
+            // Other statement kinds ignored (conservative)
+            default:
+                break;
+        }
+    }
+
+    private static void CollectNamesInExpr(Expression expr, HashSet<string> names)
+    {
+        if (expr == null) return;
+        switch (expr)
+        {
+            case NameExpr ne: names.Add(ne.Name); break;
+            case BinaryExpr be: CollectNamesInExpr(be.Left, names); CollectNamesInExpr(be.Right, names); break;
+            case UnaryExpr ue: CollectNamesInExpr(ue.Operand, names); break;
+            case BoolOpExpr bo: foreach (var v in bo.Values) CollectNamesInExpr(v, names); break;
+            case CompareExpr ce: CollectNamesInExpr(ce.Left, names); foreach (var (_, r) in ce.Comparators) CollectNamesInExpr(r, names); break;
+            case IfExpr ie: CollectNamesInExpr(ie.Condition, names); CollectNamesInExpr(ie.Then, names); CollectNamesInExpr(ie.Else, names); break;
+            case CallExpr ce2: CollectNamesInExpr(ce2.Func, names); foreach (var a in ce2.Args) CollectNamesInExpr(a.Value, names); break;
+            case AttributeExpr ae: CollectNamesInExpr(ae.Object, names); break;
+            case SubscriptExpr se: CollectNamesInExpr(se.Object, names); if (se.Index is not null) CollectNamesInExpr(se.Index, names); break;
+            case ListExpr le: foreach (var e in le.Elements) CollectNamesInExpr(e, names); break;
+            case TupleExpr te: foreach (var e in te.Elements) CollectNamesInExpr(e, names); break;
+            case DictExpr de: foreach (var p in de.Pairs) { if (p.Key is not null) CollectNamesInExpr(p.Key, names); CollectNamesInExpr(p.Value, names); } break;
+            case ListCompExpr lce: CollectNamesInExpr(lce.Element, names); foreach (var g in lce.Generators) { CollectNamesInExpr(g.Iter, names); foreach (var c in g.Conditions) CollectNamesInExpr(c, names); } break;
+            case LambdaExpr le2: CollectNamesInExpr(le2.Body, names); break;
+            default: break;
+        }
+    }
+
     public void EmitAll(IReadOnlyList<Statement> stmts)
     {
         foreach (var s in stmts) Emit(s);
@@ -372,14 +517,14 @@ public sealed class StatementEmitter
         switch (target)
         {
             case NameExpr n:
-                // If this name is a module-level static field, store there (not a local)
+                // Priority for ASSIGNMENT target location (LEGB):
+                // 1. If a hoisted/nonlocal field exists → store there (closure variable)
+                // 2. If semantic says it's a local (non-global/non-nonlocal) → store locally
+                // 3. Otherwise → create/store to local (Python default)
+
                 if (_ctx.Fields.TryGetValue(n.Name, out var staticField))
                 {
-                    // Ensure the stack type matches the field type.
-                    //
-                    // - If the field is `object`, box value types.
-                    // - If the field is a value type but the value is `Unknown` (object),
-                    //   unbox it back to the concrete field type.
+                    // Hoisted field exists — store there for closure semantics
                     if (staticField.FieldType == typeof(object))
                     {
                         TypeMapper.EmitBox(IL, valueType);
@@ -389,12 +534,36 @@ public sealed class StatementEmitter
                         IL.Emit(OpCodes.Unbox_Any, staticField.FieldType);
                     }
                     IL.Emit(OpCodes.Stsfld, staticField);
+
+                    // DEBUG: Log when storing to hoisted field
+                    // System.Diagnostics.Debug.WriteLine($"Stored to hoisted field: {n.Name}");
                     break;
                 }
-                var clrType = TypeMapper.ToClrType(valueType);
-                if (clrType == typeof(void)) clrType = typeof(object);
+
+                // Check semantic symbol for this assignment target
+                var sym = _ctx.Model.GetSymbol(n);
+                bool symIsLocal = false;
+                if (sym is not null && !sym.IsGlobal && !sym.IsNonlocal)
+                {
+                    symIsLocal = (sym.Kind == SymbolKind.Variable || sym.Kind == SymbolKind.Parameter);
+                }
+
+                if (symIsLocal)
+                {
+                    // Semantic says local — store to local
+                    var clrType = TypeMapper.ToClrType(valueType);
+                    if (clrType == typeof(void)) clrType = typeof(object);
+                    if (!_ctx.Locals.Contains(n.Name))
+                        _ctx.Locals.Declare(n.Name, clrType);
+                    _ctx.Locals.EmitStore(n.Name);
+                    break;
+                }
+
+                // Default: create a new local variable (Python semantics)
+                var defaultClr = TypeMapper.ToClrType(valueType);
+                if (defaultClr == typeof(void)) defaultClr = typeof(object);
                 if (!_ctx.Locals.Contains(n.Name))
-                    _ctx.Locals.Declare(n.Name, clrType);
+                    _ctx.Locals.Declare(n.Name, defaultClr);
                 _ctx.Locals.EmitStore(n.Name);
                 break;
 
@@ -1071,14 +1240,30 @@ public sealed class StatementEmitter
         {
             if (!fnCtx.Fields.ContainsKey(nlName))
             {
-                var nlField = _ctx.TypeBuilder.DefineField(
-                    $"__nl_{nlName}",
-                    typeof(object),
-                    FieldAttributes.Private | FieldAttributes.Static);
+                var nlField = _ctx.TypeBuilder.DefineField($"__nl_{nlName}", typeof(object), FieldAttributes.Private | FieldAttributes.Static);
                 fnCtx.Fields[nlName] = nlField;
                 _ctx.Fields[nlName] = nlField;  // also visible in outer scope
             }
         }
+
+        // Hoist variables referenced by nested functions: if an inner function
+        // references a name that is assigned in this function, promote that name
+        // to a module-level static field so the inner function sees the enclosing
+        // binding (Python LEGB semantics).
+        var nestedRefs = CollectNamesReferencedByNestedFunctions(s.Body);
+        var assigned = CollectAssignedNames(s.Body);
+        foreach (var r in nestedRefs.Intersect(assigned))
+        {
+            if (!fnCtx.Fields.ContainsKey(r))
+            {
+                var hoisted = _ctx.TypeBuilder.DefineField($"__nl_{r}", typeof(object), FieldAttributes.Private | FieldAttributes.Static);
+                fnCtx.Fields[r] = hoisted;
+                _ctx.Fields[r] = hoisted;
+            }
+        }
+
+        // (Closure hoisting moved to AssemblyEmitter.EmitFunctionBody so promotion
+        // happens before the outer function body is emitted.)
 
         // Check if this function contains yield statements (is a generator)
         bool isGenerator = ContainsYield(s.Body);

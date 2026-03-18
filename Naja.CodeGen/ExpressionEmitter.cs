@@ -138,19 +138,12 @@ public sealed class ExpressionEmitter
             return sym?.Type ?? NajaTypes.Unknown;
         }
 
-        // 2. Check locals
-        var local = _ctx.Locals.TryGet(e.Name);
-        if (local is not null)
-        {
-            IL.Emit(OpCodes.Ldloc, local);
-            // If the local's CLR type is `object`, treat as Unknown to avoid
-            // incorrect boxing (e.g. for-loop variables stored as object).
-            if (local.LocalType == typeof(object))
-                return NajaTypes.Unknown;
-            return _ctx.Model.GetSymbol(e)?.Type ?? NajaTypes.Unknown;
-        }
+        // 2. PRIORITY: Check static fields BEFORE locals (module-level variables and hoisted closure variables)
+        // MUST be checked BEFORE locals so that nonlocal/hoisted variables take precedence.
+        // This ensures that when a variable is promoted to a static field for closure semantics,
+        // we load from that field, not from any accidental local copy.
 
-        // 2b. Check for scoped hoisted comprehension loop variables (e.g., __hoisted_i_comp_1_9)
+        // 2a. Check for scoped hoisted comprehension loop variables (e.g., __hoisted_i_comp_1_9)
         if (!string.IsNullOrEmpty(_ctx.ComprehensionScopeId))
         {
             var scopedFieldName = $"__hoisted_{e.Name}_{_ctx.ComprehensionScopeId}";
@@ -161,7 +154,7 @@ public sealed class ExpressionEmitter
             }
         }
 
-        // 2c. Check for any scoped hoisted field with this name (for lambdas inside comprehensions
+        // 2b. Check for any scoped hoisted field with this name (for lambdas inside comprehensions
         // that reference comprehension loop variables). Since the scope ID might not be set in the lambda
         // context, search for any field matching __hoisted_{name}_comp_*
         var scopedMatch = _ctx.Fields.Keys.FirstOrDefault(k =>
@@ -172,7 +165,7 @@ public sealed class ExpressionEmitter
             return NajaTypes.Unknown;
         }
 
-        // 3. Check static fields (module-level variables)
+        // 2c. Check static fields (module-level variables and hoisted closure variables)
         if (_ctx.Fields.TryGetValue(e.Name, out var field))
         {
             IL.Emit(OpCodes.Ldsfld, field);
@@ -186,6 +179,18 @@ public sealed class ExpressionEmitter
             if (field.FieldType == typeof(System.Collections.Generic.HashSet<object>)) return new SetType(NajaTypes.Unknown);
             if (field.FieldType == typeof(object[])) return new TupleType(System.Array.Empty<NajaType>());
             return NajaTypes.Unknown;
+        }
+
+        // 3. Check locals (after static fields, so hoisted variables take precedence)
+        var local = _ctx.Locals.TryGet(e.Name);
+        if (local is not null)
+        {
+            IL.Emit(OpCodes.Ldloc, local);
+            // If the local's CLR type is `object`, treat as Unknown to avoid
+            // incorrect boxing (e.g. for-loop variables stored as object).
+            if (local.LocalType == typeof(object))
+                return NajaTypes.Unknown;
+            return _ctx.Model.GetSymbol(e)?.Type ?? NajaTypes.Unknown;
         }
 
         // 4. Check Methods (first-class function references -- H5)

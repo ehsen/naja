@@ -1621,6 +1621,20 @@ public sealed class AssemblyEmitter
         foreach (var mn in _classMethodNames) ctx.ClassMethods.Add(mn);
         foreach (var (k, v) in importMap) ctx.ImportMap[k] = v;
 
+        // Hoist variables referenced by nested functions: if an inner function
+        // references a name that is assigned in this function, promote that name
+        // to a module-level static field so the inner function sees the enclosing
+        // binding (Python LEGB semantics).
+        var nestedRefs = StatementEmitter.CollectNamesReferencedByNestedFunctions(fn.Body);
+        var assigned = StatementEmitter.CollectAssignedNames(fn.Body);
+        foreach (var r in nestedRefs.Intersect(assigned))
+        {
+            // Create hoisted field EVEN IF a module-level field exists with this name
+            // because we need to shadow it in this function's scope for proper closure semantics
+            var fb = tb.DefineField($"__nl_{r}", typeof(object), FieldAttributes.Private | FieldAttributes.Static);
+            ctx.Fields[r] = fb;  // Override any existing field in context
+        }
+
         var emitter = new StatementEmitter(ctx);
         emitter.EmitAll(fn.Body);
 
