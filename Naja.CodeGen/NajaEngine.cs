@@ -42,7 +42,10 @@ public sealed class NajaEngine
     ///     Compilation profile. Defaults to auto-detect from imports, but
     ///     can be forced to WinForms for tests that need the WinForms preamble.
     /// </param>
-    public void Eval(string scriptPath, CompilationProfile profile = CompilationProfile.Console)
+    /// <param name="dumpIL">
+    ///     If true, dumps the compiled IL to a text file in %TEMP% for debugging.
+    /// </param>
+    public void Eval(string scriptPath, CompilationProfile profile = CompilationProfile.Console, bool dumpIL = false)
     {
         // ── 1. Read source ────────────────────────────────────────────────────
         if (!File.Exists(scriptPath))
@@ -124,11 +127,42 @@ public sealed class NajaEngine
             ?? throw new CodeGenException(
                    $"No static Main() found on '{entryType.FullName}' in '{scriptPath}'.");
 
+        // Optionally dump IL for debugging before executing
+        if (dumpIL)
+        {
+            try
+            {
+                var ilDumpPath = Path.Combine(Path.GetTempPath(), $"naja_il_{assemblyName}.txt");
+                using (var sw = new System.IO.StreamWriter(ilDumpPath, false))
+                {
+                    foreach (var type in assembly.GetTypes())
+                    {
+                        sw.WriteLine($"=== Type: {type.FullName} ===");
+                        sw.WriteLine();
+                        foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance))
+                        {
+                            if (method.DeclaringType == type)  // skip inherited methods
+                            {
+                                sw.WriteLine(ILDumper.DumpMethodIL(method));
+                                sw.WriteLine();
+                            }
+                        }
+                    }
+                }
+                Console.WriteLine($"IL dump written to: {ilDumpPath}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: IL dump failed: {ex.Message}");
+            }
+        }
+
         // ── 7. Execute ────────────────────────────────────────────────────────
         // TargetInvocationException wraps any exception thrown by the script.
         // We unwrap it so xUnit sees the real exception type — in particular
         // the Exception thrown by failed assert statements, which the test
         // runner distinguishes from CodeGenException.
+
         try
         {
             entryMethod.Invoke(null, null);

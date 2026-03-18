@@ -773,7 +773,11 @@ public sealed class StatementEmitter
         if (s.Exception is not null)
         {
             _expr.Emit(s.Exception);
-            IL.Emit(OpCodes.Castclass, typeof(Exception));
+            // Exception expression may be either an Exception instance or a Type object
+            // representing an exception class (e.g., "raise StopIteration"). Use
+            // NajaBuiltins.EnsureException to normalize to a CLR Exception instance.
+            var ensureEx = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.EnsureException))!;
+            IL.Emit(OpCodes.Call, ensureEx);
 
             if (s.Cause is not null)
             {
@@ -833,6 +837,10 @@ public sealed class StatementEmitter
         var hasFinally = s.Finally.Count > 0;
         var hasElse = s.Else.Count > 0;
 
+        LocalBuilder? noExFlag = null;
+        if (hasElse)
+            noExFlag = _ctx.Locals.Declare($"__noex_{s.Line}", typeof(bool));
+
         if (hasFinally)
         {
             // Outer exception block for finally
@@ -841,10 +849,6 @@ public sealed class StatementEmitter
 
         if (hasHandlers)
         {
-            LocalBuilder? noExFlag = null;
-            if (hasElse)
-                noExFlag = _ctx.Locals.Declare($"__noex_{s.Line}", typeof(bool));
-
             // Inner exception block for handlers
             IL.BeginExceptionBlock();
             EmitAll(s.Body);
@@ -895,15 +899,6 @@ public sealed class StatementEmitter
             }
 
             IL.EndExceptionBlock();  // end inner (handler) block
-
-            if (hasElse && noExFlag is not null)
-            {
-                IL.Emit(OpCodes.Ldloc, noExFlag);
-                var skipElse = IL.DefineLabel();
-                IL.Emit(OpCodes.Brfalse, skipElse);
-                EmitAll(s.Else);
-                IL.MarkLabel(skipElse);
-            }
         }
         else
         {
@@ -911,6 +906,12 @@ public sealed class StatementEmitter
             // Body goes directly inside the outer exception block.
             // The CLR guarantees the finally runs even if an exception escapes.
             EmitAll(s.Body);
+
+            if (noExFlag is not null)
+            {
+                IL.Emit(OpCodes.Ldc_I4_1);
+                IL.Emit(OpCodes.Stloc, noExFlag);
+            }
         }
 
         if (hasFinally)
@@ -919,11 +920,21 @@ public sealed class StatementEmitter
             EmitAll(s.Finally);
             IL.EndExceptionBlock();  // end outer (finally) block
         }
+
+        // Emit else clause AFTER the entire exception handling structure
+        if (hasElse && noExFlag is not null)
+        {
+            IL.Emit(OpCodes.Ldloc, noExFlag);
+            var skipElse = IL.DefineLabel();
+            IL.Emit(OpCodes.Brfalse, skipElse);
+            EmitAll(s.Else);
+            IL.MarkLabel(skipElse);
+        }
     }
     private List<Type> ResolveCatchTypes(ExceptHandler handler)
     {
         if (handler.ExceptionType is null)
-            return [typeof(Exception)];
+            return new List<Type> { typeof(Exception) };
 
         if (handler.ExceptionType is TupleExpr texpr)
             return texpr.Elements
@@ -936,7 +947,7 @@ public sealed class StatementEmitter
         var exName = handler.ExceptionType is NameExpr ne
             ? ne.Name
             : handler.ExceptionType.ToString() ?? "";
-        return [TypeMapper.ResolveExceptionType(exName) ?? typeof(Exception)];
+        return new List<Type> { TypeMapper.ResolveExceptionType(exName) ?? typeof(Exception) };
     }
 
     // ── With / as ─────────────────────────────────────────────────────────────

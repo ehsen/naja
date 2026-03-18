@@ -450,14 +450,14 @@ public sealed class CanaryTests
             assert f"{3.14159:.2f}" == "3.14"
             assert f"{42:08b}" == "00101010"
             assert f"{'left':<10}" == "left      "
-            assert f"{'right':>10}" == "      right"
+            assert f"{'right':>10}" == "     right"
             assert f"{'center':^10}" == "  center  "
             """));
     }
 
     // ── Exceptions (3 tests) ──────────────────────────────────────────────────
 
-    [Fact(Skip = "Temporarily skipped: invalid IL generated for exception hierarchy; underlying codegen fix pending.")]
+    [Fact]
     public void Exceptions_Full() =>
         Engine.Eval(Path.Combine("testdata", "languagecompliance", "exceptions", "exceptions_full.naja"));
 

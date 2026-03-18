@@ -428,6 +428,26 @@ public sealed class ExpressionEmitter
                         }
                     }
 
+                    // Python semantics: division by zero must raise ZeroDivisionError (mapped to DivideByZeroException).
+                    // We have left (double) and right (double) on the evaluation stack. Store right in a temp,
+                    // check against 0.0 and throw DivideByZeroException if zero, then reload and perform the division.
+                    var tmpDivR = _ctx.Locals.Declare($"__divd_{e.Line}", typeof(double));
+                    // Pop right -> tmpDivR (left remains on stack)
+                    IL.Emit(OpCodes.Stloc, tmpDivR);
+                    // Check tmpDivR == 0.0
+                    IL.Emit(OpCodes.Ldloc, tmpDivR);
+                    IL.Emit(OpCodes.Ldc_R8, 0.0);
+                    IL.Emit(OpCodes.Ceq);
+                    var notZeroLbl = IL.DefineLabel();
+                    // If not zero (Ceq pushed 0), branch to continue
+                    IL.Emit(OpCodes.Brfalse, notZeroLbl);
+                    // Throw DivideByZeroException to match Python ZeroDivisionError
+                    var dbzCtor = typeof(System.DivideByZeroException).GetConstructor(Type.EmptyTypes)!;
+                    IL.Emit(OpCodes.Newobj, dbzCtor);
+                    IL.Emit(OpCodes.Throw);
+                    IL.MarkLabel(notZeroLbl);
+                    // Reload right and perform division
+                    IL.Emit(OpCodes.Ldloc, tmpDivR);
                     IL.Emit(OpCodes.Div);
                     return NajaTypes.Float;
                 }
@@ -870,8 +890,13 @@ public sealed class ExpressionEmitter
             // If user has defined a class with this name in ClassTypes, that is handled below.
             if (!_ctx.ClassTypes.ContainsKey(name) && TypeMapper.ResolveExceptionType(name) is not null)
             {
-                // Build message from args (or empty string if no args)
-                var msgCtor = typeof(Exception).GetConstructor(new[] { typeof(string) })!;
+                // Map Python exception name to CLR exception type and instantiate it with the
+                // provided message (or the name if no args). Fall back to System.Exception if
+                // the CLR type lacks a string ctor.
+                var exType = TypeMapper.ResolveExceptionType(name)!;
+                var ctor = exType.GetConstructor(new[] { typeof(string) })
+                    ?? typeof(Exception).GetConstructor(new[] { typeof(string) })!;
+
                 if (e.Args.Count == 0)
                 {
                     IL.Emit(OpCodes.Ldstr, name);
@@ -884,7 +909,8 @@ public sealed class ExpressionEmitter
                     var toStr = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ToStr))!;
                     IL.Emit(OpCodes.Call, toStr);
                 }
-                IL.Emit(OpCodes.Newobj, msgCtor);
+
+                IL.Emit(OpCodes.Newobj, ctor);
                 return NajaTypes.Unknown;
             }
 
@@ -1025,9 +1051,9 @@ public sealed class ExpressionEmitter
 
         // H5: First-class callable — emit func expression, pack args, call CallCallable
         {
-            var funcType = Emit(e.Func);
-            TypeMapper.EmitBox(IL, funcType);   // must be object
-            // Pack args into object[]
+            // Build args array into a local first to avoid leaving the callee on the
+            // evaluation stack while emitting argument expressions (simpler verifier
+            // behaviour and avoids stack shape issues for complex arg expressions).
             IL.Emit(OpCodes.Ldc_I4, e.Args.Count);
             IL.Emit(OpCodes.Newarr, typeof(object));
             for (int i = 0; i < e.Args.Count; i++)
@@ -1038,6 +1064,13 @@ public sealed class ExpressionEmitter
                 TypeMapper.EmitBox(IL, argT);
                 IL.Emit(OpCodes.Stelem_Ref);
             }
+            var argsLocal = _ctx.Locals.Declare($"__h5_args_{e.Line}", typeof(object[]));
+            IL.Emit(OpCodes.Stloc, argsLocal);
+
+            // Now emit callee, box it to object, then load the args local and call helper.
+            var funcType = Emit(e.Func);
+            TypeMapper.EmitBox(IL, funcType);
+            IL.Emit(OpCodes.Ldloc, argsLocal);
             var callCallable = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.CallCallable))!;
             IL.Emit(OpCodes.Call, callCallable);
             return NajaTypes.Unknown;
@@ -1905,6 +1938,80 @@ public sealed class ExpressionEmitter
 
     // ── F-string interpolation ────────────────────────────────────────────────
 
+    /// <summary>
+    /// Classifies a Python format spec into one of three categories:
+    /// - Returns true if the spec is safe for string.Format (only .NET-native codes with no flags)
+    /// - Returns false if the spec requires routing to NajaBuiltins.Format (Python-semantic codes)
+    /// </summary>
+    private static bool IsNetNativeSpec(string pySpec, out string csSpec)
+    {
+        csSpec = null;
+        if (string.IsNullOrEmpty(pySpec))
+            return false;
+
+        // Last character is the Python type code
+        char typeChar = pySpec[^1];
+
+        // Always route to runtime helper for Python-only format codes
+        if ("bos%".Contains(typeChar))
+            return false; // binary, octal, string %, percent
+        if (pySpec.Contains('_'))
+            return false; // _ grouping separator
+        if (pySpec.Contains('+'))
+            return false; // explicit positive sign
+        if (pySpec.Contains('#'))
+            return false; // alternate form (0b, 0o, 0x prefix)
+        if (HasFillAlign(pySpec))
+            return false; // fill/align characters present
+
+        // Safe subset: d, f, e, g, n, x, X with optional width.precision only
+        csSpec = TranslateSimpleSpec(pySpec, typeChar);
+        return csSpec != null;
+    }
+
+    /// <summary>
+    /// Detects if a format spec contains fill/align characters: < > ^ =
+    /// </summary>
+    private static bool HasFillAlign(string spec)
+    {
+        return spec.IndexOfAny(new[] { '<', '>', '^', '=' }) >= 0;
+    }
+
+    /// <summary>
+    /// Translates a whitelisted Python format spec to .NET composite format code.
+    /// Example: "05d" -> "D5", ".2f" -> "F2"
+    /// </summary>
+    private static string TranslateSimpleSpec(string spec, char typeChar)
+    {
+        // Strip the type char, leaving optional [[0]width][.precision]
+        string body = spec[..^1];
+        return typeChar switch
+        {
+            'd' => "D" + body,          // {n:05d} → {0:D5}  (zero-pad works in both)
+            'f' => ParseFP(body, 'F'),  // {x:.2f} → {0:F2}
+            'e' => ParseFP(body, 'E'),  // {x:.3e} → {0:E3}
+            'g' => ParseFP(body, 'G'),  // {x:.4g} → {0:G4}
+            'n' => "N" + body,          // {n:n} → {0:N}
+            'x' => "x" + body,          // {n:x} → {0:x}
+            'X' => "X" + body,          // {n:X} → {0:X}
+            _ => null                   // unknown — punt to runtime
+        };
+    }
+
+    /// <summary>
+    /// Extracts precision from Python float spec body.
+    /// Examples: ".2" → "2", "10.2" → "2", "10" → "", "" → ""
+    /// .NET composite format only takes precision in the format token, not width.
+    /// </summary>
+    private static string ParseFP(string body, char netType)
+    {
+        // body examples: ".2"  "10.2"  "10"  ""
+        int dotIdx = body.IndexOf('.');
+        if (dotIdx >= 0)
+            return netType + body[(dotIdx + 1)..]; // extract precision digits only
+        return netType.ToString();
+    }
+
     private NajaType EmitFString(FStringExpr e)
     {
         // Parse {expr} segments out of the raw template and build string via concat
@@ -1922,6 +2029,8 @@ public sealed class ExpressionEmitter
 
         var toStr = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ToStr))!;
         var repr = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Repr))!;
+        var najaFormat = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Format), 
+            new[] { typeof(object), typeof(object) })!;
 
         for (int i = 0; i < parts.Count; i++)
         {
@@ -1937,37 +2046,9 @@ public sealed class ExpressionEmitter
                     var tokens = new Naja.Lexer.Lexer(text).Tokenize();
                     var expr = new Naja.Parser.Parser(tokens).ParseExpression();
 
-                    if (!string.IsNullOrEmpty(formatSpec))
+                    if (string.IsNullOrEmpty(formatSpec))
                     {
-                        string csFmt = formatSpec;
-                        // Convert Python format specs to C# format specs
-                        if (csFmt.EndsWith("f") && csFmt.StartsWith("."))
-                        {
-                            string precision = csFmt.Substring(1, csFmt.Length - 2);
-                            csFmt = "F" + precision;
-                        }
-                        else if (csFmt.EndsWith("f") && csFmt.Contains("."))
-                        {
-                            int dotIndex = csFmt.LastIndexOf('.');
-                            if (dotIndex >= 0 && dotIndex < csFmt.Length - 1)
-                            {
-                                string precision = csFmt.Substring(dotIndex + 1, csFmt.Length - dotIndex - 2);
-                                csFmt = "F" + precision;
-                            }
-                        }
-                        else if (csFmt.EndsWith("e")) { csFmt = "E6"; }
-                        else if (csFmt.EndsWith("g") || csFmt.EndsWith("G")) { csFmt = "G"; }
-                        else if (csFmt.EndsWith("d")) { csFmt = "D"; }
-                        else if (csFmt.EndsWith("x")) { csFmt = "x"; }
-                        else if (csFmt.EndsWith("X")) { csFmt = "X"; }
-
-                        IL.Emit(OpCodes.Ldstr, "{0:" + csFmt + "}");
-                        var t = Emit(expr);
-                        TypeMapper.EmitBox(IL, t);
-                        IL.Emit(OpCodes.Call, typeof(string).GetMethod("Format", new[] { typeof(string), typeof(object) })!);
-                    }
-                    else
-                    {
+                        // Path 1: No format spec — just stringify
                         var t = Emit(expr);
                         TypeMapper.EmitBox(IL, t);
                         // Apply !r / !s / !a conversion
@@ -1975,6 +2056,24 @@ public sealed class ExpressionEmitter
                             IL.Emit(OpCodes.Call, repr);
                         else
                             IL.Emit(OpCodes.Call, toStr);
+                    }
+                    else if (IsNetNativeSpec(formatSpec, out var csSpec))
+                    {
+                        // Path 2: .NET-native spec (d, f, e, g, n, x, X with no flags)
+                        // Safe to use string.Format
+                        IL.Emit(OpCodes.Ldstr, "{0:" + csSpec + "}");
+                        var t = Emit(expr);
+                        TypeMapper.EmitBox(IL, t);
+                        IL.Emit(OpCodes.Call, typeof(string).GetMethod("Format", new[] { typeof(string), typeof(object) })!);
+                    }
+                    else
+                    {
+                        // Path 3: Python-semantic spec (b, o, %, #, +, fill/align, _, etc.)
+                        // Route to NajaBuiltins.Format(value, spec)
+                        var t = Emit(expr);
+                        TypeMapper.EmitBox(IL, t);
+                        IL.Emit(OpCodes.Ldstr, formatSpec);
+                        IL.Emit(OpCodes.Call, najaFormat);
                     }
                 }
                 catch

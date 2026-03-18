@@ -1774,6 +1774,12 @@ public static class NajaBuiltins
             return mi.Invoke(null, invokeArgs);
         }
 
+        // If the callable is a System.Type, instantiate it using CreateDotNet semantics.
+        if (func is Type t)
+        {
+            return CreateDotNet(t, args);
+        }
+
         // Callable object with __call__
         var callMethod = func.GetType().GetMethod("__call__");
         if (callMethod is not null)
@@ -1797,6 +1803,21 @@ public static class NajaBuiltins
     }
 
     public static Exception SetExceptionCause(Exception ex, object? cause) => ex;
+
+    // Ensure the raised object is an Exception instance. Accepts either an Exception
+    // instance or a Type representing an exception class (which will be instantiated).
+    public static Exception EnsureException(object? ex)
+    {
+        if (ex is Exception e) return e;
+        if (ex is Type t)
+        {
+            if (!typeof(Exception).IsAssignableFrom(t))
+                throw new Exception($"TypeError: exceptions must derive from Exception");
+            try { return (Exception)Activator.CreateInstance(t)!; }
+            catch (Exception createEx) { throw new Exception($"Error instantiating exception {t.Name}: {createEx.Message}", createEx); }
+        }
+        throw new Exception("TypeError: exceptions must be Exception instances or exception types");
+    }
 
     // ── Starred-unpack helpers (H2) ───────────────────────────────────────────
 
@@ -1995,22 +2016,241 @@ public static class NajaBuiltins
     {
         var s = spec is null ? "" : ToStr(spec);
         if (string.IsNullOrEmpty(s)) return ToStr(value);
-        // Basic format specs: d, f, e, g, x, b, o, s, .Nf
-        if (s.EndsWith("d")) return Convert.ToInt64(value).ToString();
-        if (s.EndsWith("x")) return Convert.ToInt64(value).ToString("x");
-        if (s.EndsWith("X")) return Convert.ToInt64(value).ToString("X");
-        if (s.EndsWith("b")) return Convert.ToString(Convert.ToInt64(value), 2);
-        if (s.EndsWith("o")) return Convert.ToString(Convert.ToInt64(value), 8);
-        if (s.EndsWith("e")) return Convert.ToDouble(value).ToString("e6");
-        if (s.EndsWith("s")) return ToStr(value);
-        // .Nf — fixed decimal places
-        if (System.Text.RegularExpressions.Regex.IsMatch(s, @"^\.\d+f$"))
+
+        // Parse Python format spec: [[fill]align][sign][#][0][width][grouping_option][.precision][type]
+        var parsed = ParseFormatSpec(s);
+
+        // Step 1: Produce the raw formatted string based on type code
+        string raw = parsed.Type switch
         {
-            int decimals = int.Parse(s[1..^1]);
-            return Convert.ToDouble(value).ToString($"F{decimals}",
-                System.Globalization.CultureInfo.InvariantCulture);
+            'b' => Convert.ToString(Convert.ToInt64(value), 2),   // binary
+            'o' => Convert.ToString(Convert.ToInt64(value), 8),   // octal
+            'x' => Convert.ToInt64(value).ToString("x"),          // hex lowercase
+            'X' => Convert.ToInt64(value).ToString("X"),          // hex uppercase
+            'd' => Convert.ToInt64(value).ToString(),             // decimal
+            'f' => FormatFloatFixed(value, parsed.Precision ?? 6),
+            'e' => FormatFloatSci(value, parsed.Precision ?? 6),
+            'g' => FormatFloatGeneral(value, parsed.Precision ?? 6),
+            '%' => FormatPercent(value, parsed.Precision ?? 6),
+            's' or '\0' => ToStr(value),
+            _ => ToStr(value)
+        };
+
+        // Step 2: Apply alternate form prefix (# flag)
+        if (parsed.AltForm && !raw.StartsWith("-"))
+        {
+            raw = parsed.Type switch
+            {
+                'b' => "0b" + raw,
+                'o' => "0o" + raw,
+                'x' => "0x" + raw,
+                'X' => "0X" + raw,
+                _ => raw
+            };
         }
-        return ToStr(value);
+
+        // Step 3: Apply sign and spacing (only for numeric values)
+        if (parsed.Type != 's' && parsed.Type != '\0')  // Not string type
+        {
+            try
+            {
+                double numVal = Convert.ToDouble(value);
+                if (parsed.Sign == '+' && numVal >= 0)
+                    raw = "+" + raw;
+                else if (parsed.Sign == ' ' && numVal >= 0)
+                    raw = " " + raw;
+            }
+            catch { }
+        }
+
+        // Step 4: Apply zero-padding (after sign/prefix, before fill/align)
+        if (parsed.ZeroPad && parsed.Width.HasValue && raw.Length < parsed.Width.Value)
+        {
+            // Handle negative numbers: pad after sign
+            if (raw.StartsWith("-"))
+                raw = "-" + raw[1..].PadLeft(parsed.Width.Value - 1, '0');
+            else if (raw.StartsWith("+"))
+                raw = "+" + raw[1..].PadLeft(parsed.Width.Value - 1, '0');
+            else if (raw.StartsWith("0x") || raw.StartsWith("0X") || raw.StartsWith("0b") || raw.StartsWith("0o"))
+                raw = raw[..2] + raw[2..].PadLeft(parsed.Width.Value - 2, '0');
+            else
+                raw = raw.PadLeft(parsed.Width.Value, '0');
+        }
+
+        // Step 5: Apply fill/align
+        if (parsed.Width.HasValue && raw.Length < parsed.Width.Value)
+        {
+            int padWidth = parsed.Width.Value - raw.Length;
+            char fillChar = parsed.Fill;
+
+            raw = parsed.Align switch
+            {
+                '<' => raw.PadRight(parsed.Width.Value, fillChar),                                    // left-align
+                '>' => raw.PadLeft(parsed.Width.Value, fillChar),                                     // right-align
+                '^' => raw.PadLeft((parsed.Width.Value + raw.Length) / 2, fillChar)                  // center-align
+                         .PadRight(parsed.Width.Value, fillChar),
+                '=' => PadAfterSign(raw, parsed.Width.Value, fillChar),                              // sign-aware padding
+                _ => raw.PadLeft(parsed.Width.Value, fillChar)                                       // default: right-align
+            };
+        }
+
+        return raw;
+    }
+
+    private record FormatSpec(
+        char Fill,       // fill character (default: ' ')
+        char Align,      // < > ^ = (default: none)
+        char Sign,       // + - ' ' (default: '\0', no sign)
+        bool AltForm,    // # flag
+        bool ZeroPad,    // 0 flag
+        int? Width,      // minimum field width
+        char Grouping,   // _ or , (default: none)
+        int? Precision,  // digits after decimal / significant digits
+        char Type        // b o x X d f e g s % (default: '\0')
+    );
+
+    private static FormatSpec ParseFormatSpec(string spec)
+    {
+        // Parse: [[fill]align][sign][#][0][width][grouping_option][.precision][type]
+        // Note: format spec syntax is VERY specific — order matters!
+        int pos = 0;
+        char fill = ' ';
+        char align = '\0';
+        char sign = '\0';  // No sign by default (not '-')
+        bool altForm = false;
+        bool zeroPad = false;
+        int? width = null;
+        char grouping = '\0';
+        int? precision = null;
+        char type = '\0';
+
+        // [fill]align — must be at the start
+        // If spec[1] is an align char, then spec[0] is the fill char
+        if (spec.Length >= 2 && "><^=".Contains(spec[1]))
+        {
+            fill = spec[0];
+            align = spec[1];
+            pos = 2;
+        }
+        // Otherwise if spec[0] is an align char, it defaults to space fill
+        else if (spec.Length >= 1 && "><^=".Contains(spec[0]))
+        {
+            align = spec[0];
+            fill = ' ';
+            pos = 1;
+        }
+
+        // [sign] — only for numeric types
+        if (pos < spec.Length && "+-  ".Contains(spec[pos]))
+        {
+            sign = spec[pos];
+            pos++;
+        }
+
+        // [#] — alternate form
+        if (pos < spec.Length && spec[pos] == '#')
+        {
+            altForm = true;
+            pos++;
+        }
+
+        // [0] — zero-padding flag (only if no align was specified)
+        if (pos < spec.Length && spec[pos] == '0' && align == '\0')
+        {
+            zeroPad = true;
+            pos++;
+        }
+
+        // [width] — numeric field width
+        int widthStart = pos;
+        while (pos < spec.Length && char.IsDigit(spec[pos]))
+            pos++;
+        if (pos > widthStart)
+            width = int.Parse(spec[widthStart..pos]);
+
+        // [grouping_option] — underscore or comma for thousands separator
+        if (pos < spec.Length && "_,".Contains(spec[pos]))
+        {
+            grouping = spec[pos];
+            pos++;
+        }
+
+        // [.precision] — precision for floats or max chars for strings
+        if (pos < spec.Length && spec[pos] == '.')
+        {
+            pos++;
+            int precStart = pos;
+            while (pos < spec.Length && char.IsDigit(spec[pos]))
+                pos++;
+            if (pos > precStart)
+                precision = int.Parse(spec[precStart..pos]);
+        }
+
+        // [type] — conversion type (b, d, f, e, g, o, x, X, s, %)
+        if (pos < spec.Length)
+            type = spec[pos];
+
+        return new FormatSpec(fill, align, sign, altForm, zeroPad, width, grouping, precision, type);
+    }
+
+    private static string PadAfterSign(string raw, int totalWidth, char fillChar)
+    {
+        // Sign-aware padding: pad after sign/prefix, not at beginning
+        if (raw.StartsWith("-"))
+            return "-" + raw[1..].PadLeft(totalWidth - 1, fillChar);
+        if (raw.StartsWith("+"))
+            return "+" + raw[1..].PadLeft(totalWidth - 1, fillChar);
+        if (raw.StartsWith("0x") || raw.StartsWith("0X"))
+            return raw[..2] + raw[2..].PadLeft(totalWidth - 2, fillChar);
+        if (raw.StartsWith("0b"))
+            return raw[..2] + raw[2..].PadLeft(totalWidth - 2, fillChar);
+        if (raw.StartsWith("0o"))
+            return raw[..2] + raw[2..].PadLeft(totalWidth - 2, fillChar);
+        return raw.PadLeft(totalWidth, fillChar);
+    }
+
+    private static string FormatFloatFixed(object value, int precision)
+    {
+        double d = Convert.ToDouble(value);
+        return d.ToString($"F{precision}", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static string FormatFloatSci(object value, int precision)
+    {
+        // Format scientific notation with lowercase 'e' and 2-digit exponent minimum
+        double d = Convert.ToDouble(value);
+        string result = d.ToString($"e{precision}", System.Globalization.CultureInfo.InvariantCulture);
+
+        // Normalize to Python format: e+02 not E+002
+        int eIdx = result.IndexOf('e');
+        if (eIdx >= 0)
+        {
+            string mantissa = result[..eIdx];
+            string expStr = result[(eIdx + 1)..];
+
+            // Parse exponent
+            int sign = expStr[0] == '-' ? -1 : 1;
+            int exp = int.Parse(expStr[1..]) * sign;
+
+            // Format with 2-digit minimum
+            string expFormatted = exp >= 0 ? $"+{Math.Abs(exp):D2}" : $"-{Math.Abs(exp):D2}";
+            result = $"{mantissa}e{expFormatted}";
+        }
+
+        return result;
+    }
+
+    private static string FormatFloatGeneral(object value, int precision)
+    {
+        double d = Convert.ToDouble(value);
+        // Python's 'g' format: significant digits, removes trailing zeros
+        return d.ToString($"G{precision}", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static string FormatPercent(object value, int precision)
+    {
+        double d = Convert.ToDouble(value) * 100.0;
+        return d.ToString($"F{precision}", System.Globalization.CultureInfo.InvariantCulture) + "%";
     }
 
     // ── iter() / next() ───────────────────────────────────────────────────────
@@ -2055,7 +2295,7 @@ public static class NajaBuiltins
             currentValue = nextMethod();
             return true;
         }
-        catch (Exception ex) when (ex.Message == "StopIteration")
+        catch (Exception ex) when (ex is InvalidOperationException || ex.Message == "StopIteration")
         {
             exhausted = true;
             return false;
