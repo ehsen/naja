@@ -2006,6 +2006,10 @@ public sealed class ExpressionEmitter
         if (string.IsNullOrEmpty(pySpec))
             return false;
 
+        // Dynamic spec: contains nested {variable} references — must use Python runtime
+        if (pySpec.Contains('{'))
+            return false;
+
         // Last character is the Python type code
         char typeChar = pySpec[^1];
 
@@ -2021,7 +2025,7 @@ public sealed class ExpressionEmitter
         if (HasFillAlign(pySpec))
             return false; // fill/align characters present
 
-        // Safe subset: d, f, e, g, n, x, X with optional width.precision only
+        // Safe subset: d, f, n, x, X with optional width.precision only
         csSpec = TranslateSimpleSpec(pySpec, typeChar);
         return csSpec != null;
     }
@@ -2044,10 +2048,13 @@ public sealed class ExpressionEmitter
         string body = spec[..^1];
         return typeChar switch
         {
-            'd' => "D" + body,          // {n:05d} → {0:D5}  (zero-pad works in both)
+            // 'd': route all to Python runtime — .NET D format counts digits excluding sign,
+            // but Python's width includes the sign (e.g. {:06d} for -42 = "-00042" not "-000042").
+            'd' => null,
             'f' => ParseFP(body, 'F'),  // {x:.2f} → {0:F2}
-            'e' => ParseFP(body, 'E'),  // {x:.3e} → {0:E3}
-            'g' => ParseFP(body, 'G'),  // {x:.4g} → {0:G4}
+            // 'e'/'g': route to Python runtime — .NET E format uses uppercase and may differ in exponent digits
+            'e' => null,
+            'g' => null,
             'n' => "N" + body,          // {n:n} → {0:N}
             'x' => "x" + body,          // {n:x} → {0:x}
             'X' => "X" + body,          // {n:X} → {0:X}

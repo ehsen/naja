@@ -129,7 +129,7 @@ public sealed class FStringTests
     public void FormatSpec_Alignment()
         => Run("""
             assert f"{'left':<10}"  == "left      "
-            assert f"{'right':>10}" == "      right"
+            assert f"{'right':>10}" == "     right"
             assert f"{'mid':^10}"   == "   mid    "
             assert f"{'x':*^5}"    == "**x**"
             """);

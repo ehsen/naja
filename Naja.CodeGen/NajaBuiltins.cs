@@ -1130,10 +1130,25 @@ public static class NajaBuiltins
     {
         if (obj is null) throw new Exception("TypeError: 'NoneType' is not subscriptable");
 
-        if (obj is System.Collections.Generic.List<object> l) return l[SafeToInt32(key)];
+        if (obj is System.Collections.Generic.List<object> l)
+        {
+            int idx = SafeToInt32(key);
+            if (idx < 0) idx += l.Count;
+            return l[idx];
+        }
         if (obj is System.Collections.Generic.Dictionary<object, object> d) return d.TryGetValue(key, out var val) ? val : throw new Exception($"KeyError: {Repr(key)}");
-        if (obj is string s) return s[SafeToInt32(key)].ToString();
-        if (obj is object[] arr) return arr[SafeToInt32(key)];
+        if (obj is string s)
+        {
+            int idx = SafeToInt32(key);
+            if (idx < 0) idx += s.Length;
+            return s[idx].ToString();
+        }
+        if (obj is object[] arr)
+        {
+            int idx = SafeToInt32(key);
+            if (idx < 0) idx += arr.Length;
+            return arr[idx];
+        }
 
         var t = obj.GetType();
         var defaultMember = t.GetCustomAttributes(typeof(System.Reflection.DefaultMemberAttribute), true)
