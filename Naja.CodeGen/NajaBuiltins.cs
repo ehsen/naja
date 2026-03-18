@@ -1783,7 +1783,15 @@ public static class NajaBuiltins
         // Callable object with __call__
         var callMethod = func.GetType().GetMethod("__call__");
         if (callMethod is not null)
+        {
+            var ps = callMethod.GetParameters();
+            // Prefer __call__(object[] args) signature if present (for NajaFunction wrapper)
+            if (ps.Length == 1 && ps[0].ParameterType == typeof(object[]))
+            {
+                return callMethod.Invoke(func, new object?[] { args });
+            }
             return callMethod.Invoke(func, (object?[])args);
+        }
 
         throw new Exception($"TypeError: '{func.GetType().Name}' object is not callable");
     }
@@ -1817,6 +1825,15 @@ public static class NajaBuiltins
             catch (Exception createEx) { throw new Exception($"Error instantiating exception {t.Name}: {createEx.Message}", createEx); }
         }
         throw new Exception("TypeError: exceptions must be Exception instances or exception types");
+    }
+
+    /// <summary>
+    /// Create a NajaFunction wrapper from a CLR delegate and an array of
+    /// pre-evaluated default values. Used for lambda/function default arguments.
+    /// </summary>
+    public static object CreateFunctionWithDefaults(Delegate d, object?[] defaults)
+    {
+        return new NajaFunction(d, defaults);
     }
 
     // ── Starred-unpack helpers (H2) ───────────────────────────────────────────
