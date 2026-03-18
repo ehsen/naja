@@ -2312,7 +2312,7 @@ public static class NajaBuiltins
 
         var e = (System.Collections.IEnumerator)iterator;
         if (e.MoveNext()) return e.Current;
-        throw new Exception("StopIteration");
+        throw new InvalidOperationException("StopIteration");
     }
 
     public static object? Next(object iterator, object? defaultValue)
@@ -2323,6 +2323,20 @@ public static class NajaBuiltins
         var e = (System.Collections.IEnumerator)iterator;
         if (e.MoveNext()) return e.Current;
         return defaultValue;
+    }
+
+    // Variadic entry point used by the code-gen (handles both next(g) and next(g, default)).
+    public static object? NextVararg(object[] args)
+    {
+        if (args.Length == 0)
+            throw new Exception("TypeError: next expected at least 1 argument");
+        var iterator = args[0];
+        if (iterator is null)
+            throw new Exception("TypeError: 'NoneType' object is not an iterator. Did you forget to return a generator from your function?");
+        var e = (System.Collections.IEnumerator)iterator;
+        if (e.MoveNext()) return e.Current;
+        if (args.Length > 1) return args[1];
+        throw new InvalidOperationException("StopIteration");
     }
 
     /// <summary>Helper for implementing IEnumerator.MoveNext() using Python __next__ method.</summary>
@@ -2472,4 +2486,39 @@ public static class NajaBuiltins
         var s = d.ToString("G", System.Globalization.CultureInfo.InvariantCulture);
         return s.Contains('.') || s.Contains('E') ? s : s + ".0";
     }
+}
+
+/// <summary>
+/// A single-use stateful generator iterator wrapping an eagerly-collected list of
+/// yielded values.  Implements both <see cref="System.Collections.IEnumerator"/>
+/// and <see cref="System.Collections.IEnumerable"/> so it works uniformly with
+/// <c>next()</c>, <c>for</c> loops, and <c>list()</c>.
+///
+/// Single-use semantics: <see cref="GetEnumerator"/> returns <c>this</c>, so once
+/// the iterator is exhausted a second <c>list(g)</c> call correctly returns <c>[]</c>.
+/// </summary>
+public sealed class NajaGeneratorIterator
+    : System.Collections.IEnumerator,
+      System.Collections.IEnumerable
+{
+    private readonly System.Collections.Generic.List<object> _items;
+    private int _index = -1;
+
+    public NajaGeneratorIterator(System.Collections.Generic.List<object> items)
+        => _items = items;
+
+    // IEnumerator
+    public object? Current => _index >= 0 && _index < _items.Count ? _items[_index] : null;
+
+    public bool MoveNext()
+    {
+        if (_index >= _items.Count - 1) return false;
+        _index++;
+        return true;
+    }
+
+    public void Reset() => _index = -1;
+
+    // IEnumerable — returns this so for-loops and list() share the same position
+    public System.Collections.IEnumerator GetEnumerator() => this;
 }

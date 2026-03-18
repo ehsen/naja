@@ -727,6 +727,24 @@ public sealed class StatementEmitter
 
     private void Emit(ReturnStatement s)
     {
+        // In a generator function, 'return' (with or without a value) terminates
+        // iteration early. The collected yields are wrapped in a NajaGeneratorIterator
+        // and returned; the return value itself is discarded in this eager model.
+        if (_ctx.GeneratorListLocal != null)
+        {
+            if (s.Value is not null)
+            {
+                _expr.Emit(s.Value);
+                IL.Emit(OpCodes.Pop);
+            }
+            IL.Emit(OpCodes.Ldloc, _ctx.GeneratorListLocal);
+            var iterCtor = typeof(NajaGeneratorIterator)
+                .GetConstructor(new[] { typeof(System.Collections.Generic.List<object>) })!;
+            IL.Emit(OpCodes.Newobj, iterCtor);
+            IL.Emit(OpCodes.Ret);
+            return;
+        }
+
         if (s.Value is not null)
         {
             var type = _expr.Emit(s.Value);
@@ -1287,8 +1305,11 @@ public sealed class StatementEmitter
         {
             if (isGenerator)
             {
-                // Return the generator list — using the function's own ILGenerator
+                // Wrap the collected yields in a NajaGeneratorIterator and return it
                 fnIL.Emit(OpCodes.Ldloc, fnCtx.GeneratorListLocal);
+                var iterCtor = typeof(NajaGeneratorIterator)
+                    .GetConstructor(new[] { typeof(System.Collections.Generic.List<object>) })!;
+                fnIL.Emit(OpCodes.Newobj, iterCtor);
             }
             else
             {

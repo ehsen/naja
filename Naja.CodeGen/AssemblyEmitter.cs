@@ -1658,8 +1658,11 @@ public sealed class AssemblyEmitter
         {
             if (isGenerator)
             {
-                // Return the generator list
+                // Wrap the collected yields in a NajaGeneratorIterator and return it
                 il.Emit(OpCodes.Ldloc, ctx.GeneratorListLocal);
+                var iterCtor = typeof(NajaGeneratorIterator)
+                    .GetConstructor(new[] { typeof(System.Collections.Generic.List<object>) })!;
+                il.Emit(OpCodes.Newobj, iterCtor);
             }
             else if (returnType != typeof(void))
             {

@@ -202,8 +202,8 @@ public static class TypeMapper
         "dir" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Dir))!,
         "format" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Format))!,
         "iter" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Iter))!,
-        // Select the 1-argument overload of Next to avoid ambiguity.
-        "next" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Next), new[] { typeof(object) })!,
+        // NextVararg handles both next(g) and next(g, default) via variadic object[] args.
+        "next" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.NextVararg))!,
         "assert" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Assert))!,
         _ => null
     };
