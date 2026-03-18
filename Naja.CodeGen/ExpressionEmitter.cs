@@ -1933,6 +1933,36 @@ public sealed class ExpressionEmitter
         IL.Emit(OpCodes.Ldnull);
         IL.Emit(OpCodes.Ldftn, mb);
         IL.Emit(OpCodes.Newobj, ctor);
+
+        // If any parameters have defaults, evaluate them inline and wrap the delegate
+        bool hasDefaults = e.Params.Any(p => p.Default is not null);
+        if (hasDefaults)
+        {
+            // Build array of evaluated defaults inline in the current context
+            int defaultsCount = e.Params.Count(p => p.Default is not null);
+            IL.Emit(OpCodes.Ldc_I4, defaultsCount);
+            IL.Emit(OpCodes.Newarr, typeof(object));
+
+            int defaultIndex = 0;
+            for (int i = 0; i < e.Params.Count; i++)
+            {
+                var p = e.Params[i];
+                if (p.Default is null) continue;
+                IL.Emit(OpCodes.Dup); // array
+                IL.Emit(OpCodes.Ldc_I4, defaultIndex);
+                // Evaluate the default expression in the current context
+                Emit(p.Default);
+                TypeMapper.EmitBox(IL, NajaTypes.Unknown);
+                IL.Emit(OpCodes.Stelem_Ref);
+                defaultIndex++;
+            }
+
+            // Call CreateFunctionWithDefaults(delegate, defaults)
+            var createFnHelper = typeof(NajaBuiltins).GetMethod("CreateFunctionWithDefaults",
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)!;
+            IL.Emit(OpCodes.Call, createFnHelper);
+        }
+
         return NajaTypes.Unknown;
     }
 
