@@ -102,6 +102,13 @@ public sealed class EmitContext
     /// </summary>
     public LocalBuilder? GeneratorListLocal { get; set; }
 
+    /// <summary>
+    /// For comprehension helpers: unique scope ID for hoisted loop variables.
+    /// Used to avoid name collisions when multiple comprehensions use the same variable name.
+    /// Format: "comp_{line}_{col}" or null if not in a comprehension helper.
+    /// </summary>
+    public string? ComprehensionScopeId { get; set; }
+
     public EmitContext(
         ILGenerator il,
         SemanticModel model,

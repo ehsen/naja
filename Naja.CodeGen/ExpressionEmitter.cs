@@ -150,6 +150,28 @@ public sealed class ExpressionEmitter
             return _ctx.Model.GetSymbol(e)?.Type ?? NajaTypes.Unknown;
         }
 
+        // 2b. Check for scoped hoisted comprehension loop variables (e.g., __hoisted_i_comp_1_9)
+        if (!string.IsNullOrEmpty(_ctx.ComprehensionScopeId))
+        {
+            var scopedFieldName = $"__hoisted_{e.Name}_{_ctx.ComprehensionScopeId}";
+            if (_ctx.Fields.TryGetValue(scopedFieldName, out var scopedField))
+            {
+                IL.Emit(OpCodes.Ldsfld, scopedField);
+                return NajaTypes.Unknown;
+            }
+        }
+
+        // 2c. Check for any scoped hoisted field with this name (for lambdas inside comprehensions
+        // that reference comprehension loop variables). Since the scope ID might not be set in the lambda
+        // context, search for any field matching __hoisted_{name}_comp_*
+        var scopedMatch = _ctx.Fields.Keys.FirstOrDefault(k =>
+            k.StartsWith($"__hoisted_{e.Name}_comp_"));
+        if (scopedMatch != null)
+        {
+            IL.Emit(OpCodes.Ldsfld, _ctx.Fields[scopedMatch]);
+            return NajaTypes.Unknown;
+        }
+
         // 3. Check static fields (module-level variables)
         if (_ctx.Fields.TryGetValue(e.Name, out var field))
         {
@@ -2270,6 +2292,10 @@ public sealed class ExpressionEmitter
         hCtx.IsInsideFunction = true;
         // Copy module-level fields, methods, class info — but NOT locals
         foreach (var (k, v) in _ctx.Fields) hCtx.Fields[k] = v;
+        // Set the comprehension scope ID for hoisted loop variables
+        var scopeId = $"comp_{line}_{col}";
+        hCtx.ComprehensionScopeId = scopeId;
+
         foreach (var (k, v) in _ctx.Methods) hCtx.Methods[k] = v;
         foreach (var (k, v) in _ctx.MethodParamTypes) hCtx.MethodParamTypes[k] = v;
         foreach (var (k, v) in _ctx.ClassTypes) hCtx.ClassTypes[k] = v;
@@ -2476,9 +2502,28 @@ public sealed class ExpressionEmitter
     {
         if (target is NameExpr n)
         {
-            if (!_ctx.Locals.Contains(n.Name))
-                _ctx.Locals.Declare(n.Name, typeof(object));
-            _ctx.Locals.EmitStore(n.Name);
+            // Hoist comprehension loop targets to static fields for late binding semantics.
+            // This allows lambdas created during comprehension iteration to all reference
+            // the same shared variable location, matching Python's late-binding behavior.
+            string fieldKey;
+            if (!string.IsNullOrEmpty(_ctx.ComprehensionScopeId))
+            {
+                fieldKey = $"__hoisted_{n.Name}_{_ctx.ComprehensionScopeId}";
+            }
+            else
+            {
+                // Fallback: use just the variable name (for regular comprehensions)
+                fieldKey = $"__hoisted_{n.Name}";
+            }
+
+            if (!_ctx.Fields.TryGetValue(fieldKey, out var field))
+            {
+                var fb = _ctx.TypeBuilder.DefineField(fieldKey, typeof(object),
+                    FieldAttributes.Private | FieldAttributes.Static);
+                _ctx.Fields[fieldKey] = fb;
+                field = fb;
+            }
+            _ctx.IL.Emit(OpCodes.Stsfld, field);
         }
         else if (target is TupleExpr t)
         {
