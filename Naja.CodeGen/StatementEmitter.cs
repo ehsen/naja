@@ -1309,7 +1309,7 @@ public sealed class StatementEmitter
     public static bool ContainsYieldStatic(IReadOnlyList<Statement> statements) => ContainsYield(statements);
 
     /// <summary>Check if a statement list contains any yield expressions.</summary>
-    private static bool ContainsYield(IReadOnlyList<Statement> statements)
+    public static bool ContainsYield(IReadOnlyList<Statement> statements)
     {
         foreach (var stmt in statements)
         {

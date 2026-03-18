@@ -1635,14 +1635,37 @@ public sealed class AssemblyEmitter
             ctx.Fields[r] = fb;  // Override any existing field in context
         }
 
+        // Check if this function contains yield statements (is a generator)
+        bool isGenerator = StatementEmitter.ContainsYield(fn.Body);
+        if (isGenerator)
+        {
+            // Initialize the generator list at function entry
+            var listType = typeof(System.Collections.Generic.List<object>);
+            var ctor = listType.GetConstructor(Type.EmptyTypes)!;
+            ctx.GeneratorListLocal = ctx.Locals.Declare($"__generator_{fn.Name}_{fn.Line}", listType);
+            il.Emit(OpCodes.Newobj, ctor);
+            il.Emit(OpCodes.Stloc, ctx.GeneratorListLocal);
+
+            // For generators, override returnType to be object since we'll return the list
+            returnType = typeof(object);
+        }
+
         var emitter = new StatementEmitter(ctx);
         emitter.EmitAll(fn.Body);
 
         bool endsWithReturn = fn.Body.Count > 0 && fn.Body[^1] is ReturnStatement;
         if (!endsWithReturn)
         {
-            if (returnType == typeof(void)) il.Emit(OpCodes.Ret);
-            else { il.Emit(OpCodes.Ldnull); il.Emit(OpCodes.Ret); }
+            if (isGenerator)
+            {
+                // Return the generator list
+                il.Emit(OpCodes.Ldloc, ctx.GeneratorListLocal);
+            }
+            else if (returnType != typeof(void))
+            {
+                il.Emit(OpCodes.Ldnull);
+            }
+            il.Emit(OpCodes.Ret);
         }
     }
 }
