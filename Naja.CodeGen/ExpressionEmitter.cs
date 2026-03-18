@@ -2095,6 +2095,22 @@ public sealed class ExpressionEmitter
                 // Parse and emit the expression inside {}
                 try
                 {
+                    // Special-case: nested f-string literal like "f'...'". The lexer
+                    // cannot lex nested quotes inside f-strings correctly here, so
+                    // detect and emit a nested FStringExpr directly.
+                    if (text.Length >= 2 && (text[0] == 'f' || text[0] == 'F') && (text[1] == '"' || text[1] == '\'') && text[^1] == text[1])
+                    {
+                        var inner = text.Substring(2, text.Length - 3);
+                        var nested = new Naja.Parser.FStringExpr(inner, e.Line, e.Column);
+                        var tn = Emit(nested);
+                        TypeMapper.EmitBox(IL, tn);
+                        if (conversion == 'r' || conversion == 'a')
+                            IL.Emit(OpCodes.Call, repr);
+                        else
+                            IL.Emit(OpCodes.Call, toStr);
+                        goto SKIP_PARSE_EXPR;
+                    }
+
                     var tokens = new Naja.Lexer.Lexer(text).Tokenize();
                     var expr = new Naja.Parser.Parser(tokens).ParseExpression();
 
@@ -2124,7 +2140,15 @@ public sealed class ExpressionEmitter
                         // Route to NajaBuiltins.Format(value, spec)
                         var t = Emit(expr);
                         TypeMapper.EmitBox(IL, t);
-                        IL.Emit(OpCodes.Ldstr, formatSpec);
+                        if (formatSpec != null && formatSpec.Contains('{'))
+                        {
+                            // Evaluate nested replacement fields inside the format spec
+                            Emit(new Naja.Parser.FStringExpr(formatSpec, e.Line, e.Column));
+                        }
+                        else
+                        {
+                            IL.Emit(OpCodes.Ldstr, formatSpec ?? "");
+                        }
                         IL.Emit(OpCodes.Call, najaFormat);
                     }
                 }
@@ -2132,6 +2156,7 @@ public sealed class ExpressionEmitter
                 {
                     IL.Emit(OpCodes.Ldstr, $"{{{text}}}");
                 }
+            SKIP_PARSE_EXPR: ;
             }
             else
             {

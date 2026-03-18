@@ -2100,14 +2100,22 @@ public static class NajaBuiltins
             int padWidth = parsed.Width.Value - raw.Length;
             char fillChar = parsed.Fill;
 
-            raw = parsed.Align switch
+            // Determine effective alignment: if not specified, default depends on value type
+            char effectiveAlign = parsed.Align;
+            if (effectiveAlign == '\0')
+            {
+                // Default: strings are left-aligned, numbers are right-aligned
+                effectiveAlign = value is string ? '<' : '>';
+            }
+
+            raw = effectiveAlign switch
             {
                 '<' => raw.PadRight(parsed.Width.Value, fillChar),                                    // left-align
                 '>' => raw.PadLeft(parsed.Width.Value, fillChar),                                     // right-align
                 '^' => raw.PadLeft((parsed.Width.Value + raw.Length) / 2, fillChar)                  // center-align
                          .PadRight(parsed.Width.Value, fillChar),
                 '=' => PadAfterSign(raw, parsed.Width.Value, fillChar),                              // sign-aware padding
-                _ => raw.PadLeft(parsed.Width.Value, fillChar)                                       // default: right-align
+                _ => raw.PadLeft(parsed.Width.Value, fillChar)                                       // fallback: right-align
             };
         }
 
