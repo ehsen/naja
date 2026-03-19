@@ -143,34 +143,25 @@ public sealed class NameEmitters : ExpressionEmitterBase
             case "None": IL.Emit(OpCodes.Ldnull); return NajaTypes.None;
         }
 
-        // 5b. Builtin container type names used as values (e.g. isinstance(x, list)).
-        if (e.Name == "list")
+        // 5b. Builtin type names used as values (e.g. isinstance(x, int), or pattern matching with `case int:`)
+        // Handle both primitive types (int, float, str, bool, bytes) and container types (list, dict, set, tuple, frozenset)
+        Type? builtinType = e.Name switch
         {
-            IL.Emit(OpCodes.Ldtoken, typeof(System.Collections.Generic.List<object>));
-            IL.Emit(OpCodes.Call, typeof(Type).GetMethod("GetTypeFromHandle")!);
-            return NajaTypes.Unknown;
-        }
-        if (e.Name == "dict")
+            "int" => typeof(long),
+            "float" => typeof(double),
+            "str" => typeof(string),
+            "bool" => typeof(bool),
+            "bytes" => typeof(byte[]),
+            "list" => typeof(System.Collections.Generic.List<object>),
+            "dict" => typeof(System.Collections.Generic.Dictionary<object, object>),
+            "set" => typeof(System.Collections.Generic.HashSet<object>),
+            "frozenset" => typeof(System.Collections.Immutable.ImmutableHashSet<object>),
+            "tuple" => typeof(object[]),
+            _ => null
+        };
+        if (builtinType is not null)
         {
-            IL.Emit(OpCodes.Ldtoken, typeof(System.Collections.Generic.Dictionary<object, object>));
-            IL.Emit(OpCodes.Call, typeof(Type).GetMethod("GetTypeFromHandle")!);
-            return NajaTypes.Unknown;
-        }
-        if (e.Name == "set")
-        {
-            IL.Emit(OpCodes.Ldtoken, typeof(System.Collections.Generic.HashSet<object>));
-            IL.Emit(OpCodes.Call, typeof(Type).GetMethod("GetTypeFromHandle")!);
-            return NajaTypes.Unknown;
-        }
-        if (e.Name == "frozenset")
-        {
-            IL.Emit(OpCodes.Ldtoken, typeof(System.Collections.Immutable.ImmutableHashSet<object>));
-            IL.Emit(OpCodes.Call, typeof(Type).GetMethod("GetTypeFromHandle")!);
-            return NajaTypes.Unknown;
-        }
-        if (e.Name == "tuple")
-        {
-            IL.Emit(OpCodes.Ldtoken, typeof(object[]));
+            IL.Emit(OpCodes.Ldtoken, builtinType);
             IL.Emit(OpCodes.Call, typeof(Type).GetMethod("GetTypeFromHandle")!);
             return NajaTypes.Unknown;
         }
