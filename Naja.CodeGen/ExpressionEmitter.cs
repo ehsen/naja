@@ -141,24 +141,6 @@ public sealed class ExpressionEmitter
         return NajaTypes.None;
     }
 
-    // ── Ternary if-else ───────────────────────────────────────────────────────
-
-    private NajaType EmitIfExpr(IfExpr e)
-    {
-        var elseLabel = IL.DefineLabel();
-        var endLabel = IL.DefineLabel();
-
-        Emit(e.Condition);
-        IL.Emit(OpCodes.Brfalse, elseLabel);
-        var thenType = Emit(e.Then);
-        IL.Emit(OpCodes.Br, endLabel);
-        IL.MarkLabel(elseLabel);
-        var elseType = Emit(e.Else);
-        IL.MarkLabel(endLabel);
-
-        return NajaTypes.Widen(thenType, elseType);
-    }
-
     // ── Call ──────────────────────────────────────────────────────────────────
 
     private NajaType EmitCall(CallExpr e)
