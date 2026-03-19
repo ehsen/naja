@@ -21,6 +21,7 @@ public sealed class ExpressionEmitter
     private readonly AttributeEmitters _attributeEmitters;
     private readonly ControlFlowEmitters _controlFlowEmitters;
     private readonly ComprehensionEmitters _comprehensionEmitters;
+    private readonly GeneratorEmitters _generatorEmitters;
 
     public ExpressionEmitter(EmitContext ctx)
     {
@@ -30,6 +31,7 @@ public sealed class ExpressionEmitter
         _attributeEmitters = new AttributeEmitters(ctx, this);
         _controlFlowEmitters = new ControlFlowEmitters(ctx, this);
         _comprehensionEmitters = new ComprehensionEmitters(ctx, this);
+        _generatorEmitters = new GeneratorEmitters(ctx, this);
     }
 
     // ── Main dispatch ─────────────────────────────────────────────────────────
@@ -67,7 +69,7 @@ public sealed class ExpressionEmitter
             GeneratorExpr e => _comprehensionEmitters.EmitGenerator(e),
             StarredExpr e => EmitStarred(e),
             AwaitExpr e => throw new CodeGenException("async/await not yet supported", e.Line, e.Column),
-            YieldExpr e => EmitYield(e),
+            YieldExpr e => _generatorEmitters.EmitYield(e),
             _ => throw new CodeGenException(
                                      $"Cannot emit expression: {expr.GetType().Name}",
                                      expr.Line, expr.Column)
