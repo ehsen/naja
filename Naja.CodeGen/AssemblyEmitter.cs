@@ -177,34 +177,8 @@ public sealed class AssemblyEmitter
             _mainMethod.SetCustomAttribute(new CustomAttributeBuilder(staCtor, []));
         }
 
-        // ── 6. Serialise to PE using ManagedPEBuilder ─────────────────────────
-        // PersistedAssemblyBuilder.Save() does NOT accept an entry point — the
-        // entry point MUST go through GenerateMetadata → ManagedPEBuilder.
-        var metaBuilder = asmBuilder.GenerateMetadata(
-            out BlobBuilder ilStream,
-            out BlobBuilder fieldData);
-
-        MethodDefinitionHandle entryHandle = default;
-        if (_mainMethod != null && needsExe)
-            entryHandle = MetadataTokens.MethodDefinitionHandle(_mainMethod.MetadataToken);
-
-        var peBuilder = new ManagedPEBuilder(
-            header: peHeader,
-            metadataRootBuilder: new MetadataRootBuilder(metaBuilder),
-            ilStream: ilStream,
-            mappedFieldData: fieldData,
-            entryPoint: entryHandle,
-            flags: CorFlags.ILOnly);
-
-        var peBlob = new BlobBuilder();
-        peBuilder.Serialize(peBlob);
-
-        using (var fs = new FileStream(outputPath, FileMode.Create, FileAccess.Write))
-            peBlob.WriteContentTo(fs);
-
-        // ── 7. Write sidecar files ────────────────────────────────────────────
-        WriteRuntimeConfig(outputPath, profile);
-        WriteDepsJson(outputPath);
+        // ── 6. Serialise to PE using extracted helper ─────────────────────────
+        AssemblyPEWriter.SerializeToFile(asmBuilder, _mainMethod, needsExe, peHeader, profile, outputPath);
     }
 
     /// <summary>
