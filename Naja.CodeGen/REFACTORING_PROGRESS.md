@@ -30,6 +30,7 @@ This document tracks the implementation of the Naja compiler refactoring outline
 | `LiteralEmitters.cs` | Int, Float, String, Bool, None, Ellipsis | 85 | ✅ Created | de2620f |
 | `CollectionEmitters.cs` | List, Tuple, Dict, Set | 90 | ✅ Created | de2620f |
 | `OperatorEmitters.cs` | Binary, Unary, BoolOp, Compare | 475 | ✅ Done | 4b3bf51 |
+| `CallEmitters.cs` | Call, MethodCall, BuiltinCall | 550 | ✅ Done | 54d6d72 |
 
 #### Planned Extractions
 
