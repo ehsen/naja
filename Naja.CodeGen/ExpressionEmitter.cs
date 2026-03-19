@@ -24,6 +24,7 @@ public sealed class ExpressionEmitter
     private readonly GeneratorEmitters _generatorEmitters;
     private readonly LambdaEmitters _lambdaEmitters;
     private readonly FStringEmitters _fstringEmitters;
+    private readonly NameEmitters _nameEmitters;
 
     public ExpressionEmitter(EmitContext ctx)
     {
@@ -36,6 +37,7 @@ public sealed class ExpressionEmitter
         _generatorEmitters = new GeneratorEmitters(ctx, this);
         _lambdaEmitters = new LambdaEmitters(ctx, this);
         _fstringEmitters = new FStringEmitters(ctx, this);
+        _nameEmitters = new NameEmitters(ctx, this);
     }
 
     // ── Main dispatch ─────────────────────────────────────────────────────────
@@ -47,11 +49,11 @@ public sealed class ExpressionEmitter
             IntLiteral e => EmitInt(e),
             FloatLiteral e => EmitFloat(e),
             StringLiteral e => EmitString(e),
-            FStringExpr e => _fstringEmitters.EmitFString(e),
+             FStringExpr e => _fstringEmitters.EmitFString(e),
             BoolLiteral e => EmitBool(e),
             NoneLiteral e => EmitNone(e),
             EllipsisLiteral e => EmitEllipsis(e),
-            NameExpr e => EmitName(e),
+            NameExpr e => _nameEmitters.EmitName(e),
             BinaryExpr e => _operatorEmitters.EmitBinary(e),
             UnaryExpr e => _operatorEmitters.EmitUnary(e),
             BoolOpExpr e => _operatorEmitters.EmitBoolOp(e),
