@@ -1,0 +1,573 @@
+using System.Reflection;
+using System.Reflection.Emit;
+using Naja.Parser;
+using Naja.Semantics;
+
+namespace Naja.CodeGen.Emitters.Expressions;
+
+/// <summary>
+/// Emits IL opcodes for call expressions: function calls, method calls, and builtin calls.
+/// Handles user functions, builtins, .NET types, exception instantiation, and first-class callables.
+/// </summary>
+public sealed class CallEmitters : ExpressionEmitterBase
+{
+    private readonly ExpressionEmitter _mainEmitter;
+
+    public CallEmitters(EmitContext ctx, ExpressionEmitter mainEmitter) : base(ctx)
+    {
+        _mainEmitter = mainEmitter;
+    }
+
+    public NajaType EmitCall(CallExpr e)
+    {
+        // Handle escape hatches (dynamic, cast)
+        if (e.Func is NameExpr { Name: "dynamic" } && e.Args.Count == 1)
+        {
+            _ctx.Diagnostics?.ReportExplicitDynamic(DescribeExpr(e.Args[0].Value), e.Line, e.Column);
+            var t = _mainEmitter.Emit(e.Args[0].Value);
+            TypeMapper.EmitBox(IL, t);
+            return NajaTypes.Unknown;
+        }
+
+        if (e.Func is NameExpr { Name: "cast" } && e.Args.Count == 2)
+        {
+            var targetType = ParseCastTarget(e.Args[0].Value, e.Line, e.Column);
+            _ctx.Diagnostics?.ReportCast(DescribeExpr(e.Args[0].Value), DescribeExpr(e.Args[1].Value), e.Line, e.Column);
+            var innerType = _mainEmitter.Emit(e.Args[1].Value);
+            EmitCoercion(IL, innerType, targetType, e.Line, e.Column);
+            return targetType;
+        }
+
+        // Handle builtin functions by name
+        if (e.Func is NameExpr { Name: var name })
+        {
+            var builtin = TypeMapper.ResolveBuiltin(name);
+            if (builtin is not null)
+                return EmitBuiltinCall(builtin, e.Args, name);
+
+            // Exception/class instantiation by name
+            if (!_ctx.ClassTypes.ContainsKey(name) && TypeMapper.ResolveExceptionType(name) is not null)
+            {
+                var exType = TypeMapper.ResolveExceptionType(name)!;
+                var ctor = exType.GetConstructor(new[] { typeof(string) })
+                    ?? typeof(Exception).GetConstructor(new[] { typeof(string) })!;
+
+                if (e.Args.Count == 0)
+                {
+                    IL.Emit(OpCodes.Ldstr, name);
+                }
+                else
+                {
+                    var argType = _mainEmitter.Emit(e.Args[0].Value);
+                    TypeMapper.EmitBox(IL, argType);
+                    var toStr = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ToStr))!;
+                    IL.Emit(OpCodes.Call, toStr);
+                }
+
+                IL.Emit(OpCodes.Newobj, ctor);
+                return NajaTypes.Unknown;
+            }
+
+            // User-defined function
+            if (_ctx.Methods.TryGetValue(name, out var method))
+            {
+                _ctx.MethodParamTypes.TryGetValue(name, out var pts);
+                for (int i = 0; i < e.Args.Count; i++)
+                {
+                    var argType = _mainEmitter.Emit(e.Args[i].Value);
+                    if (pts is not null && i < pts.Length && pts[i] == typeof(object))
+                        TypeMapper.EmitBox(IL, argType);
+                }
+
+                int totalParams = pts?.Length ?? 0;
+                for (int i = e.Args.Count; i < totalParams; i++)
+                {
+                    try
+                    {
+                        var mParams = method.GetParameters();
+                        if (i < mParams.Length && mParams[i].HasDefaultValue)
+                            EmitDefaultValue(mParams[i].DefaultValue);
+                        else
+                            IL.Emit(OpCodes.Ldnull);
+                    }
+                    catch
+                    {
+                        IL.Emit(OpCodes.Ldnull);
+                    }
+                }
+
+                IL.Emit(OpCodes.Call, method);
+                return NajaTypes.Unknown;
+            }
+
+            // User-defined class instantiation
+            if (_ctx.ClassTypes.TryGetValue(name, out var classType))
+            {
+                ConstructorInfo defaultCtor = _ctx.ClassConstructors.TryGetValue(name, out var cb)
+                    ? cb
+                    : typeof(object).GetConstructor(Type.EmptyTypes)!;
+
+                for (int i = 0; i < e.Args.Count; i++)
+                {
+                    var argType = _mainEmitter.Emit(e.Args[i].Value);
+                    TypeMapper.EmitBox(IL, argType);
+                }
+
+                IL.Emit(OpCodes.Newobj, defaultCtor);
+                return NajaTypes.Unknown;
+            }
+
+            // .NET imported type instantiation
+            if (_ctx.ImportMap.ContainsKey(name))
+            {
+                _mainEmitter.Emit(e.Func);
+                IL.Emit(OpCodes.Castclass, typeof(Type));
+                var typeLocal = _ctx.Locals.Declare($"__dotnet_t_{e.Line}", typeof(Type));
+                IL.Emit(OpCodes.Stloc, typeLocal);
+
+                IL.Emit(OpCodes.Ldc_I4, e.Args.Count);
+                IL.Emit(OpCodes.Newarr, typeof(object));
+                for (int i = 0; i < e.Args.Count; i++)
+                {
+                    IL.Emit(OpCodes.Dup);
+                    IL.Emit(OpCodes.Ldc_I4, i);
+                    var argType = _mainEmitter.Emit(e.Args[i].Value);
+                    TypeMapper.EmitBox(IL, argType);
+                    IL.Emit(OpCodes.Stelem_Ref);
+                }
+
+                var ctorArgs = _ctx.Locals.Declare($"__dotnet_args_{e.Line}", typeof(object[]));
+                IL.Emit(OpCodes.Stloc, ctorArgs);
+
+                IL.Emit(OpCodes.Ldloc, typeLocal);
+                IL.Emit(OpCodes.Ldloc, ctorArgs);
+                var create = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.CreateDotNet),
+                    new[] { typeof(Type), typeof(object[]) })!;
+                IL.Emit(OpCodes.Call, create);
+                return NajaTypes.Unknown;
+            }
+        }
+
+        // Namespace.Type constructor call
+        if (e.Func is AttributeExpr { Object: NameExpr nsName } attr &&
+            _ctx.NamespaceImports.ContainsKey(nsName.Name))
+        {
+            var fullTypeName = nsName.Name + "." + attr.Attribute;
+
+            var resolvedType = AppDomain.CurrentDomain.GetAssemblies()
+                .Select(a => a.GetType(fullTypeName, throwOnError: false, ignoreCase: true))
+                .FirstOrDefault(t => t is not null)
+                ?? Type.GetType(fullTypeName, throwOnError: false, ignoreCase: true);
+
+            if (resolvedType is not null)
+            {
+                IL.Emit(OpCodes.Ldc_I4, e.Args.Count);
+                IL.Emit(OpCodes.Newarr, typeof(object));
+                for (int i = 0; i < e.Args.Count; i++)
+                {
+                    IL.Emit(OpCodes.Dup);
+                    IL.Emit(OpCodes.Ldc_I4, i);
+                    var argType = _mainEmitter.Emit(e.Args[i].Value);
+                    TypeMapper.EmitBox(IL, argType);
+                    IL.Emit(OpCodes.Stelem_Ref);
+                }
+
+                var ctorArgs = _ctx.Locals.Declare($"__dotnet_args_{e.Line}", typeof(object[]));
+                IL.Emit(OpCodes.Stloc, ctorArgs);
+
+                IL.Emit(OpCodes.Ldtoken, resolvedType);
+                var getTypeFromHandle = typeof(Type).GetMethod("GetTypeFromHandle")!;
+                IL.Emit(OpCodes.Call, getTypeFromHandle);
+
+                IL.Emit(OpCodes.Ldloc, ctorArgs);
+                var create = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.CreateDotNet),
+                    new[] { typeof(Type), typeof(object[]) })!;
+                IL.Emit(OpCodes.Call, create);
+                return NajaTypes.Unknown;
+            }
+        }
+
+        // Method call: obj.method(args)
+        if (e.Func is AttributeExpr attr2)
+            return EmitMethodCall(attr2, e.Args);
+
+        // First-class callable
+        {
+            IL.Emit(OpCodes.Ldc_I4, e.Args.Count);
+            IL.Emit(OpCodes.Newarr, typeof(object));
+            for (int i = 0; i < e.Args.Count; i++)
+            {
+                IL.Emit(OpCodes.Dup);
+                IL.Emit(OpCodes.Ldc_I4, i);
+                var argT = _mainEmitter.Emit(e.Args[i].Value);
+                TypeMapper.EmitBox(IL, argT);
+                IL.Emit(OpCodes.Stelem_Ref);
+            }
+
+            var argsLocal = _ctx.Locals.Declare($"__h5_args_{e.Line}", typeof(object[]));
+            IL.Emit(OpCodes.Stloc, argsLocal);
+
+            var funcType = _mainEmitter.Emit(e.Func);
+            TypeMapper.EmitBox(IL, funcType);
+            IL.Emit(OpCodes.Ldloc, argsLocal);
+            var callCallable = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.CallCallable))!;
+            IL.Emit(OpCodes.Call, callCallable);
+            return NajaTypes.Unknown;
+        }
+    }
+
+    public NajaType EmitBuiltinCall(MethodInfo method, IReadOnlyList<Argument> args, string name)
+    {
+        var parameters = method.GetParameters();
+
+        if (parameters.Length == 1 && parameters[0].ParameterType == typeof(object[]))
+        {
+            IL.Emit(OpCodes.Ldc_I4, args.Count);
+            IL.Emit(OpCodes.Newarr, typeof(object));
+
+            for (int i = 0; i < args.Count; i++)
+            {
+                IL.Emit(OpCodes.Dup);
+                IL.Emit(OpCodes.Ldc_I4, i);
+                var argType = _mainEmitter.Emit(args[i].Value);
+                TypeMapper.EmitBox(IL, argType);
+                IL.Emit(OpCodes.Stelem_Ref);
+            }
+        }
+        else
+        {
+            for (int i = 0; i < Math.Min(args.Count, parameters.Length); i++)
+            {
+                var argType = _mainEmitter.Emit(args[i].Value);
+                if (parameters[i].ParameterType == typeof(object))
+                    TypeMapper.EmitBox(IL, argType);
+            }
+        }
+
+        IL.Emit(method.IsVirtual ? OpCodes.Callvirt : OpCodes.Call, method);
+
+        if (method.ReturnType == typeof(void))
+        {
+            IL.Emit(OpCodes.Ldnull);
+            return NajaTypes.None;
+        }
+
+        if (method.ReturnType == typeof(long)) return NajaTypes.Int;
+        if (method.ReturnType == typeof(double)) return NajaTypes.Float;
+        if (method.ReturnType == typeof(bool)) return NajaTypes.Bool;
+        if (method.ReturnType == typeof(string)) return NajaTypes.Str;
+        if (method.ReturnType == typeof(System.Collections.Generic.List<object>)) return new ListType(NajaTypes.Unknown);
+        if (method.ReturnType == typeof(System.Collections.Generic.Dictionary<object, object>)) return new DictType(NajaTypes.Unknown, NajaTypes.Unknown);
+
+        return NajaTypes.Unknown;
+    }
+
+    public NajaType EmitMethodCall(AttributeExpr attr, IReadOnlyList<Argument> args)
+    {
+        // base/super method calls
+        if ((attr.Object is NameExpr ne && (ne.Name == "base" || ne.Name == "super")) ||
+            (attr.Object is CallExpr ce && ce.Func is NameExpr ceNe && (ceNe.Name == "base" || ceNe.Name == "super")))
+        {
+            var baseType = _ctx.TypeBuilder.BaseType;
+            if (baseType == null) throw new CodeGenException($"[L{attr.Line}:C{attr.Column}] base/super call outside a valid class context");
+
+            var flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.FlattenHierarchy;
+            List<MethodInfo> candidates;
+
+            string methodKey = $"{baseType.Name}.{attr.Attribute}";
+            if (_ctx.AllClassMethods.TryGetValue(methodKey, out var preMB))
+            {
+                candidates = new List<MethodInfo> { preMB };
+            }
+            else
+            {
+                Type searchType = baseType is TypeBuilder tb ? tb.BaseType ?? typeof(object) : baseType;
+                candidates = searchType.GetMethods(flags)
+                                     .Where(m => m.Name.Equals(attr.Attribute, StringComparison.OrdinalIgnoreCase))
+                                     .Cast<MethodInfo>()
+                                     .ToList();
+            }
+
+            if (candidates.Count == 0 && attr.Attribute == "__init__")
+            {
+                var ctors = baseType.GetConstructors(flags).ToList();
+                var ctor = ctors.FirstOrDefault(c =>
+                {
+                    if (c is ConstructorBuilder && _ctx.ClassCtorArgCounts.TryGetValue(baseType.Name, out var count))
+                        return count == args.Count;
+                    return c.GetParameters().Length == args.Count;
+                }) ?? ctors.FirstOrDefault();
+
+                if (ctor == null)
+                    throw new CodeGenException($"[L{attr.Line}:C{attr.Column}] No matching base constructor for '__init__' found on '{baseType.Name}'");
+
+                IL.Emit(OpCodes.Ldarg_0);
+
+                Type[]? pts3 = null;
+                if (ctor is ConstructorBuilder && _ctx.ClassCtorArgCounts.TryGetValue(baseType.Name, out var pc))
+                    pts3 = Enumerable.Repeat(typeof(object), pc).ToArray();
+
+                var ps = pts3 ?? ctor.GetParameters().Select(p => p.ParameterType).ToArray();
+
+                for (int i = 0; i < args.Count; i++)
+                {
+                    var t = _mainEmitter.Emit(args[i].Value);
+                    if (i < ps.Length)
+                    {
+                        Type pType = ps[i];
+                        if (pType == typeof(object))
+                            TypeMapper.EmitBox(IL, t);
+                        else if (pType.IsValueType)
+                        {
+                            if (t is UnknownType) IL.Emit(OpCodes.Unbox_Any, pType);
+                            else if (pType == typeof(int) && t is IntType) IL.Emit(OpCodes.Conv_I4);
+                        }
+                        else if (pType == typeof(string) && t is UnknownType)
+                            IL.Emit(OpCodes.Castclass, typeof(string));
+                    }
+                }
+
+                IL.Emit(OpCodes.Call, ctor);
+                IL.Emit(OpCodes.Ldnull);
+                return NajaTypes.None;
+            }
+
+            var method = candidates.FirstOrDefault(m =>
+            {
+                if (_ctx.AllClassMethodParamTypes.TryGetValue($"{baseType.Name}.{m.Name}", out var pts4))
+                    return pts4.Length == args.Count;
+                return m.GetParameters().Length == args.Count;
+            }) ?? candidates.FirstOrDefault();
+
+            if (method == null) throw new CodeGenException($"[L{attr.Line}:C{attr.Column}] No matching base method '{attr.Attribute}' found on '{baseType.Name}'");
+
+            IL.Emit(OpCodes.Ldarg_0);
+
+            Type[]? pts = null;
+            if (_ctx.AllClassMethods.TryGetValue(methodKey, out var _))
+                _ctx.AllClassMethodParamTypes.TryGetValue(methodKey, out pts);
+
+            var ps2 = pts != null ? null : method.GetParameters();
+            int pCount = pts?.Length ?? ps2!.Length;
+
+            for (int i = 0; i < args.Count; i++)
+            {
+                var t = _mainEmitter.Emit(args[i].Value);
+                if (i < pCount)
+                {
+                    Type pType = pts != null ? pts[i] : ps2![i].ParameterType;
+                    if (pType == typeof(object))
+                        TypeMapper.EmitBox(IL, t);
+                    else if (pType.IsValueType)
+                    {
+                        if (t is UnknownType) IL.Emit(OpCodes.Unbox_Any, pType);
+                        else if (pType == typeof(int) && t is IntType) IL.Emit(OpCodes.Conv_I4);
+                    }
+                    else if (pType == typeof(string) && t is UnknownType)
+                        IL.Emit(OpCodes.Castclass, typeof(string));
+                }
+            }
+
+            IL.Emit(OpCodes.Call, method);
+
+            if (method.ReturnType == typeof(void))
+            {
+                IL.Emit(OpCodes.Ldnull);
+                return NajaTypes.None;
+            }
+
+            if (method.ReturnType == typeof(long)) return NajaTypes.Int;
+            if (method.ReturnType == typeof(double)) return NajaTypes.Float;
+            if (method.ReturnType == typeof(bool)) return NajaTypes.Bool;
+            if (method.ReturnType == typeof(string)) return NajaTypes.Str;
+            return NajaTypes.Unknown;
+        }
+
+        var objType = _mainEmitter.Emit(attr.Object);
+
+        // String methods
+        if (objType is StrType)
+        {
+            var bridge = ResolveStrMethod(attr.Attribute);
+            if (bridge is not null)
+            {
+                foreach (var arg in args) { var t = _mainEmitter.Emit(arg.Value); TypeMapper.EmitBox(IL, t); }
+                var expectedArgs = bridge.GetParameters().Length - 1;
+                for (int i = args.Count; i < expectedArgs; i++) IL.Emit(OpCodes.Ldnull);
+                IL.Emit(OpCodes.Call, bridge);
+                if (bridge.ReturnType == typeof(void)) { IL.Emit(OpCodes.Ldnull); return NajaTypes.None; }
+                if (bridge.ReturnType == typeof(long)) return NajaTypes.Int;
+                if (bridge.ReturnType == typeof(double)) return NajaTypes.Float;
+                if (bridge.ReturnType == typeof(bool)) return NajaTypes.Bool;
+                if (bridge.ReturnType == typeof(string)) return NajaTypes.Str;
+                if (bridge.ReturnType == typeof(System.Collections.Generic.List<object>)) return new ListType(NajaTypes.Unknown);
+                if (bridge.ReturnType == typeof(System.Collections.Generic.Dictionary<object, object>)) return new DictType(NajaTypes.Unknown, NajaTypes.Unknown);
+                return NajaTypes.Unknown;
+            }
+        }
+
+        // List methods
+        if (objType is ListType)
+        {
+            var bridge = ResolveListMethod(attr.Attribute);
+            if (bridge is not null)
+            {
+                foreach (var arg in args) { var t = _mainEmitter.Emit(arg.Value); TypeMapper.EmitBox(IL, t); }
+                var expectedArgs = bridge.GetParameters().Length - 1;
+                for (int i = args.Count; i < expectedArgs; i++) IL.Emit(OpCodes.Ldnull);
+                IL.Emit(OpCodes.Call, bridge);
+                if (bridge.ReturnType == typeof(void)) { IL.Emit(OpCodes.Ldnull); return NajaTypes.None; }
+                if (bridge.ReturnType == typeof(long)) return NajaTypes.Int;
+                if (bridge.ReturnType == typeof(double)) return NajaTypes.Float;
+                if (bridge.ReturnType == typeof(bool)) return NajaTypes.Bool;
+                if (bridge.ReturnType == typeof(string)) return NajaTypes.Str;
+                if (bridge.ReturnType == typeof(System.Collections.Generic.List<object>)) return new ListType(NajaTypes.Unknown);
+                if (bridge.ReturnType == typeof(System.Collections.Generic.Dictionary<object, object>)) return new DictType(NajaTypes.Unknown, NajaTypes.Unknown);
+                return NajaTypes.Unknown;
+            }
+        }
+
+        // Dict methods
+        if (objType is DictType)
+        {
+            var bridge = ResolveDictMethod(attr.Attribute);
+            if (bridge is not null)
+            {
+                foreach (var arg in args) { var t = _mainEmitter.Emit(arg.Value); TypeMapper.EmitBox(IL, t); }
+                var expectedArgs = bridge.GetParameters().Length - 1;
+                for (int i = args.Count; i < expectedArgs; i++) IL.Emit(OpCodes.Ldnull);
+                IL.Emit(OpCodes.Call, bridge);
+                if (bridge.ReturnType == typeof(void)) { IL.Emit(OpCodes.Ldnull); return NajaTypes.None; }
+                if (bridge.ReturnType == typeof(long)) return NajaTypes.Int;
+                if (bridge.ReturnType == typeof(double)) return NajaTypes.Float;
+                if (bridge.ReturnType == typeof(bool)) return NajaTypes.Bool;
+                if (bridge.ReturnType == typeof(string)) return NajaTypes.Str;
+                if (bridge.ReturnType == typeof(System.Collections.Generic.List<object>)) return new ListType(NajaTypes.Unknown);
+                if (bridge.ReturnType == typeof(System.Collections.Generic.Dictionary<object, object>)) return new DictType(NajaTypes.Unknown, NajaTypes.Unknown);
+                return NajaTypes.Unknown;
+            }
+        }
+
+        // Dynamic fallback
+        TypeMapper.EmitBox(IL, objType);
+        IL.Emit(OpCodes.Ldstr, attr.Attribute);
+        IL.Emit(OpCodes.Ldc_I4, args.Count);
+        IL.Emit(OpCodes.Newarr, typeof(object));
+        for (int i = 0; i < args.Count; i++)
+        {
+            IL.Emit(OpCodes.Dup); IL.Emit(OpCodes.Ldc_I4, i);
+            var at = _mainEmitter.Emit(args[i].Value); TypeMapper.EmitBox(IL, at);
+            IL.Emit(OpCodes.Stelem_Ref);
+        }
+
+        var dynCall = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DynamicCall))!;
+        IL.Emit(OpCodes.Call, dynCall);
+        return NajaTypes.Unknown;
+    }
+
+    private static MethodInfo? ResolveStrMethod(string name) => name switch
+    {
+        "upper" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrUpper)),
+        "lower" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrLower)),
+        "strip" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrStrip)),
+        "lstrip" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrLStrip)),
+        "rstrip" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrRStrip)),
+        "startswith" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrStartsWith)),
+        "endswith" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrEndsWith)),
+        "isdigit" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrIsDigit)),
+        "isalpha" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrIsAlpha)),
+        "isalnum" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrIsAlNum)),
+        "find" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrFind)),
+        "index" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrIndex)),
+        "replace" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrReplace)),
+        "center" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrCenter)),
+        "ljust" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrLJust)),
+        "rjust" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrRJust)),
+        "zfill" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrZFill)),
+        "count" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrCount)),
+        "join" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrJoin)),
+        "split" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrSplit)),
+        "splitlines" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrSplitLines)),
+        "title" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrTitle)),
+        "format" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Format)),
+        _ => null
+    };
+
+    private static MethodInfo? ResolveListMethod(string name) => name switch
+    {
+        "append" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListAppend)),
+        "extend" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListExtend)),
+        "insert" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListInsert)),
+        "pop" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListPop)),
+        "remove" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListRemove)),
+        "reverse" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListReverse)),
+        "sort" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListSort)),
+        "index" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListIndex)),
+        "count" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListCount)),
+        "copy" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListCopy)),
+        "clear" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListClear)),
+        _ => null
+    };
+
+    private static MethodInfo? ResolveDictMethod(string name) => name switch
+    {
+        "keys" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DictKeys)),
+        "values" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DictValues)),
+        "items" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DictItems)),
+        "get" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DictGet)),
+        "pop" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DictPop)),
+        "update" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DictUpdate)),
+        "clear" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DictClear)),
+        "copy" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DictCopy)),
+        _ => null
+    };
+
+    /// <summary>
+    /// Not implemented in this emitter - use specialized methods: EmitCall, EmitBuiltinCall, EmitMethodCall
+    /// </summary>
+    public override NajaType Emit(Expression expr)
+    {
+        throw new NotImplementedException("Use specialized methods: EmitCall, EmitBuiltinCall, EmitMethodCall");
+    }
+
+    // Helper methods (referenced from inherited code)
+    private string DescribeExpr(Expression expr) =>
+        expr switch
+        {
+            NameExpr n => n.Name,
+            IntLiteral i => i.Value.ToString(),
+            StringLiteral s => $"\"{s.Value}\"",
+            _ => expr.GetType().Name
+        };
+
+    private NajaType ParseCastTarget(Expression expr, int line, int col) =>
+        expr switch
+        {
+            NameExpr { Name: "int" } => NajaTypes.Int,
+            NameExpr { Name: "float" } => NajaTypes.Float,
+            NameExpr { Name: "str" } => NajaTypes.Str,
+            NameExpr { Name: "bool" } => NajaTypes.Bool,
+            NameExpr { Name: "object" } => NajaTypes.Unknown,
+            _ => throw new CodeGenException($"Unknown cast target: {expr}", line, col)
+        };
+
+    private void EmitDefaultValue(object? val)
+    {
+        if (val == null) IL.Emit(OpCodes.Ldnull);
+        else if (val is long l) { IL.Emit(OpCodes.Ldc_I8, l); }
+        else if (val is int i) { IL.Emit(OpCodes.Ldc_I4, i); }
+        else if (val is double d) { IL.Emit(OpCodes.Ldc_R8, d); }
+        else if (val is bool b) { IL.Emit(OpCodes.Ldc_I4, b ? 1 : 0); }
+        else if (val is string s) { IL.Emit(OpCodes.Ldstr, s); }
+        else IL.Emit(OpCodes.Ldnull);
+    }
+
+    private void EmitCoercion(ILGenerator il, NajaType from, NajaType to, int line, int col)
+    {
+        if (from == to) return;
+        if (from is IntType && to is FloatType) IL.Emit(OpCodes.Conv_R8);
+        else if (from is FloatType && to is IntType) IL.Emit(OpCodes.Conv_I8);
+        else if (to is UnknownType) TypeMapper.EmitBox(IL, from);
+        else if (from is UnknownType) IL.Emit(OpCodes.Unbox_Any, TypeMapper.ToClrType(to));
+    }
+}

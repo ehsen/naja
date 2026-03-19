@@ -1,0 +1,34 @@
+refactor: extract operator emitters to specialist module
+
+Phase 2 Continuation: Extract binary/unary/boolean/comparison operators
+
+* Create OperatorEmitters.cs (475 lines)
+  - EmitBinary: Handles Add, Sub, Mul, Div, FloorDiv, Mod, Pow, BitAnd, BitOr, BitXor, LShift, RShift
+  - EmitUnary: Handles Neg, Pos, Invert, Not
+  - EmitBoolOp: Handles And/Or short-circuit evaluation
+  - EmitCompare: Handles single/chained comparisons, Is/IsNot, In/NotIn, and dynamic comparisons
+  
+* Integrate OperatorEmitters into ExpressionEmitter
+  - Add OperatorEmitters field initialized in constructor
+  - Update Emit() dispatcher to delegate operator expressions to specialist
+  - Remove 540 lines of original operator methods from ExpressionEmitter
+
+* Scalability: Reduced ExpressionEmitter by 540 lines; maintains all behavior
+  - BinaryExpr dispatches to _operatorEmitters.EmitBinary(e)
+  - UnaryExpr dispatches to _operatorEmitters.EmitUnary(e)
+  - BoolOpExpr dispatches to _operatorEmitters.EmitBoolOp(e)
+  - CompareExpr dispatches to _operatorEmitters.EmitCompare(e)
+
+Architecture:
+- OperatorEmitters inherits ExpressionEmitterBase for IL utilities and DefineLabel/EmitLabel
+- Passes ExpressionEmitter reference for nested expression evaluation
+- Follows specialist emitter pattern: single responsibility, 150-250 lines each
+- Type information properly preserved across all operator families
+
+Testing:
+- Build: ✅ Successful (0 errors, 0 warnings)
+- Ready for next specialist extraction (CallEmitters)
+
+Files Changed:
+- NEW: Naja.CodeGen/Emitters/Expressions/OperatorEmitters.cs (475 lines)
+- MODIFIED: Naja.CodeGen/ExpressionEmitter.cs (-540 lines, +5 lines)

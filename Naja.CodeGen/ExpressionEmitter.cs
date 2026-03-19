@@ -17,11 +17,13 @@ public sealed class ExpressionEmitter
 
     // Specialist emitters
     private readonly OperatorEmitters _operatorEmitters;
+    private readonly CallEmitters _callEmitters;
 
     public ExpressionEmitter(EmitContext ctx)
     {
         _ctx = ctx;
         _operatorEmitters = new OperatorEmitters(ctx, this);
+        _callEmitters = new CallEmitters(ctx, this);
     }
 
     // ── Main dispatch ─────────────────────────────────────────────────────────
@@ -44,7 +46,7 @@ public sealed class ExpressionEmitter
             CompareExpr e => _operatorEmitters.EmitCompare(e),
             IfExpr e => EmitIfExpr(e),
             WalrusExpr e => EmitWalrus(e),
-            CallExpr e => EmitCall(e),
+            CallExpr e => _callEmitters.EmitCall(e),
             AttributeExpr e => EmitAttribute(e),
             SubscriptExpr e => EmitSubscript(e),
             SliceExpr e => EmitSlice(e),

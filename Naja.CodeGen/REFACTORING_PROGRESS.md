@@ -20,33 +20,40 @@ This document tracks the implementation of the Naja compiler refactoring outline
 
 ### Phase 2: Expression Emission Layer (🔄 In Progress)
 
-**Goal**: Refactor `ExpressionEmitter.cs` (2375 lines) into focused specialists.
+**Goal**: Refactor `ExpressionEmitter.cs` (2375 lines → ~1800 lines) into focused specialists.
 
-#### Strategy
+#### Completed Extractions
 
-Rather than doing a complete rewrite in a single commit (which would be error-prone), we:
-1. Create new specialized emitter classes in `Naja.CodeGen/Emitters/Expressions/`
-2. Extract methods group-by-group with full test coverage
-3. Update `ExpressionEmitter.cs` to delegate to new specialists
-4. Test incrementally after each extraction
-5. Keep existing structure intact until all new modules are ready
+| File | Purpose | Lines | Status | Commit |
+|------|---------|-------|--------|--------|
+| `ExpressionEmitterBase.cs` | Base class with IL utilities | 60 | ✅ Created | de2620f |
+| `LiteralEmitters.cs` | Int, Float, String, Bool, None, Ellipsis | 85 | ✅ Created | de2620f |
+| `CollectionEmitters.cs` | List, Tuple, Dict, Set | 90 | ✅ Created | de2620f |
+| `OperatorEmitters.cs` | Binary, Unary, BoolOp, Compare | 475 | ✅ Done | 4b3bf51 |
 
-#### Files Created
+#### Planned Extractions
 
 | File | Purpose | Est. Lines | Status |
 |------|---------|-----------|--------|
-| `ExpressionEmitterBase.cs` | Base class with IL utilities | 60 | ✅ Created |
-| `LiteralEmitters.cs` | Int, Float, String, Bool, None, Ellipsis | 85 | ✅ Created |
-| `CollectionEmitters.cs` | List, Tuple, Dict, Set | 90 | ✅ Created |
-| `OperatorEmitters.cs` | Binary, Unary, BoolOp, Compare | 400 | 📋 Planned |
-| `CallEmitters.cs` | Call, MethodCall, BuiltinCall | 350 | 📋 Planned |
-| `AttributeEmitters.cs` | Attribute, Subscript, Slice | 200 | 📋 Planned |
+| `CallEmitters.cs` | Call, MethodCall, BuiltinCall | 400 | 📋 Next |
+| `AttributeEmitters.cs` | Attribute, Subscript, Slice | 250 | 📋 Planned |
 | `ControlFlowEmitters.cs` | IfExpr, Walrus | 180 | 📋 Planned |
-| `ComprehensionEmitters.cs` | ListComp, SetComp, DictComp | 350 | 📋 Planned |
+| `ComprehensionEmitters.cs` | ListComp, SetComp, DictComp | 500 | 📋 Planned |
 | `GeneratorEmitters.cs` | GeneratorExpr, Yield, YieldFrom | 200 | 📋 Planned |
 | `LambdaEmitter.cs` | Lambda expression handling | 150 | 📋 Planned |
+| `FStringEmitter.cs` | FString, format spec parsing | 200 | 📋 Planned |
+| `NameEmitter.cs` | Name resolution, scope handling | 200 | 📋 Planned |
 
-**Next Step**: Extract `OperatorEmitters.cs` (BinaryExpr, UnaryExpr, BoolOpExpr, CompareExpr methods)
+#### Phase 2 Progress
+
+- **Commits Completed**: 2 (de2620f: foundation, 4b3bf51: operators)
+- **Lines Removed from Monolith**: 540 lines
+- **Lines Added to Specialists**: 475 lines (OperatorEmitters)
+- **Test Results**: 397 passed (↑ +6 from baseline), 66 failed (↓ -6), 4 skipped
+- **Current ExpressionEmitter Size**: ~1835 lines (was 2375)
+- **Reduction Progress**: 23% complete (540 of 2375 lines extracted)
+
+**Next Step**: Extract `CallEmitters.cs` (EmitCall, EmitBuiltinCall, EmitMethodCall methods)
 
 ### Phase 3: Builtin Functions (🔄 In Progress)
 
