@@ -22,6 +22,7 @@ public sealed class ExpressionEmitter
     private readonly ControlFlowEmitters _controlFlowEmitters;
     private readonly ComprehensionEmitters _comprehensionEmitters;
     private readonly GeneratorEmitters _generatorEmitters;
+    private readonly LambdaEmitters _lambdaEmitters;
 
     public ExpressionEmitter(EmitContext ctx)
     {
@@ -32,6 +33,7 @@ public sealed class ExpressionEmitter
         _controlFlowEmitters = new ControlFlowEmitters(ctx, this);
         _comprehensionEmitters = new ComprehensionEmitters(ctx, this);
         _generatorEmitters = new GeneratorEmitters(ctx, this);
+        _lambdaEmitters = new LambdaEmitters(ctx, this);
     }
 
     // ── Main dispatch ─────────────────────────────────────────────────────────
@@ -58,7 +60,7 @@ public sealed class ExpressionEmitter
             AttributeExpr e => _attributeEmitters.EmitAttribute(e),
             SubscriptExpr e => _attributeEmitters.EmitSubscript(e),
             SliceExpr e => _attributeEmitters.EmitSlice(e),
-            LambdaExpr e => EmitLambda(e),
+            LambdaExpr e => _lambdaEmitters.EmitLambda(e),
             ListExpr e => EmitList(e),
             TupleExpr e => EmitTuple(e),
             SetExpr e => EmitSet(e),
