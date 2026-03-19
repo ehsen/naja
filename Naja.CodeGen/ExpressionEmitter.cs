@@ -141,62 +141,6 @@ public sealed class ExpressionEmitter
         return NajaTypes.None;
     }
 
-    private static System.Reflection.MethodInfo? ResolveStrMethod(string name) => name switch
-    {
-        "upper" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrUpper)),
-        "lower" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrLower)),
-        "strip" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrStrip)),
-        "lstrip" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrLStrip)),
-        "rstrip" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrRStrip)),
-        "startswith" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrStartsWith)),
-        "endswith" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrEndsWith)),
-        "isdigit" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrIsDigit)),
-        "isalpha" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrIsAlpha)),
-        "isalnum" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrIsAlNum)),
-        "find" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrFind)),
-        "index" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrIndex)),
-        "replace" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrReplace)),
-        "center" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrCenter)),
-        "ljust" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrLJust)),
-        "rjust" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrRJust)),
-        "zfill" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrZFill)),
-        "count" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrCount)),
-        "join" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrJoin)),
-        "split" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrSplit)),
-        "splitlines" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrSplitLines)),
-        "title" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrTitle)),
-        "format" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Format)),
-        _ => null
-    };
-
-    private static System.Reflection.MethodInfo? ResolveListMethod(string name) => name switch
-    {
-        "append" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListAppend)),
-        "extend" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListExtend)),
-        "insert" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListInsert)),
-        "pop" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListPop)),
-        "remove" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListRemove)),
-        "reverse" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListReverse)),
-        "sort" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListSort)),
-        "index" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListIndex)),
-        "count" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListCount)),
-        "copy" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListCopy)),
-        "clear" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListClear)),
-        _ => null
-    };
-
-    private static System.Reflection.MethodInfo? ResolveDictMethod(string name) => name switch
-    {
-        "keys" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DictKeys)),
-        "values" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DictValues)),
-        "items" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DictItems)),
-        "get" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DictGet)),
-        "pop" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DictPop)),
-        "update" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DictUpdate)),
-        "clear" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DictClear)),
-        "copy" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DictCopy)),
-        _ => null
-    };
 
     // ── Attribute access ──────────────────────────────────────────────────────
 
