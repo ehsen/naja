@@ -20,6 +20,7 @@ public sealed class ExpressionEmitter
     private readonly CallEmitters _callEmitters;
     private readonly AttributeEmitters _attributeEmitters;
     private readonly ControlFlowEmitters _controlFlowEmitters;
+    private readonly ComprehensionEmitters _comprehensionEmitters;
 
     public ExpressionEmitter(EmitContext ctx)
     {
@@ -28,6 +29,7 @@ public sealed class ExpressionEmitter
         _callEmitters = new CallEmitters(ctx, this);
         _attributeEmitters = new AttributeEmitters(ctx, this);
         _controlFlowEmitters = new ControlFlowEmitters(ctx, this);
+        _comprehensionEmitters = new ComprehensionEmitters(ctx, this);
     }
 
     // ── Main dispatch ─────────────────────────────────────────────────────────
@@ -59,10 +61,10 @@ public sealed class ExpressionEmitter
             TupleExpr e => EmitTuple(e),
             SetExpr e => EmitSet(e),
             DictExpr e => EmitDict(e),
-            ListCompExpr e => EmitListComp(e),
-            SetCompExpr e => EmitSetComp(e),
-            DictCompExpr e => EmitDictComp(e),
-            GeneratorExpr e => EmitGenerator(e),
+            ListCompExpr e => _comprehensionEmitters.EmitListComp(e),
+            SetCompExpr e => _comprehensionEmitters.EmitSetComp(e),
+            DictCompExpr e => _comprehensionEmitters.EmitDictComp(e),
+            GeneratorExpr e => _comprehensionEmitters.EmitGenerator(e),
             StarredExpr e => EmitStarred(e),
             AwaitExpr e => throw new CodeGenException("async/await not yet supported", e.Line, e.Column),
             YieldExpr e => EmitYield(e),

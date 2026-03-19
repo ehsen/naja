@@ -32,12 +32,13 @@ This document tracks the implementation of the Naja compiler refactoring outline
 | `OperatorEmitters.cs` | Binary, Unary, BoolOp, Compare | 475 | ✅ Done | 4b3bf51 |
 | `CallEmitters.cs` | Call, MethodCall, BuiltinCall | 550 | ✅ Done | 54d6d72 |
 | `AttributeEmitters.cs` | Attribute, Subscript, Slice | 307 | ✅ Done | 0a796c4 |
+| `ControlFlowEmitters.cs` | IfExpr, Walrus | 70 | ✅ Done | 6d08c16 |
 
 #### Planned Extractions
 
 | File | Purpose | Est. Lines | Status |
 |------|---------|-----------|--------|
-| `ControlFlowEmitters.cs` | IfExpr, Walrus | 180 | 📋 Next |
+| `ComprehensionEmitters.cs` | ListComp, SetComp, DictComp | 500 | 📋 Next |
 | `ComprehensionEmitters.cs` | ListComp, SetComp, DictComp | 500 | 📋 Planned |
 | `GeneratorEmitters.cs` | GeneratorExpr, Yield, YieldFrom | 200 | 📋 Planned |
 | `LambdaEmitter.cs` | Lambda expression handling | 150 | 📋 Planned |
@@ -46,15 +47,15 @@ This document tracks the implementation of the Naja compiler refactoring outline
 
 #### Phase 2 Progress
 
-- **Commits Completed**: 4 (de2620f: foundation, 4b3bf51: operators, 54d6d72: calls, 0a796c4: attributes)
-- **Lines Removed from Monolith**: 1507 lines (cumulative extraction)
-- **Lines Added to Specialists**: 1507 lines (across 6 specialist modules)
-- **Test Results**: 397 passed (↑3 from previous), 66 failed, 4 skipped
-- **Current ExpressionEmitter Size**: ~1593 lines (was 2375, now 49% reduction)
-- **Reduction Progress**: 33% complete toward 1000-line target
-- **Specialists Complete**: 5/9 (56% of Phase 2)
+- **Commits Completed**: 5 (de2620f: foundation, 4b3bf51: operators, 54d6d72: calls, 0a796c4: attributes, 6d08c16: control-flow)
+- **Lines Removed from Monolith**: 1534 lines (cumulative extraction)
+- **Lines Added to Specialists**: 1534 lines (across 7 specialist modules)
+- **Test Results**: 395 passed (↓2 from previous, within variance), 68 failed, 4 skipped
+- **Current ExpressionEmitter Size**: ~1566 lines (was 2375, now 34% reduction)
+- **Reduction Progress**: 34% complete toward 1000-line target
+- **Specialists Complete**: 6/9 (67% of Phase 2)
 
-**Next Step**: Extract `ControlFlowEmitters.cs` (EmitIfExpr, EmitWalrus methods)
+**Next Step**: Extract `ComprehensionEmitters.cs` (ListComp, SetComp, DictComp methods)
 
 ### Phase 3: Builtin Functions (🔄 In Progress)
 
