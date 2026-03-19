@@ -19,6 +19,7 @@ public sealed class ExpressionEmitter
     private readonly OperatorEmitters _operatorEmitters;
     private readonly CallEmitters _callEmitters;
     private readonly AttributeEmitters _attributeEmitters;
+    private readonly ControlFlowEmitters _controlFlowEmitters;
 
     public ExpressionEmitter(EmitContext ctx)
     {
@@ -26,6 +27,7 @@ public sealed class ExpressionEmitter
         _operatorEmitters = new OperatorEmitters(ctx, this);
         _callEmitters = new CallEmitters(ctx, this);
         _attributeEmitters = new AttributeEmitters(ctx, this);
+        _controlFlowEmitters = new ControlFlowEmitters(ctx, this);
     }
 
     // ── Main dispatch ─────────────────────────────────────────────────────────
@@ -46,8 +48,8 @@ public sealed class ExpressionEmitter
             UnaryExpr e => _operatorEmitters.EmitUnary(e),
             BoolOpExpr e => _operatorEmitters.EmitBoolOp(e),
             CompareExpr e => _operatorEmitters.EmitCompare(e),
-            IfExpr e => EmitIfExpr(e),
-            WalrusExpr e => EmitWalrus(e),
+            IfExpr e => _controlFlowEmitters.EmitIfExpr(e),
+            WalrusExpr e => _controlFlowEmitters.EmitWalrus(e),
             CallExpr e => _callEmitters.EmitCall(e),
             AttributeExpr e => _attributeEmitters.EmitAttribute(e),
             SubscriptExpr e => _attributeEmitters.EmitSubscript(e),

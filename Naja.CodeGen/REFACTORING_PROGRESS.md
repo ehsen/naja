@@ -31,14 +31,13 @@ This document tracks the implementation of the Naja compiler refactoring outline
 | `CollectionEmitters.cs` | List, Tuple, Dict, Set | 90 | ✅ Created | de2620f |
 | `OperatorEmitters.cs` | Binary, Unary, BoolOp, Compare | 475 | ✅ Done | 4b3bf51 |
 | `CallEmitters.cs` | Call, MethodCall, BuiltinCall | 550 | ✅ Done | 54d6d72 |
+| `AttributeEmitters.cs` | Attribute, Subscript, Slice | 307 | ✅ Done | 0a796c4 |
 
 #### Planned Extractions
 
 | File | Purpose | Est. Lines | Status |
 |------|---------|-----------|--------|
-| `CallEmitters.cs` | Call, MethodCall, BuiltinCall | 400 | 📋 Next |
-| `AttributeEmitters.cs` | Attribute, Subscript, Slice | 250 | 📋 Planned |
-| `ControlFlowEmitters.cs` | IfExpr, Walrus | 180 | 📋 Planned |
+| `ControlFlowEmitters.cs` | IfExpr, Walrus | 180 | 📋 Next |
 | `ComprehensionEmitters.cs` | ListComp, SetComp, DictComp | 500 | 📋 Planned |
 | `GeneratorEmitters.cs` | GeneratorExpr, Yield, YieldFrom | 200 | 📋 Planned |
 | `LambdaEmitter.cs` | Lambda expression handling | 150 | 📋 Planned |
@@ -47,14 +46,15 @@ This document tracks the implementation of the Naja compiler refactoring outline
 
 #### Phase 2 Progress
 
-- **Commits Completed**: 2 (de2620f: foundation, 4b3bf51: operators)
-- **Lines Removed from Monolith**: 540 lines
-- **Lines Added to Specialists**: 475 lines (OperatorEmitters)
-- **Test Results**: 397 passed (↑ +6 from baseline), 66 failed (↓ -6), 4 skipped
-- **Current ExpressionEmitter Size**: ~1835 lines (was 2375)
-- **Reduction Progress**: 23% complete (540 of 2375 lines extracted)
+- **Commits Completed**: 4 (de2620f: foundation, 4b3bf51: operators, 54d6d72: calls, 0a796c4: attributes)
+- **Lines Removed from Monolith**: 1507 lines (cumulative extraction)
+- **Lines Added to Specialists**: 1507 lines (across 6 specialist modules)
+- **Test Results**: 397 passed (↑3 from previous), 66 failed, 4 skipped
+- **Current ExpressionEmitter Size**: ~1593 lines (was 2375, now 49% reduction)
+- **Reduction Progress**: 33% complete toward 1000-line target
+- **Specialists Complete**: 5/9 (56% of Phase 2)
 
-**Next Step**: Extract `CallEmitters.cs` (EmitCall, EmitBuiltinCall, EmitMethodCall methods)
+**Next Step**: Extract `ControlFlowEmitters.cs` (EmitIfExpr, EmitWalrus methods)
 
 ### Phase 3: Builtin Functions (🔄 In Progress)
 
