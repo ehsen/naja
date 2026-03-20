@@ -214,30 +214,30 @@ internal static class NajaBuiltinsMethodCache
 
     // ── Exception handling ───────────────────────────────────────────────────
     public static readonly MethodInfo Assert_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Assert))!;
+        typeof(ExceptionHelpers).GetMethod(nameof(ExceptionHelpers.Assert))!;
 
     public static readonly MethodInfo SetExceptionCause_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.SetExceptionCause))!;
+        typeof(ExceptionHelpers).GetMethod(nameof(ExceptionHelpers.SetExceptionCause))!;
 
     public static readonly MethodInfo EnsureException_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.EnsureException))!;
+        typeof(ExceptionHelpers).GetMethod(nameof(ExceptionHelpers.EnsureException))!;
 
     public static readonly MethodInfo ContextExitWithException_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ContextExitWithException))!;
+        typeof(ExceptionHelpers).GetMethod(nameof(ExceptionHelpers.ContextExitWithException))!;
 
     public static readonly MethodInfo ContextExit_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ContextExit))!;
+        typeof(ExceptionHelpers).GetMethod(nameof(ExceptionHelpers.ContextExit))!;
 
     // ── Collection construction ──────────────────────────────────────────────
     public static readonly MethodInfo CreateFunctionWithDefaults_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.CreateFunctionWithDefaults))!;
+        typeof(ExceptionHelpers).GetMethod(nameof(ExceptionHelpers.CreateFunctionWithDefaults))!;
 
     public static readonly MethodInfo IteratorMoveNext_Method = 
         typeof(Iterators).GetMethod(nameof(Iterators.IteratorMoveNext))!;
 
     // ── String operations ────────────────────────────────────────────────────
     public static readonly MethodInfo Format_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Format))!;
+        typeof(ExceptionHelpers).GetMethod(nameof(ExceptionHelpers.Format))!;
 
     public static readonly MethodInfo StrUpper_Method = 
         typeof(StringFunctions).GetMethod(nameof(StringFunctions.StrUpper))!;
@@ -269,7 +269,7 @@ internal static class NajaBuiltinsMethodCache
         typeof(TypeConversion).GetMethod(nameof(TypeConversion.Repr))!;
 
     public static readonly MethodInfo ContextEnter_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ContextEnter))!;
+        typeof(ExceptionHelpers).GetMethod(nameof(ExceptionHelpers.ContextEnter))!;
 
     // ── Dynamic call operations ──────────────────────────────────────────────
     public static readonly MethodInfo CallCallable_Method = 
