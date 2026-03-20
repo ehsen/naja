@@ -208,8 +208,8 @@ public sealed partial class AssemblyEmitter
         // references a name that is assigned in this function, promote that name
         // to a module-level static field so the inner function sees the enclosing
         // binding (Python LEGB semantics).
-        var nestedRefs = StatementEmitter.CollectNamesReferencedByNestedFunctions(fn.Body);
-        var assigned = StatementEmitter.CollectAssignedNames(fn.Body);
+        var nestedRefs = Naja.CodeGen.Emitters.Statements.StatementAnalyzer.CollectNamesReferencedByNestedFunctions(fn.Body);
+        var assigned = Naja.CodeGen.Emitters.Statements.StatementAnalyzer.CollectAssignedNames(fn.Body);
         foreach (var r in nestedRefs.Intersect(assigned))
         {
             // Create hoisted field EVEN IF a module-level field exists with this name
@@ -219,7 +219,7 @@ public sealed partial class AssemblyEmitter
         }
 
         // Check if this function contains yield statements (is a generator)
-        bool isGenerator = StatementEmitter.ContainsYield(fn.Body);
+        bool isGenerator = Naja.CodeGen.Emitters.Statements.StatementAnalyzer.ContainsYield(fn.Body);
         if (isGenerator)
         {
             // Initialize the generator list at function entry

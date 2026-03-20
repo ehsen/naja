@@ -210,8 +210,7 @@ public sealed class CallEmitters : ExpressionEmitterBase
             var funcType = _mainEmitter.Emit(e.Func);
             TypeMapper.EmitBox(IL, funcType);
             IL.Emit(OpCodes.Ldloc, argsLocal);
-            var callCallable = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.CallCallable))!;
-            IL.Emit(OpCodes.Call, callCallable);
+            IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.CallCallable_Method);
             return NajaTypes.Unknown;
         }
     }
@@ -460,65 +459,64 @@ public sealed class CallEmitters : ExpressionEmitterBase
             IL.Emit(OpCodes.Stelem_Ref);
         }
 
-        var dynCall = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DynamicCall))!;
-        IL.Emit(OpCodes.Call, dynCall);
+        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.DynamicCall_Method);
         return NajaTypes.Unknown;
     }
 
     private static MethodInfo? ResolveStrMethod(string name) => name switch
     {
-        "upper" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrUpper)),
-        "lower" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrLower)),
-        "strip" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrStrip)),
-        "lstrip" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrLStrip)),
-        "rstrip" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrRStrip)),
-        "startswith" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrStartsWith)),
-        "endswith" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrEndsWith)),
-        "isdigit" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrIsDigit)),
-        "isalpha" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrIsAlpha)),
-        "isalnum" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrIsAlNum)),
-        "find" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrFind)),
-        "index" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrIndex)),
-        "replace" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrReplace)),
-        "center" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrCenter)),
-        "ljust" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrLJust)),
-        "rjust" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrRJust)),
-        "zfill" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrZFill)),
-        "count" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrCount)),
-        "join" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrJoin)),
-        "split" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrSplit)),
-        "splitlines" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrSplitLines)),
-        "title" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrTitle)),
-        "format" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Format)),
+        "upper" => NajaBuiltinsMethodCache.StrUpper_Method,
+        "lower" => NajaBuiltinsMethodCache.StrLower_Method,
+        "strip" => NajaBuiltinsMethodCache.StrStrip_Method,
+        "lstrip" => NajaBuiltinsMethodCache.StrLStrip_Method,
+        "rstrip" => NajaBuiltinsMethodCache.StrRStrip_Method,
+        "startswith" => NajaBuiltinsMethodCache.StrStartsWith_Method,
+        "endswith" => NajaBuiltinsMethodCache.StrEndsWith_Method,
+        "isdigit" => NajaBuiltinsMethodCache.StrIsDigit_Method,
+        "isalpha" => NajaBuiltinsMethodCache.StrIsAlpha_Method,
+        "isalnum" => NajaBuiltinsMethodCache.StrIsAlNum_Method,
+        "find" => NajaBuiltinsMethodCache.StrFind_Method,
+        "index" => NajaBuiltinsMethodCache.StrIndex_Method,
+        "replace" => NajaBuiltinsMethodCache.StrReplace_Method,
+        "center" => NajaBuiltinsMethodCache.StrCenter_Method,
+        "ljust" => NajaBuiltinsMethodCache.StrLJust_Method,
+        "rjust" => NajaBuiltinsMethodCache.StrRJust_Method,
+        "zfill" => NajaBuiltinsMethodCache.StrZFill_Method,
+        "count" => NajaBuiltinsMethodCache.StrCount_Method,
+        "join" => NajaBuiltinsMethodCache.StrJoin_Method,
+        "split" => NajaBuiltinsMethodCache.StrSplit_Method,
+        "splitlines" => NajaBuiltinsMethodCache.StrSplitLines_Method,
+        "title" => NajaBuiltinsMethodCache.StrTitle_Method,
+        "format" => NajaBuiltinsMethodCache.Format_Method,
         _ => null
     };
 
     private static MethodInfo? ResolveListMethod(string name) => name switch
     {
-        "append" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListAppend)),
-        "extend" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListExtend)),
-        "insert" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListInsert)),
-        "pop" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListPop)),
-        "remove" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListRemove)),
-        "reverse" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListReverse)),
-        "sort" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListSort)),
-        "index" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListIndex)),
-        "count" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListCount)),
-        "copy" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListCopy)),
-        "clear" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ListClear)),
+        "append" => NajaBuiltinsMethodCache.ListAppend_Method,
+        "extend" => NajaBuiltinsMethodCache.ListExtend_Method,
+        "insert" => NajaBuiltinsMethodCache.ListInsert_Method,
+        "pop" => NajaBuiltinsMethodCache.ListPop_Method,
+        "remove" => NajaBuiltinsMethodCache.ListRemove_Method,
+        "reverse" => NajaBuiltinsMethodCache.ListReverse_Method,
+        "sort" => NajaBuiltinsMethodCache.ListSort_Method,
+        "index" => NajaBuiltinsMethodCache.ListIndex_Method,
+        "count" => NajaBuiltinsMethodCache.ListCount_Method,
+        "copy" => NajaBuiltinsMethodCache.ListCopy_Method,
+        "clear" => NajaBuiltinsMethodCache.ListClear_Method,
         _ => null
     };
 
     private static MethodInfo? ResolveDictMethod(string name) => name switch
     {
-        "keys" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DictKeys)),
-        "values" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DictValues)),
-        "items" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DictItems)),
-        "get" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DictGet)),
-        "pop" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DictPop)),
-        "update" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DictUpdate)),
-        "clear" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DictClear)),
-        "copy" => typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DictCopy)),
+        "keys" => NajaBuiltinsMethodCache.DictKeys_Method,
+        "values" => NajaBuiltinsMethodCache.DictValues_Method,
+        "items" => NajaBuiltinsMethodCache.DictItems_Method,
+        "get" => NajaBuiltinsMethodCache.DictGet_Method,
+        "pop" => NajaBuiltinsMethodCache.DictPop_Method,
+        "update" => NajaBuiltinsMethodCache.DictUpdate_Method,
+        "clear" => NajaBuiltinsMethodCache.DictClear_Method,
+        "copy" => NajaBuiltinsMethodCache.DictCopy_Method,
         _ => null
     };
 

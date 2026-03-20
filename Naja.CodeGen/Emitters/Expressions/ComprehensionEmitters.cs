@@ -336,8 +336,7 @@ public sealed class ComprehensionEmitters : ExpressionEmitterBase
             IL.Emit(OpCodes.Stloc, tmp);
             for (int i = 0; i < t.Elements.Count; i++)
             {
-                var unpackHelper = typeof(NajaBuiltins)
-                    .GetMethod(nameof(NajaBuiltins.GetItem))!;
+                var unpackHelper = NajaBuiltinsMethodCache.GetItem_Method;
                 IL.Emit(OpCodes.Ldloc, tmp);
                 IL.Emit(OpCodes.Ldc_I4, i);
                 IL.Emit(OpCodes.Box, typeof(int));

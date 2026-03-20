@@ -12,27 +12,25 @@ public abstract class StatementEmitterBase
 {
     protected readonly EmitContext _ctx;
     protected readonly ExpressionEmitter _exprEmitter;
+    protected readonly Action<Statement> _emitStatement;
     protected ILGenerator IL => _ctx.IL;
 
-    protected StatementEmitterBase(EmitContext ctx, ExpressionEmitter exprEmitter)
+    protected StatementEmitterBase(EmitContext ctx, ExpressionEmitter exprEmitter, Action<Statement> emitStatement)
     {
         _ctx = ctx;
         _exprEmitter = exprEmitter;
+        _emitStatement = emitStatement;
     }
 
     /// <summary>
-    /// Main dispatcher for statement emission.
-    /// </summary>
-    public abstract void Emit(Statement stmt);
-
-    /// <summary>
     /// Emits a list of statements in sequence.
+    /// Delegates to the main dispatcher for each statement.
     /// </summary>
     public virtual void EmitAll(IReadOnlyList<Statement> stmts)
     {
         foreach (var stmt in stmts)
         {
-            Emit(stmt);
+            _emitStatement(stmt);
         }
     }
 

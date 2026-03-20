@@ -42,8 +42,7 @@ public sealed class OperatorEmitters : ExpressionEmitterBase
                         TypeMapper.EmitBox(IL, leftType);
                         IL.Emit(OpCodes.Ldloc, tmpR);
 
-                        var dynAdd = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DynamicAdd))!;
-                        IL.Emit(OpCodes.Call, dynAdd);
+                        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.DynamicAdd_Method);
                         return NajaTypes.Unknown;
                     }
                     IL.Emit(OpCodes.Add);
@@ -63,7 +62,7 @@ public sealed class OperatorEmitters : ExpressionEmitterBase
                         TypeMapper.EmitBox(IL, l);
                         IL.Emit(OpCodes.Ldloc, tmpR);
 
-                        IL.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DynamicSub))!);
+                        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.DynamicSub_Method);
                         return NajaTypes.Unknown;
                     }
                     IL.Emit(OpCodes.Sub);
@@ -82,7 +81,7 @@ public sealed class OperatorEmitters : ExpressionEmitterBase
                         TypeMapper.EmitBox(IL, l);
                         IL.Emit(OpCodes.Ldloc, tmpR);
 
-                        IL.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DynamicMul))!);
+                        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.DynamicMul_Method);
                         return NajaTypes.Unknown;
                     }
                     if (l is FloatType && r is IntType)
@@ -122,9 +121,9 @@ public sealed class OperatorEmitters : ExpressionEmitterBase
                         IL.Emit(OpCodes.Stloc, tmpR);
 
                         IL.Emit(OpCodes.Ldloc, tmpL);
-                        IL.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ToFloat))!);
+                        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ToFloat_Method);
                         IL.Emit(OpCodes.Ldloc, tmpR);
-                        IL.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ToFloat))!);
+                        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ToFloat_Method);
                     }
                     else
                     {
@@ -137,7 +136,7 @@ public sealed class OperatorEmitters : ExpressionEmitterBase
                             var tmpR = _ctx.Locals.Declare($"__divr_{e.Line}", typeof(object));
                             IL.Emit(OpCodes.Stloc, tmpR);
                             IL.Emit(OpCodes.Ldloc, tmpR);
-                            IL.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ToFloat))!);
+                            IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ToFloat_Method);
                         }
                         else
                         {
@@ -173,12 +172,12 @@ public sealed class OperatorEmitters : ExpressionEmitterBase
                         IL.Emit(OpCodes.Stloc, tmpR);
 
                         TypeMapper.EmitBox(IL, l);
-                        IL.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ToFloat))!);
+                        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ToFloat_Method);
 
                         IL.Emit(OpCodes.Ldloc, tmpR);
-                        IL.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ToFloat))!);
+                        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ToFloat_Method);
 
-                        IL.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.PyFloorDivF))!);
+                        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.PyFloorDivF_Method);
                         return NajaTypes.Float;
                     }
 
@@ -189,11 +188,11 @@ public sealed class OperatorEmitters : ExpressionEmitterBase
                         IL.Emit(OpCodes.Stloc, tmpFdr);
                         if (l is IntType) IL.Emit(OpCodes.Conv_R8);
                         IL.Emit(OpCodes.Ldloc, tmpFdr);
-                        IL.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.PyFloorDivF))!);
+                        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.PyFloorDivF_Method);
                         return NajaTypes.Float;
                     }
 
-                    IL.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.PyFloorDiv))!);
+                    IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.PyFloorDiv_Method);
                     return NajaTypes.Int;
                 }
 
@@ -208,7 +207,7 @@ public sealed class OperatorEmitters : ExpressionEmitterBase
                         IL.Emit(OpCodes.Stloc, tmpModR);
                         TypeMapper.EmitBox(IL, l);
                         IL.Emit(OpCodes.Ldloc, tmpModR);
-                        IL.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DynamicMod))!);
+                        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.DynamicMod_Method);
                         return NajaTypes.Unknown;
                     }
                     if (l is FloatType || r is FloatType)
@@ -218,10 +217,10 @@ public sealed class OperatorEmitters : ExpressionEmitterBase
                         IL.Emit(OpCodes.Stloc, tmpFmod);
                         if (l is IntType) IL.Emit(OpCodes.Conv_R8);
                         IL.Emit(OpCodes.Ldloc, tmpFmod);
-                        IL.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.PyModF))!);
+                        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.PyModF_Method);
                         return NajaTypes.Float;
                     }
-                    IL.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.PyMod))!);
+                    IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.PyMod_Method);
                     return NajaTypes.Int;
                 }
 
@@ -241,9 +240,9 @@ public sealed class OperatorEmitters : ExpressionEmitterBase
                         IL.Emit(OpCodes.Stloc, tmpR);
 
                         IL.Emit(OpCodes.Ldloc, tmpL);
-                        IL.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ToFloat))!);
+                        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ToFloat_Method);
                         IL.Emit(OpCodes.Ldloc, tmpR);
-                        IL.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ToFloat))!);
+                        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ToFloat_Method);
                     }
                     else
                     {
@@ -256,7 +255,7 @@ public sealed class OperatorEmitters : ExpressionEmitterBase
                             var tmpR = _ctx.Locals.Declare($"__powr_{e.Line}", typeof(object));
                             IL.Emit(OpCodes.Stloc, tmpR);
                             IL.Emit(OpCodes.Ldloc, tmpR);
-                            IL.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ToFloat))!);
+                            IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ToFloat_Method);
                         }
                         else
                         {
@@ -323,7 +322,7 @@ public sealed class OperatorEmitters : ExpressionEmitterBase
                 else
                 {
                     TypeMapper.EmitBox(IL, operandType);
-                    IL.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ToBool))!);
+                    IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ToBool_Method);
                     IL.Emit(OpCodes.Ldc_I4_0);
                     IL.Emit(OpCodes.Ceq);
                 }
@@ -336,7 +335,7 @@ public sealed class OperatorEmitters : ExpressionEmitterBase
     {
         var endLabel = DefineLabel();
         NajaType resultType = NajaTypes.Unknown;
-        var toBool = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ToBool))!;
+        var toBool = NajaBuiltinsMethodCache.ToBool_Method;
 
         for (int i = 0; i < e.Values.Count; i++)
         {
@@ -421,8 +420,7 @@ public sealed class OperatorEmitters : ExpressionEmitterBase
         {
             var lt = _mainEmitter.Emit(left); TypeMapper.EmitBox(IL, lt);
             var rt = _mainEmitter.Emit(right); TypeMapper.EmitBox(IL, rt);
-            var contains = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Contains))!;
-            IL.Emit(OpCodes.Call, contains);
+            IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.Contains_Method);
             if (op == CompareOp.NotIn) { IL.Emit(OpCodes.Ldc_I4_0); IL.Emit(OpCodes.Ceq); }
             return;
         }
@@ -456,8 +454,7 @@ public sealed class OperatorEmitters : ExpressionEmitterBase
             TypeMapper.EmitBox(IL, leftType);
             IL.Emit(OpCodes.Ldloc, tmpRight);
 
-            var dynMethod = typeof(NajaBuiltins).GetMethod(
-                op == CompareOp.Eq ? nameof(NajaBuiltins.DynamicEq) : nameof(NajaBuiltins.DynamicNotEq))!;
+            var dynMethod = op == CompareOp.Eq ? NajaBuiltinsMethodCache.DynamicEq_Method : NajaBuiltinsMethodCache.DynamicNotEq_Method;
             IL.Emit(OpCodes.Call, dynMethod);
             return;
         }
@@ -471,18 +468,17 @@ public sealed class OperatorEmitters : ExpressionEmitterBase
             TypeMapper.EmitBox(IL, leftType);
             IL.Emit(OpCodes.Ldloc, tmpRight);
 
-            string methodName = op switch
+            var dynMethod = op switch
             {
-                CompareOp.Eq => nameof(NajaBuiltins.DynamicEq),
-                CompareOp.NotEq => nameof(NajaBuiltins.DynamicNotEq),
-                CompareOp.Lt => nameof(NajaBuiltins.DynamicLt),
-                CompareOp.LtEq => nameof(NajaBuiltins.DynamicLtEq),
-                CompareOp.Gt => nameof(NajaBuiltins.DynamicGt),
-                CompareOp.GtEq => nameof(NajaBuiltins.DynamicGtEq),
+                CompareOp.Eq => NajaBuiltinsMethodCache.DynamicEq_Method,
+                CompareOp.NotEq => NajaBuiltinsMethodCache.DynamicNotEq_Method,
+                CompareOp.Lt => NajaBuiltinsMethodCache.DynamicLt_Method,
+                CompareOp.LtEq => NajaBuiltinsMethodCache.DynamicLtEq_Method,
+                CompareOp.Gt => NajaBuiltinsMethodCache.DynamicGt_Method,
+                CompareOp.GtEq => NajaBuiltinsMethodCache.DynamicGtEq_Method,
                 _ => throw new CodeGenException($"Unsupported dynamic comparison: {op}")
             };
 
-            var dynMethod = typeof(NajaBuiltins).GetMethod(methodName)!;
             IL.Emit(OpCodes.Call, dynMethod);
             return;
         }

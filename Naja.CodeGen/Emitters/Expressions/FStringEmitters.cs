@@ -39,10 +39,9 @@ public sealed class FStringEmitters : ExpressionEmitterBase
         IL.Emit(OpCodes.Ldc_I4, parts.Count);
         IL.Emit(OpCodes.Newarr, typeof(object));
 
-        var toStr = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ToStr))!;
-        var repr = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Repr))!;
-        var najaFormat = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Format), 
-            new[] { typeof(object), typeof(object) })!;
+        var toStr = NajaBuiltinsMethodCache.ToStr_Method;
+        var repr = NajaBuiltinsMethodCache.Repr_Method;
+        var najaFormat = NajaBuiltinsMethodCache.Format_Method;
 
         for (int i = 0; i < parts.Count; i++)
         {

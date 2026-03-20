@@ -6,6 +6,10 @@ This document tracks the implementation of the Naja compiler refactoring outline
 
 ## Current Status
 
+**Latest Update**: Phase 4 Statement Emitter Extraction ✅ COMPLETE  
+**Build Status**: ✅ Passing  
+**Tests**: ✅ 275/467 passing (baseline maintained)
+
 ### Phase 1: Foundation ✅ (Completed)
 
 **Goal**: Create directory structures and base classes for refactoring.
@@ -75,9 +79,28 @@ This document tracks the implementation of the Naja compiler refactoring outline
 | `MathFunctions.cs` | abs, round, pow, divmod, min, max, sum | 250 | 📋 Planned |
 | `ReflectionHelpers.cs` | getattr, setattr, dynamic calls | 200 | 📋 Planned |
 
-### Phase 4: Statement Emission (📋 Planned)
+### Phase 4: Statement Emission ✅ (COMPLETE)
 
-**Goal**: Refactor `AssemblyEmitter.cs` (1646 lines) and `StatementEmitter.cs` (1551 lines).
+**Goal**: Refactor `StatementEmitter.cs` (1551 lines → 220 lines) into specialists.
+
+#### Completed Extractions
+
+| File | Purpose | Lines | Status |
+|------|---------|-------|--------|
+| `AssignmentEmitters.cs` | Assignments, unpacking, augmented operators | 430 | ✅ Complete |
+| `ControlFlowEmitters.cs` | If/while/for loops, break/continue | 240 | ✅ Complete |
+| `ExceptionEmitters.cs` | Try/except/finally, raise, with statements | 290 | ✅ Complete |
+| `DefinitionEmitters.cs` | Function/class definitions, generators, closures | 420 | ✅ Complete |
+| `ScopeEmitters.cs` | Nonlocal, return, expression statements | 110 | ✅ Complete |
+| `StatementAnalyzer.cs` | Static analysis utilities for AssemblyEmitter | 280 | ✅ Complete |
+| `StatementEmitter.cs` (Refactored) | Dispatcher to specialists | 220 | ✅ Complete |
+
+**Phase 4 Metrics**:
+- **Lines Extracted**: ~1,800 lines from monolith
+- **Monolith Reduction**: 1551 → 220 lines (-86%)
+- **Build Status**: ✅ Passing
+- **Tests**: ✅ 275/467 passing (baseline maintained)
+- **Commits**: ~1 comprehensive extraction
 
 ### Phase 5: Parser Refactoring (📋 Planned)
 

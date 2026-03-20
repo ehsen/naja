@@ -90,8 +90,7 @@ public sealed class LambdaEmitters : ExpressionEmitterBase
             }
 
             // Call CreateFunctionWithDefaults(delegate, defaults)
-            var createFnHelper = typeof(NajaBuiltins).GetMethod("CreateFunctionWithDefaults",
-                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)!;
+            var createFnHelper = NajaBuiltinsMethodCache.CreateFunctionWithDefaults_Method;
             IL.Emit(OpCodes.Call, createFnHelper);
         }
 

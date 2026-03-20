@@ -130,7 +130,7 @@ public sealed class NameEmitters : ExpressionEmitterBase
         if (_ctx.ClassTypes.ContainsKey(e.Name))
         {
             IL.Emit(OpCodes.Ldstr, e.Name);
-            IL.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ResolveTypeByName))!);
+            IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ResolveTypeByName_Method);
             return NajaTypes.Unknown;
         }
 

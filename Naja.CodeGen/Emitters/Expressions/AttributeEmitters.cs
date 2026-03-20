@@ -142,7 +142,7 @@ public sealed class AttributeEmitters : ExpressionEmitterBase
                     IL.Emit(OpCodes.Call, staticGetAttr);
                     return NajaTypes.Unknown;
                 }
-                IL.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.GetAttr))!);
+                IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.GetAttr_Method);
                 return NajaTypes.Unknown;
             }
         }
@@ -224,8 +224,7 @@ public sealed class AttributeEmitters : ExpressionEmitterBase
 
         TypeMapper.EmitBox(IL, objType);
         IL.Emit(OpCodes.Ldstr, e.Attribute);
-        var getAttr = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.GetAttr))!;
-        IL.Emit(OpCodes.Call, getAttr);
+        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.GetAttr_Method);
         return NajaTypes.Unknown;
     }
 
@@ -279,8 +278,7 @@ public sealed class AttributeEmitters : ExpressionEmitterBase
         if (objType is ListType l)
         {
             TypeMapper.EmitBox(IL, idxType);
-            var getItem = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.GetItem))!;
-            IL.Emit(OpCodes.Call, getItem);
+            IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.GetItem_Method);
 
             // FIX: Unbox the object back to its raw semantic type
             TypeMapper.EmitUnbox(IL, l.ElementType);
@@ -291,8 +289,7 @@ public sealed class AttributeEmitters : ExpressionEmitterBase
         if (objType is StrType)
         {
             TypeMapper.EmitBox(IL, idxType);
-            var getItem = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.GetItem))!;
-            IL.Emit(OpCodes.Call, getItem);
+            IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.GetItem_Method);
 
             // FIX: Cast object back to string
             TypeMapper.EmitUnbox(IL, NajaTypes.Str);
@@ -303,8 +300,7 @@ public sealed class AttributeEmitters : ExpressionEmitterBase
         if (objType is DictType dt)
         {
             TypeMapper.EmitBox(IL, idxType);
-            var getItem = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.GetItem))!;
-            IL.Emit(OpCodes.Call, getItem);
+            IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.GetItem_Method);
 
             // FIX: Unbox the object back to its raw semantic type
             TypeMapper.EmitUnbox(IL, dt.ValueType);
@@ -315,8 +311,7 @@ public sealed class AttributeEmitters : ExpressionEmitterBase
         // Unknown — use dynamic helper
         TypeMapper.EmitBox(IL, objType);
         TypeMapper.EmitBox(IL, idxType);
-        var dynGet = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.GetItem))!;
-        IL.Emit(OpCodes.Call, dynGet);
+        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.GetItem_Method);
         return NajaTypes.Unknown;
     }
 
