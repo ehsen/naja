@@ -1,44 +1,206 @@
 using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace Naja.CodeGen.Builtins;
 
 /// <summary>
 /// Collection builtin functions: len, range, enumerate, zip, map, filter, sorted, etc.
-/// These mostly delegate to the implementations in NajaBuiltins for backward compatibility,
-/// but serve as a documentation of the available collection operations.
+/// Independent implementations extracted from NajaBuiltins in Phase 3.
 /// </summary>
 public static class Collections
 {
-    /// <summary>Return the length of a sequence or collection.</summary>
-    public static long Len(object obj) => NajaBuiltins.Len(obj);
+    // ── len() ─────────────────────────────────────────────────────────────────
 
-    /// <summary>Return an immutable sequence of integers from start to stop.</summary>
-    public static System.Collections.Generic.List<object> Range(object[] args) => NajaBuiltins.Range(args);
+    public static long Len(object obj)
+    {
+        if (obj is null)
+            throw new Exception($"object of type 'NoneType' has no len()");
+
+        // Check for Count property first (handles __len__ dunder method)
+        var countProp = obj.GetType().GetProperty("Count",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+        if (countProp is not null && countProp.PropertyType == typeof(int))
+        {
+            return (int)countProp.GetValue(obj)!;
+        }
+
+        // Check for __len__ method
+        var lenMethod = obj.GetType().GetMethod("__len__",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+        if (lenMethod is not null)
+        {
+            var result = lenMethod.Invoke(obj, null);
+            return Convert.ToInt64(result);
+        }
+
+        return obj switch
+        {
+            string s => s.Length,
+            List<object> l => l.Count,
+            System.Collections.ICollection c => c.Count,
+            System.Collections.IEnumerable e => e.Cast<object>().LongCount(),
+            _ => throw new Exception($"object of type '{obj?.GetType().Name}' has no len()")
+        };
+    }
+
+    // ── range() ───────────────────────────────────────────────────────────────
+
+    public static List<object> Range(object[] args)
+    {
+        long start = 0, stop, step = 1;
+
+        if (args.Length == 1) stop = Convert.ToInt64(args[0]);
+        else if (args.Length == 2) { start = Convert.ToInt64(args[0]); stop = Convert.ToInt64(args[1]); }
+        else if (args.Length == 3) { start = Convert.ToInt64(args[0]); stop = Convert.ToInt64(args[1]); step = Convert.ToInt64(args[2]); }
+        else throw new Exception("range expected 1-3 arguments");
+
+        var result = new List<object>();
+        for (long i = start; step > 0 ? i < stop : i > stop; i += step)
+            result.Add((object)i);
+        return result;
+    }
+
+    // ── Collection constructors ───────────────────────────────────────────────
+
+    public static List<object> MakeList(object[] args)
+    {
+        if (args.Length == 1 && args[0] is System.Collections.IEnumerable e && !(args[0] is string))
+            return e.Cast<object>().ToList();
+        return args.ToList();
+    }
+
+    public static Dictionary<object, object> MakeDict(object[] args)
+    {
+        var d = new Dictionary<object, object>();
+        if (args.Length == 1 && args[0] is System.Collections.IEnumerable e)
+        {
+            if (e is Dictionary<object, object> otherDict)
+                foreach (var kv in otherDict) d[kv.Key] = kv.Value;
+            else
+                foreach (var item in e)
+                {
+                    if (item is object[] pair && pair.Length == 2)
+                        d[pair[0]] = pair[1];
+                    else if (item is List<object> listPair && listPair.Count == 2)
+                        d[listPair[0]] = listPair[1];
+                }
+        }
+        return d;
+    }
+
+    public static System.Collections.Generic.HashSet<object> MakeSet(object[] args)
+    {
+        var s = new System.Collections.Generic.HashSet<object>();
+        if (args.Length == 1 && args[0] is System.Collections.IEnumerable e && !(args[0] is string))
+        {
+            foreach (var item in e)
+                s.Add(item);
+        }
+        else
+        {
+            foreach (var item in args)
+                s.Add(item);
+        }
+        return s;
+    }
+
+    // ── List methods ──────────────────────────────────────────────────────────
+
+    public static void ListAppend(List<object> l, object item)
+        => l.Add(item);
+
+    public static void ListExtend(List<object> l, object items)
+        => l.AddRange(((System.Collections.IEnumerable)items).Cast<object>());
+
+    public static void ListInsert(List<object> l, long idx, object item)
+        => l.Insert((int)idx, item);
+
+    public static object ListPop(List<object> l, object? idx = null)
+    {
+        long index = idx is null ? -1 : Convert.ToInt64(idx);
+        int i = index < 0 ? l.Count + (int)index : (int)index;
+        var v = l[i]; l.RemoveAt(i); return v;
+    }
+
+    public static void ListRemove(List<object> l, object item)
+        => l.Remove(item);
+
+    public static void ListReverse(List<object> l)
+        => l.Reverse();
+
+    public static void ListSort(List<object> l)
+        => l.Sort(Comparer<object>.Default);
+
+    public static long ListIndex(List<object> l, object item)
+        => l.IndexOf(item);
+
+    public static long ListCount(List<object> l, object item)
+        => l.Count(x => NajaBuiltins.Equals(x, item));
+
+    public static List<object> ListCopy(List<object> l)
+        => new(l);
+
+    public static void ListClear(List<object> l)
+        => l.Clear();
+
+    // ── Dict methods ──────────────────────────────────────────────────────────
+
+    public static List<object> DictKeys(Dictionary<object, object> d)
+        => d.Keys.ToList<object>();
+
+    public static List<object> DictValues(Dictionary<object, object> d)
+        => d.Values.ToList<object>();
+
+    public static List<object> DictItems(Dictionary<object, object> d)
+        => d.Select(kv => (object)new object[] { kv.Key, kv.Value }).ToList();
+
+    public static object? DictGet(Dictionary<object, object> d, object key, object? def = null)
+        => d.TryGetValue(key, out var v) ? v : def;
+
+    public static object DictPop(Dictionary<object, object> d, object key, object? def = null)
+    {
+        if (d.TryGetValue(key, out var v)) { d.Remove(key); return v; }
+        if (def is not null) return def;
+        throw new Exception($"KeyError: {NajaBuiltins.Repr(key)}");
+    }
+
+    public static void DictUpdate(Dictionary<object, object> d, object other)
+    {
+        if (other is Dictionary<object, object> od)
+            foreach (var kv in od) d[kv.Key] = kv.Value;
+    }
+
+    public static void DictClear(Dictionary<object, object> d)
+        => d.Clear();
+
+    public static Dictionary<object, object> DictCopy(Dictionary<object, object> d)
+        => new(d);
+
+    // ── Helper methods (remaining facades, not extracted in Phase 3) ──────────
+
+    public static List<object> Sorted(object obj)
+    {
+        var items = ((System.Collections.IEnumerable)obj).Cast<object>().ToList();
+        items.Sort(Comparer<object>.Default);
+        return items;
+    }
 
     /// <summary>Return an enumerate object that yields (index, value) tuples.</summary>
-    public static System.Collections.Generic.List<object> Enumerate(object[] args) => NajaBuiltins.Enumerate(args);
+    public static List<object> Enumerate(object[] args) => NajaBuiltins.Enumerate(args);
 
     /// <summary>Zip multiple iterables into tuples.</summary>
-    public static System.Collections.Generic.List<object> Zip(object[] args) => NajaBuiltins.Zip(args);
+    public static List<object> Zip(object[] args) => NajaBuiltins.Zip(args);
 
     /// <summary>Apply a function to every item of an iterable.</summary>
-    public static System.Collections.Generic.List<object> Map(object func, object iterable) => NajaBuiltins.Map(func, iterable);
+    public static List<object> Map(object func, object iterable) => NajaBuiltins.Map(func, iterable);
 
     /// <summary>Filter an iterable with a function that returns true/false.</summary>
-    public static System.Collections.Generic.List<object> Filter(object func, object iterable) => NajaBuiltins.Filter(func, iterable);
+    public static List<object> Filter(object func, object iterable) => NajaBuiltins.Filter(func, iterable);
 
     /// <summary>Return True if any element of the iterable is true.</summary>
     public static bool Any(object iterable) => NajaBuiltins.Any(iterable);
 
     /// <summary>Return True if all elements of the iterable are true.</summary>
     public static bool All(object iterable) => NajaBuiltins.All(iterable);
-
-    /// <summary>Return a sorted list.</summary>
-    public static System.Collections.Generic.List<object> Sorted(object obj) => NajaBuiltins.Sorted(obj);
-
-    /// <summary>Create a list from an iterable or arguments.</summary>
-    public static System.Collections.Generic.List<object> MakeList(object[] args) => NajaBuiltins.MakeList(args);
-
-    /// <summary>Create a dict from key-value pairs or another dict.</summary>
-    public static System.Collections.Generic.Dictionary<object, object> MakeDict(object[] args) => NajaBuiltins.MakeDict(args);
 }
