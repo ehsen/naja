@@ -160,6 +160,26 @@ public static class ReflectionHelpers
         if (obj is System.Collections.Generic.Dictionary<object, object> d)
             return d.TryGetValue(key, out var val) ? val : throw new Exception($"KeyError: {TypeConversion.Repr(key)}");
 
+        if (obj is object[] arr)
+        {
+            int idx = SafeToInt32(key);
+            if (idx < 0) idx += arr.Length;
+            if (idx < 0 || idx >= arr.Length) throw new Exception($"IndexError: tuple index out of range");
+            return arr[idx];
+        }
+
+        var getitemMethod = obj.GetType().GetMethod("__getitem__",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+        if (getitemMethod is not null)
+        {
+            try { return getitemMethod.Invoke(obj, new object[] { key }); }
+            catch (TargetInvocationException tie) when (tie.InnerException is not null)
+            {
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(tie.InnerException).Throw();
+                throw;
+            }
+        }
+
         throw new Exception($"TypeError: '{obj.GetType().Name}' object is not subscriptable");
     }
 
@@ -181,6 +201,18 @@ public static class ReflectionHelpers
         {
             d[key] = value;
             return;
+        }
+
+        var setitemMethod = obj.GetType().GetMethod("__setitem__",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+        if (setitemMethod is not null)
+        {
+            try { setitemMethod.Invoke(obj, new object?[] { key, value }); return; }
+            catch (TargetInvocationException tie) when (tie.InnerException is not null)
+            {
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(tie.InnerException).Throw();
+                throw;
+            }
         }
 
         throw new Exception($"TypeError: '{obj.GetType().Name}' object does not support item assignment");
@@ -552,6 +584,38 @@ public static class ReflectionHelpers
                 boundArgs = bound;
                 return true;
             }
+        }
+
+        // Try params-array overloads (e.g., Path.Combine(string, string, string, string, string))
+        foreach (var mb in candidates)
+        {
+            var ps = mb.GetParameters();
+            if (ps.Length == 0) continue;
+            var lastParam = ps[ps.Length - 1];
+            if (!lastParam.IsDefined(typeof(ParamArrayAttribute), false)) continue;
+            int fixedCount = ps.Length - 1;
+            if (args.Length < fixedCount) continue;
+            var elementType = lastParam.ParameterType.GetElementType()!;
+            var bound = new object?[ps.Length];
+            bool ok = true;
+            for (int i = 0; i < fixedCount; i++)
+            {
+                try { bound[i] = TypeSystem.CoerceValue(args[i], ps[i].ParameterType); }
+                catch { ok = false; break; }
+            }
+            if (!ok) continue;
+            int paramsCount = args.Length - fixedCount;
+            var paramsArr = Array.CreateInstance(elementType, paramsCount);
+            for (int i = 0; i < paramsCount; i++)
+            {
+                try { paramsArr.SetValue(TypeSystem.CoerceValue(args[fixedCount + i], elementType), i); }
+                catch { ok = false; break; }
+            }
+            if (!ok) continue;
+            bound[fixedCount] = paramsArr;
+            method = mb;
+            boundArgs = bound!;
+            return true;
         }
 
         return false;

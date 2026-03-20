@@ -201,6 +201,45 @@ public sealed class StatementEmitter
                     break;
                 }
 
+            case MappingPattern mp:
+                {
+                    IL.Emit(OpCodes.Ldloc, subject);
+                    IL.Emit(OpCodes.Isinst, typeof(System.Collections.Generic.Dictionary<object, object>));
+                    IL.Emit(OpCodes.Brfalse, noMatch);
+
+                    for (int i = 0; i < mp.Pairs.Count; i++)
+                    {
+                        var (keyExpr, valuePattern) = mp.Pairs[i];
+
+                        var keyLocal = _ctx.Locals.Declare($"__mapkey_{subject.LocalIndex}_{i}", typeof(object));
+                        var keyType = _expr.Emit(keyExpr);
+                        TypeMapper.EmitBox(IL, keyType);
+                        IL.Emit(OpCodes.Stloc, keyLocal);
+
+                        IL.Emit(OpCodes.Ldloc, subject);
+                        IL.Emit(OpCodes.Ldloc, keyLocal);
+                        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.Contains_Method);
+                        IL.Emit(OpCodes.Brfalse, noMatch);
+
+                        var valLocal = _ctx.Locals.Declare($"__mapval_{subject.LocalIndex}_{i}", typeof(object));
+                        IL.Emit(OpCodes.Ldloc, subject);
+                        IL.Emit(OpCodes.Ldloc, keyLocal);
+                        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.GetItem_Method);
+                        IL.Emit(OpCodes.Stloc, valLocal);
+
+                        EmitPatternCheck(valuePattern, valLocal, noMatch);
+                    }
+
+                    if (mp.Rest is not null)
+                    {
+                        if (!_ctx.Locals.Contains(mp.Rest))
+                            _ctx.Locals.Declare(mp.Rest, typeof(object));
+                        IL.Emit(OpCodes.Ldloc, subject);
+                        _ctx.Locals.EmitStore(mp.Rest);
+                    }
+                    break;
+                }
+
             default:
                 throw new CodeGenException($"Unknown pattern type: {pattern.GetType().Name}", 0, 0);
         }

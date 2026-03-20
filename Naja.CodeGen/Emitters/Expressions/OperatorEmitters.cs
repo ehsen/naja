@@ -418,8 +418,9 @@ public sealed class OperatorEmitters : ExpressionEmitterBase
 
         if (op == CompareOp.In || op == CompareOp.NotIn)
         {
-            var lt = _mainEmitter.Emit(left); TypeMapper.EmitBox(IL, lt);
+            // Contains(container, item): push container (right operand) first, then item (left operand)
             var rt = _mainEmitter.Emit(right); TypeMapper.EmitBox(IL, rt);
+            var lt = _mainEmitter.Emit(left); TypeMapper.EmitBox(IL, lt);
             IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.Contains_Method);
             if (op == CompareOp.NotIn) { IL.Emit(OpCodes.Ldc_I4_0); IL.Emit(OpCodes.Ceq); }
             return;

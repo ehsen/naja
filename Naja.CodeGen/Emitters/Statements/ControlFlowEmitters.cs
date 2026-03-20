@@ -203,6 +203,22 @@ public class ControlFlowEmitters : StatementEmitterBase
                 }
                 break;
 
+            case TupleExpr t:
+            {
+                // Tuple unpacking: for k, v in pairs — store the element, then index into it
+                var tmpTuple = _ctx.Locals.Declare($"__unpack_{t.Line}_{t.Column}", typeof(object));
+                IL.Emit(OpCodes.Stloc, tmpTuple);
+                for (int idx = 0; idx < t.Elements.Count; idx++)
+                {
+                    IL.Emit(OpCodes.Ldloc, tmpTuple);
+                    IL.Emit(OpCodes.Ldc_I4, idx);
+                    IL.Emit(OpCodes.Box, typeof(int));
+                    IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.GetItem_Method);
+                    EmitStoreInFor(t.Elements[idx], NajaTypes.Unknown);
+                }
+                break;
+            }
+
             default:
                 IL.Emit(OpCodes.Pop);
                 break;
