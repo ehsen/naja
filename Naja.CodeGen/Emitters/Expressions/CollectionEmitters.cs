@@ -107,6 +107,13 @@ public sealed class CollectionEmitters : ExpressionEmitterBase
         return new SetType(NajaTypes.Unknown);
     }
 
+    public NajaType EmitStarred(StarredExpr e)
+    {
+        // In call context this is handled by EmitBuiltinCall
+        // Here just emit the inner value
+        return _mainEmitter.Emit(e.Value);
+    }
+
     /// <summary>
     /// Not implemented in this emitter - used by ExpressionEmitter for dispatch
     /// </summary>

@@ -185,8 +185,7 @@ public sealed class StatementEmitter
                         IL.Emit(OpCodes.Ldloc, seqList);
                         IL.Emit(OpCodes.Ldc_I4, i);
                         IL.Emit(OpCodes.Box, typeof(int));
-                        var getItem = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.GetItem))!;
-                        IL.Emit(OpCodes.Call, getItem);
+                        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.GetItem_Method);
                         IL.Emit(OpCodes.Stloc, elemLocal);
                         EmitPatternCheck(sp.Patterns[i], elemLocal, noMatch);
                     }

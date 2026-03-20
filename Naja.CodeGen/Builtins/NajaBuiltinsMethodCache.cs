@@ -54,25 +54,25 @@ internal static class NajaBuiltinsMethodCache
         typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.PyModF))!;
 
     public static readonly MethodInfo Abs_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Abs))!;
+        typeof(MathFunctions).GetMethod(nameof(MathFunctions.Abs))!;
 
     public static readonly MethodInfo Max_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Max))!;
+        typeof(MathFunctions).GetMethod(nameof(MathFunctions.Max))!;
 
     public static readonly MethodInfo Min_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Min))!;
+        typeof(MathFunctions).GetMethod(nameof(MathFunctions.Min))!;
 
     public static readonly MethodInfo Sum_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Sum))!;
+        typeof(MathFunctions).GetMethod(nameof(MathFunctions.Sum))!;
 
     public static readonly MethodInfo Round_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Round))!;
+        typeof(MathFunctions).GetMethod(nameof(MathFunctions.Round))!;
 
     public static readonly MethodInfo Pow_Method = 
         typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Pow))!;
 
     public static readonly MethodInfo DivMod_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DivMod))!;
+        typeof(MathFunctions).GetMethod(nameof(MathFunctions.DivMod))!;
 
     public static readonly MethodInfo Sorted_Method = 
         typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Sorted))!;
@@ -134,33 +134,33 @@ internal static class NajaBuiltinsMethodCache
 
     // ── Container operations ──────────────────────────────────────────────────
     public static readonly MethodInfo Contains_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Contains))!;
+        typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.Contains))!;
 
     public static readonly MethodInfo SetItem_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.SetItem))!;
+        typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.SetItem))!;
 
     // ── Attribute operations ─────────────────────────────────────────────────
     public static readonly MethodInfo SetAttr_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.SetAttr))!;
+        typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.SetAttr))!;
 
     public static readonly MethodInfo HasAttr_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.HasAttr))!;
+        typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.HasAttr))!;
 
     public static readonly MethodInfo GetAttr_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.GetAttr))!;
+        typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.GetAttr))!;
 
     public static readonly MethodInfo GetStaticAttr_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.GetStaticAttr))!;
+        typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.GetStaticAttr))!;
 
     // ── Type operations ─────────────────────────────────────────────────────
     public static readonly MethodInfo TypeOf_Method = 
         typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.TypeOf))!;
 
     public static readonly MethodInfo IsInstance_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.IsInstance))!;
+        typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.IsInstance))!;
 
     public static readonly MethodInfo Callable_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Callable))!;
+        typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.Callable))!;
 
     // ── I/O operations ──────────────────────────────────────────────────────
     public static readonly MethodInfo Print_Method = 
@@ -195,19 +195,19 @@ internal static class NajaBuiltinsMethodCache
         typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Open))!;
 
     public static readonly MethodInfo Id_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Id))!;
+        typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.Id))!;
 
     public static readonly MethodInfo Hash_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Hash))!;
+        typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.Hash))!;
 
     public static readonly MethodInfo Vars_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Vars))!;
+        typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.Vars))!;
 
     public static readonly MethodInfo Dir_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Dir))!;
+        typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.Dir))!;
 
     public static readonly MethodInfo Iter_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Iter))!;
+        typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.Iter))!;
 
     public static readonly MethodInfo NextVararg_Method = 
         typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.NextVararg))!;

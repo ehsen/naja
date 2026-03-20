@@ -1,4 +1,7 @@
 using System.Reflection;
+using System.Collections.Generic;
+using System.Linq;
+using System.Runtime.CompilerServices;
 
 namespace Naja.CodeGen.Builtins;
 
@@ -45,6 +48,17 @@ public static class ReflectionHelpers
 
         // Return null instead of throwing - caller should handle missing fields
         return null;
+    }
+
+    /// <summary>Check if an object has an attribute (property, field, or method).</summary>
+    public static bool HasAttr(object obj, object name)
+    {
+        var nameStr = name?.ToString() ?? "";
+        var t = obj?.GetType();
+        if (t is null) return false;
+        return t.GetProperty(nameStr) is not null ||
+               t.GetField(nameStr) is not null ||
+               t.GetMethod(nameStr) is not null;
     }
 
     /// <summary>Get an instance attribute (property or field) from a .NET object.</summary>
@@ -324,6 +338,101 @@ public static class ReflectionHelpers
         if (key is long l) return (int)l;
         if (key is short s) return s;
         return Convert.ToInt32(key);
+    }
+
+    // ── Type checking and identity operations ────────────────────────────────
+
+    /// <summary>Check if an object is an instance of a class or type.</summary>
+    public static bool IsInstance(object obj, object classOrType)
+    {
+        if (classOrType is Type t)
+            return t.IsInstanceOfType(obj);
+        if (classOrType is NajaFunction)
+            return obj is NajaFunction;
+        return false;
+    }
+
+    /// <summary>Check if an object is callable (has __call__ method or is a delegate/function).</summary>
+    public static bool Callable(object obj)
+    {
+        if (obj is null) return false;
+        if (obj is Delegate or NajaFunction) return true;
+        var t = obj.GetType();
+        return t.GetMethod("__call__", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance) is not null
+            || typeof(Delegate).IsAssignableFrom(t);
+    }
+
+    /// <summary>Get the identity (memory address hash) of an object.</summary>
+    public static long Id(object obj)
+        => obj is null ? 0 : RuntimeHelpers.GetHashCode(obj);
+
+    /// <summary>Get the hash code of an object.</summary>
+    public static int Hash(object obj)
+    {
+        if (obj is null) return 0;
+        if (obj is int i) return i;
+        if (obj is long l) return l.GetHashCode();
+        if (obj is string s) return s.GetHashCode();
+        if (obj is double d) return d.GetHashCode();
+        if (obj is bool b) return b.GetHashCode();
+        return obj.GetHashCode();
+    }
+
+    /// <summary>Get the __dict__ of an object (its attributes as a dictionary).</summary>
+    public static object Vars(object obj)
+    {
+        if (obj is null)
+            throw new Exception("vars() argument must have __dict__ attribute");
+
+        var d = new Dictionary<object, object>();
+        var t = obj.GetType();
+        var flags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance;
+
+        foreach (var prop in t.GetProperties(flags))
+            if (prop.CanRead) d[prop.Name] = prop.GetValue(obj) ?? "";
+        foreach (var field in t.GetFields(flags))
+            d[field.Name] = field.GetValue(obj) ?? "";
+
+        return d;
+    }
+
+    /// <summary>Get a list of attributes of an object.</summary>
+    public static List<object> Dir(object obj)
+    {
+        if (obj is null)
+            return new List<object>();
+
+        var names = new HashSet<string>();
+        var t = obj.GetType();
+        var flags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance;
+
+        foreach (var prop in t.GetProperties(flags))
+            names.Add(prop.Name);
+        foreach (var field in t.GetFields(flags))
+            names.Add(field.Name);
+        foreach (var method in t.GetMethods(flags))
+            names.Add(method.Name);
+
+        return names.OrderBy(n => n).Cast<object>().ToList();
+    }
+
+    /// <summary>Get an iterator from an iterable object.</summary>
+    public static object Iter(object obj)
+    {
+        if (obj is System.Collections.IEnumerable e)
+            return e.GetEnumerator();
+        throw new Exception($"TypeError: '{obj?.GetType().Name}' object is not iterable");
+    }
+
+    /// <summary>Check if an object contains a key or item (__contains__).</summary>
+    public static bool Contains(object container, object item)
+    {
+        if (container is null) return false;
+        if (container is string s && item is string si) return s.Contains(si);
+        if (container is System.Collections.Generic.List<object> l) return l.Contains(item);
+        if (container is System.Collections.Generic.Dictionary<object, object> d) return d.ContainsKey(item);
+        if (container is System.Collections.IEnumerable e) return e.Cast<object>().Contains(item);
+        return false;
     }
 
     /// <summary>

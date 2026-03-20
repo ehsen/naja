@@ -75,4 +75,38 @@ public static class MathFunctions
         var e = Convert.ToDouble(args[1]);
         return Math.Pow(b, e);
     }
+
+    /// <summary>Python floor division for integers.</summary>
+    public static long PyFloorDiv(long a, long b)
+    {
+        var q = a / b;
+        // If the remainder is non-zero and signs differ, floor by subtracting 1
+        if ((a ^ b) < 0 && q * b != a) q--;
+        return q;
+    }
+
+    /// <summary>Python floor division for floats.</summary>
+    public static double PyFloorDivF(double a, double b)
+    {
+        if (b == 0) throw new Exception("ZeroDivisionError: float floor division by zero");
+        return Math.Floor(a / b);
+    }
+
+    /// <summary>Python modulo for integers.</summary>
+    public static long PyMod(long a, long b)
+    {
+        if (b == 0) throw new Exception("ZeroDivisionError: integer division or modulo by zero");
+        var r = a % b;
+        if (r != 0 && ((r ^ b) < 0)) r += b;
+        return r;
+    }
+
+    /// <summary>Python modulo for floats.</summary>
+    public static double PyModF(double a, double b)
+    {
+        var r = a % b;
+        if (r != 0.0 && ((r < 0) != (b < 0))) r += b;
+        return r;
+    }
 }
+

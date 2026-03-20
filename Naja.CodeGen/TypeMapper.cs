@@ -93,13 +93,12 @@ public static class TypeMapper
         // anything → string (call ToString)
         if (to is StrType)
         {
-            var toStr = typeof(object).GetMethod("ToString")!;
             if (from is not StrType)
             {
                 // box value types first
                 if (from is IntType or FloatType or BoolType)
                     il.Emit(OpCodes.Box, ToClrType(from));
-                il.Emit(OpCodes.Callvirt, toStr);
+                il.Emit(OpCodes.Callvirt, FrameworkMethodCache.Object_ToString_Method);
             }
             return;
         }
@@ -209,7 +208,7 @@ public static class TypeMapper
     };
 
     // ── Exception resolution ──────────────────────────────────────────────────
-    
+
     public static Type? ResolveExceptionType(string name) => name switch
     {
         "Exception" => typeof(Exception),
