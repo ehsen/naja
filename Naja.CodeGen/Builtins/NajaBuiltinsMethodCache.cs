@@ -75,10 +75,10 @@ internal static class NajaBuiltinsMethodCache
         typeof(MathFunctions).GetMethod(nameof(MathFunctions.DivMod))!;
 
     public static readonly MethodInfo Sorted_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Sorted))!;
+        typeof(Collections).GetMethod(nameof(Collections.Sorted))!;
 
     public static readonly MethodInfo Reversed_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Reversed))!;
+        typeof(Collections).GetMethod(nameof(Collections.Reversed))!;
 
     public static readonly MethodInfo Enumerate_Method = 
         typeof(Collections).GetMethod(nameof(Collections.Enumerate))!;
@@ -87,16 +87,16 @@ internal static class NajaBuiltinsMethodCache
         typeof(Collections).GetMethod(nameof(Collections.Zip))!;
 
     public static readonly MethodInfo Map_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Map))!;
+        typeof(Collections).GetMethod(nameof(Collections.Map))!;
 
     public static readonly MethodInfo Filter_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Filter))!;
+        typeof(Collections).GetMethod(nameof(Collections.Filter))!;
 
     public static readonly MethodInfo Any_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Any))!;
+        typeof(Collections).GetMethod(nameof(Collections.Any))!;
 
     public static readonly MethodInfo All_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.All))!;
+        typeof(Collections).GetMethod(nameof(Collections.All))!;
 
     public static readonly MethodInfo MakeList_Method = 
         typeof(Collections).GetMethod(nameof(Collections.MakeList))!;
@@ -177,19 +177,19 @@ internal static class NajaBuiltinsMethodCache
         typeof(Collections).GetMethod(nameof(Collections.Range))!;
 
     public static readonly MethodInfo Chr_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Chr))!;
+        typeof(TypeSystem).GetMethod(nameof(TypeSystem.Chr))!;
 
     public static readonly MethodInfo Ord_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Ord))!;
+        typeof(TypeSystem).GetMethod(nameof(TypeSystem.Ord))!;
 
     public static readonly MethodInfo Hex_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Hex))!;
+        typeof(TypeSystem).GetMethod(nameof(TypeSystem.Hex))!;
 
     public static readonly MethodInfo Bin_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Bin))!;
+        typeof(TypeSystem).GetMethod(nameof(TypeSystem.Bin))!;
 
     public static readonly MethodInfo Oct_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Oct))!;
+        typeof(TypeSystem).GetMethod(nameof(TypeSystem.Oct))!;
 
     public static readonly MethodInfo Open_Method = 
         typeof(IOFunctions).GetMethod(nameof(IOFunctions.Open))!;
@@ -256,7 +256,7 @@ internal static class NajaBuiltinsMethodCache
         typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.GetItem))!;
 
     public static readonly MethodInfo GetUnpackSlice_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.GetUnpackSlice))!;
+        typeof(Collections).GetMethod(nameof(Collections.GetUnpackSlice))!;
 
     public static readonly MethodInfo UnpackIterable_Method = 
         typeof(Collections).GetMethod(nameof(Collections.UnpackIterable))!;

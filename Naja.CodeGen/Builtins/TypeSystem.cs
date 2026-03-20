@@ -99,6 +99,23 @@ public static class TypeSystem
         }
     }
 
+    /// <summary>Convert integer to character (chr builtin).</summary>
+    public static string Chr(object code) => ((char)Convert.ToInt32(code)).ToString();
+
+    /// <summary>Get character code (ord builtin).</summary>
+    public static long Ord(object c) => (long)((string)c)[0];
+
+    /// <summary>Convert integer to hexadecimal string (hex builtin).</summary>
+    public static string Hex(object n) => "0x" + Convert.ToInt64(n).ToString("x");
+
+    /// <summary>Convert integer to binary string (bin builtin).</summary>
+    public static string Bin(object n) => "0b" + Convert.ToString(Convert.ToInt64(n), 2);
+
+    /// <summary>Convert integer to octal string (oct builtin).</summary>
+    public static string Oct(object n) => "0o" + Convert.ToString(Convert.ToInt64(n), 8);
+
+    // ── Helper methods ───────────────────────────────────────────────────────
+
     /// <summary>Helper method to try converting an argument to a target type.</summary>
     private static bool TryConvertArg(object? value, Type targetType, bool strict, out object? result, out string? error)
     {

@@ -177,14 +177,7 @@ public static class Collections
     public static Dictionary<object, object> DictCopy(Dictionary<object, object> d)
         => new(d);
 
-    // ── Helper methods (remaining facades, not extracted in Phase 3) ──────────
-
-    public static List<object> Sorted(object obj)
-    {
-        var items = ((System.Collections.IEnumerable)obj).Cast<object>().ToList();
-        items.Sort(Comparer<object>.Default);
-        return items;
-    }
+    // ── Remaining collection operation facades and helpers ──────────────────────
 
     /// <summary>Return an enumerate object that yields (index, value) tuples.</summary>
     public static List<object> Enumerate(object[] args)
@@ -217,14 +210,65 @@ public static class Collections
     }
 
     /// <summary>Apply a function to every item of an iterable.</summary>
-    public static List<object> Map(object func, object iterable) => NajaBuiltins.Map(func, iterable);
+    public static List<object> Map(object func, object iterable)
+    {
+        var result = new List<object>();
+        var m = func?.GetType().GetMethod("Invoke");
+        foreach (var item in (System.Collections.IEnumerable)iterable)
+        {
+            var r = m is not null
+                ? m.Invoke(func, new[] { item })
+                : item;
+            result.Add(r!);
+        }
+        return result;
+    }
 
     /// <summary>Filter an iterable with a function that returns true/false.</summary>
-    public static List<object> Filter(object func, object iterable) => NajaBuiltins.Filter(func, iterable);
+    public static List<object> Filter(object func, object iterable)
+    {
+        var result = new List<object>();
+        var m = func?.GetType().GetMethod("Invoke");
+        foreach (var item in (System.Collections.IEnumerable)iterable)
+        {
+            var keep = m is not null
+                ? TypeConversion.ToBool(m.Invoke(func, new[] { item })!)
+                : TypeConversion.ToBool(item!);
+            if (keep) result.Add(item!);
+        }
+        return result;
+    }
 
     /// <summary>Return True if any element of the iterable is true.</summary>
-    public static bool Any(object iterable) => NajaBuiltins.Any(iterable);
+    public static bool Any(object iterable) =>
+        ((System.Collections.IEnumerable)iterable).Cast<object>().Any(x => TypeConversion.ToBool(x!));
 
     /// <summary>Return True if all elements of the iterable are true.</summary>
-    public static bool All(object iterable) => NajaBuiltins.All(iterable);
+    public static bool All(object iterable) =>
+        ((System.Collections.IEnumerable)iterable).Cast<object>().All(x => TypeConversion.ToBool(x!));
+
+    /// <summary>Sort an iterable, returning a new sorted list.</summary>
+    public static List<object> Sorted(object obj)
+    {
+        var items = ((System.Collections.IEnumerable)obj).Cast<object>().ToList();
+        items.Sort(Comparer<object>.Default);
+        return items;
+    }
+
+    /// <summary>Reverse an iterable, returning a new reversed list.</summary>
+    public static List<object> Reversed(object obj)
+    {
+        var items = ((System.Collections.IEnumerable)obj).Cast<object>().ToList();
+        items.Reverse();
+        return items;
+    }
+
+    /// <summary>Get a slice of a list for starred unpacking (e.g., a, *rest, b = items).</summary>
+    public static List<object?> GetUnpackSlice(List<object?> lst, int start, int endFromEnd)
+    {
+        int end = lst.Count - endFromEnd;
+        int count = end - start;
+        if (count <= 0) return new List<object?>();
+        return lst.GetRange(start, count);
+    }
 }
