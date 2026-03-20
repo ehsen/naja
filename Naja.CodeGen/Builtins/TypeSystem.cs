@@ -20,7 +20,7 @@ public static class TypeSystem
 
         // Allow explicit coercion to string for attribute assignment: Python semantics
         // commonly expect things like lbl.Text = 100 to become "100".
-        if (targetType == typeof(string)) return NajaBuiltins.ToStr(value);
+        if (targetType == typeof(string)) return TypeConversion.ToStr(value);
 
         // Last-resort: if value is long and target is int32/int16/byte/sbyte, narrow it
         if (value is long l)
@@ -98,6 +98,9 @@ public static class TypeSystem
             throw tie.InnerException;
         }
     }
+
+    /// <summary>Return the CLR type of an object (type() builtin).</summary>
+    public static object TypeOf(object obj) => obj?.GetType() ?? typeof(void);
 
     /// <summary>Convert integer to character (chr builtin).</summary>
     public static string Chr(object code) => ((char)Convert.ToInt32(code)).ToString();

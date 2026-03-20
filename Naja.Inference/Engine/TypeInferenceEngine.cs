@@ -113,10 +113,97 @@ public sealed class InferenceResult
             yield return expr;
     }
 
-    private static IEnumerable<Expression> WalkExpressions(Statement stmt)
+    private static IEnumerable<Expression> WalkExpressions(Statement stmt) => stmt switch
     {
-        // Shallow yield — a full recursive walker is in TypeInferenceEngine.WalkExpr
-        yield break;
+        ExprStatement s      => WalkExpr(s.Expr),
+        AssignStatement s    => WalkExpr(s.Value),
+        AugAssignStatement s => WalkExpr(s.Value),
+        AnnAssignStatement s => s.Value is null ? [] : WalkExpr(s.Value),
+        ReturnStatement s    => s.Value is null ? [] : WalkExpr(s.Value),
+        RaiseStatement s     => s.Exception is null ? [] : WalkExpr(s.Exception),
+        AssertStatement s    => s.Message is null
+                                    ? WalkExpr(s.Test)
+                                    : WalkExpr(s.Test).Concat(WalkExpr(s.Message)),
+        IfStatement s        => WalkExpr(s.Condition)
+                                    .Concat(s.Then.SelectMany(WalkExpressions))
+                                    .Concat(s.Else.SelectMany(WalkExpressions)),
+        WhileStatement s     => WalkExpr(s.Condition)
+                                    .Concat(s.Body.SelectMany(WalkExpressions))
+                                    .Concat(s.Else.SelectMany(WalkExpressions)),
+        ForStatement s       => WalkExpr(s.Iter)
+                                    .Concat(s.Body.SelectMany(WalkExpressions))
+                                    .Concat(s.Else.SelectMany(WalkExpressions)),
+        FunctionDef s        => s.Body.SelectMany(WalkExpressions),
+        ClassDef s           => s.Body.SelectMany(WalkExpressions),
+        _                    => []
+    };
+
+    private static IEnumerable<Expression> WalkExpr(Expression expr)
+    {
+        yield return expr;
+        switch (expr)
+        {
+            case CallExpr e:
+                foreach (var s in WalkExpr(e.Func)) yield return s;
+                foreach (var a in e.Args) foreach (var s in WalkExpr(a.Value)) yield return s;
+                break;
+            case AttributeExpr e:
+                foreach (var s in WalkExpr(e.Object)) yield return s;
+                break;
+            case SubscriptExpr e:
+                foreach (var s in WalkExpr(e.Object)) yield return s;
+                foreach (var s in WalkExpr(e.Index)) yield return s;
+                break;
+            case BinaryExpr e:
+                foreach (var s in WalkExpr(e.Left)) yield return s;
+                foreach (var s in WalkExpr(e.Right)) yield return s;
+                break;
+            case UnaryExpr e:
+                foreach (var s in WalkExpr(e.Operand)) yield return s;
+                break;
+            case BoolOpExpr e:
+                foreach (var v in e.Values) foreach (var s in WalkExpr(v)) yield return s;
+                break;
+            case CompareExpr e:
+                foreach (var s in WalkExpr(e.Left)) yield return s;
+                foreach (var (_, r) in e.Comparators) foreach (var s in WalkExpr(r)) yield return s;
+                break;
+            case IfExpr e:
+                foreach (var s in WalkExpr(e.Condition)) yield return s;
+                foreach (var s in WalkExpr(e.Then)) yield return s;
+                foreach (var s in WalkExpr(e.Else)) yield return s;
+                break;
+            case WalrusExpr e:
+                foreach (var s in WalkExpr(e.Value)) yield return s;
+                break;
+            case ListExpr e:
+                foreach (var el in e.Elements) foreach (var s in WalkExpr(el)) yield return s;
+                break;
+            case TupleExpr e:
+                foreach (var el in e.Elements) foreach (var s in WalkExpr(el)) yield return s;
+                break;
+            case SetExpr e:
+                foreach (var el in e.Elements) foreach (var s in WalkExpr(el)) yield return s;
+                break;
+            case DictExpr e:
+                foreach (var (k, v) in e.Pairs)
+                {
+                    if (k is not null) foreach (var s in WalkExpr(k)) yield return s;
+                    foreach (var s in WalkExpr(v)) yield return s;
+                }
+                break;
+            case StarredExpr e:
+                foreach (var s in WalkExpr(e.Value)) yield return s;
+                break;
+            case ListCompExpr e:
+                foreach (var s in WalkExpr(e.Element)) yield return s;
+                foreach (var g in e.Generators)
+                {
+                    foreach (var s in WalkExpr(g.Iter)) yield return s;
+                    foreach (var c in g.Conditions) foreach (var s in WalkExpr(c)) yield return s;
+                }
+                break;
+        }
     }
 }
 
@@ -881,19 +968,17 @@ public sealed class TypeInferenceEngine
             return new ListType(NajaTypes.Unknown);
 
         NajaType? elemType = null;
+        bool mixed = false;
         foreach (var el in e.Elements)
         {
             var t = InferExpr(el, scope);
-            if (elemType is null)
-            {
-                elemType = t;
-                continue;
-            }
-            // Strict homogeneity — no widening for collections
-            if (!TypesEqual(elemType, t))
-                return new ListType(NajaTypes.Unknown); // mixed → Unknown
+            if (mixed) continue;
+            if (elemType is null) { elemType = t; continue; }
+            var unified = Unify(elemType, t);
+            if (unified is UnknownType) mixed = true;
+            else elemType = unified;
         }
-        return new ListType(elemType ?? NajaTypes.Unknown);
+        return new ListType(mixed ? NajaTypes.Unknown : (elemType ?? NajaTypes.Unknown));
     }
 
     private NajaType InferTupleExpr(TupleExpr e, string scope)

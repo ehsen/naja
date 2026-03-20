@@ -8,6 +8,9 @@ namespace Naja.CodeGen.Builtins;
 /// </summary>
 public static class DynamicOperators
 {
+    /// <summary>Returns true if the boxed value is an integer type (Python int semantics).</summary>
+    private static bool IsIntegerType(object? v) =>
+        v is long or int or short or ushort or sbyte or byte or uint or bool;
     /// <summary>
     /// Dynamic addition: tries __add__ then __radd__ then numeric coercion.
     /// </summary>
@@ -52,6 +55,9 @@ public static class DynamicOperators
         {
             try
             {
+                // Preserve integer arithmetic: both integer types → return long
+                if (IsIntegerType(a) && IsIntegerType(b))
+                    return Convert.ToInt64(a) + Convert.ToInt64(b);
                 return Convert.ToDouble(a) + Convert.ToDouble(b);
             }
             catch
@@ -70,7 +76,12 @@ public static class DynamicOperators
     {
         if ((a is IConvertible) && (b is IConvertible))
         {
-            try { return Convert.ToDouble(a) - Convert.ToDouble(b); }
+            try
+            {
+                if (IsIntegerType(a) && IsIntegerType(b))
+                    return Convert.ToInt64(a) - Convert.ToInt64(b);
+                return Convert.ToDouble(a) - Convert.ToDouble(b);
+            }
             catch { throw new TypeError($"unsupported operand type(s) for -: '{a?.GetType().Name}' and '{b?.GetType().Name}'"); }
         }
         throw new TypeError($"unsupported operand type(s) for -: '{a?.GetType().Name}' and '{b?.GetType().Name}'");
@@ -97,7 +108,12 @@ public static class DynamicOperators
 
         if ((a is IConvertible) && (b is IConvertible))
         {
-            try { return Convert.ToDouble(a) * Convert.ToDouble(b); }
+            try
+            {
+                if (IsIntegerType(a) && IsIntegerType(b))
+                    return Convert.ToInt64(a) * Convert.ToInt64(b);
+                return Convert.ToDouble(a) * Convert.ToDouble(b);
+            }
             catch { throw new TypeError($"unsupported operand type(s) for *: '{a?.GetType().Name}' and '{b?.GetType().Name}'"); }
         }
         throw new TypeError($"unsupported operand type(s) for *: '{a?.GetType().Name}' and '{b?.GetType().Name}'");
@@ -110,7 +126,7 @@ public static class DynamicOperators
     {
         if ((a is IConvertible) && (b is IConvertible))
         {
-            try { return NajaBuiltins.PyMod(Convert.ToInt64(a), Convert.ToInt64(b)); }
+            try { return PyMod(Convert.ToInt64(a), Convert.ToInt64(b)); }
             catch { throw new TypeError($"unsupported operand type(s) for %: '{a?.GetType().Name}' and '{b?.GetType().Name}'"); }
         }
         throw new TypeError($"unsupported operand type(s) for %: '{a?.GetType().Name}' and '{b?.GetType().Name}'");

@@ -96,4 +96,14 @@ public static class StringFunctions
             : str.Split(new[] { TypeConversion.ToStr(sep) }, StringSplitOptions.None);
         return new System.Collections.Generic.List<object>(parts.Cast<object>());
     }
+
+    /// <summary>Split a string into lines.</summary>
+    public static System.Collections.Generic.List<object> StrSplitLines(object s) =>
+        TypeConversion.ToStr(s).Replace("\r\n", "\n").Split('\n')
+            .Select(p => (object)p).ToList();
+
+    /// <summary>Convert string to title case.</summary>
+    public static string StrTitle(object s) =>
+        System.Globalization.CultureInfo.CurrentCulture.TextInfo
+            .ToTitleCase(TypeConversion.ToStr(s).ToLower());
 }

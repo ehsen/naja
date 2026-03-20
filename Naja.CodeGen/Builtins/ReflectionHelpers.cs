@@ -424,6 +424,44 @@ public static class ReflectionHelpers
         throw new Exception($"TypeError: '{obj?.GetType().Name}' object is not iterable");
     }
 
+    /// <summary>Call any Python callable: delegate, MethodInfo, or __call__ object.</summary>
+    public static object? CallCallable(object? func, object[] args)
+    {
+        if (func is null)
+            throw new Exception("TypeError: 'NoneType' object is not callable");
+
+        if (func is Delegate d)
+            return d.DynamicInvoke(args.Length == 0 ? null : (object?[])args);
+
+        if (func is MethodInfo mi)
+        {
+            var ps = mi.GetParameters();
+            var invokeArgs = new object?[ps.Length];
+            for (int i = 0; i < Math.Min(args.Length, ps.Length); i++)
+            {
+                try { invokeArgs[i] = Convert.ChangeType(args[i],
+                    Nullable.GetUnderlyingType(ps[i].ParameterType) ?? ps[i].ParameterType,
+                    System.Globalization.CultureInfo.InvariantCulture); }
+                catch { invokeArgs[i] = args[i]; }
+            }
+            return mi.Invoke(null, invokeArgs);
+        }
+
+        if (func is Type t)
+            return TypeSystem.CreateDotNet(t, args);
+
+        var callMethod = func.GetType().GetMethod("__call__");
+        if (callMethod is not null)
+        {
+            var ps = callMethod.GetParameters();
+            if (ps.Length == 1 && ps[0].ParameterType == typeof(object[]))
+                return callMethod.Invoke(func, new object?[] { args });
+            return callMethod.Invoke(func, (object?[])args);
+        }
+
+        throw new Exception($"TypeError: '{func.GetType().Name}' object is not callable");
+    }
+
     /// <summary>Check if an object contains a key or item (__contains__).</summary>
     public static bool Contains(object container, object item)
     {

@@ -69,10 +69,19 @@ public sealed class StatementEmitter
 
             // No-ops
             case PassStatement _: break;
-            case DeleteStatement _: break;
+            case DeleteStatement s:
+                foreach (var target in s.Targets)
+                    if (target is NameExpr dn &&
+                        !_ctx.Locals.Contains(dn.Name) &&
+                        !_ctx.Fields.ContainsKey(dn.Name) &&
+                        !_ctx.Parameters.Contains(dn.Name))
+                        throw new CodeGenException($"cannot delete undefined name '{dn.Name}'", dn.Line, dn.Column);
+                break;
             case ImportStatement _: break;
             case FromImportStatement _: break;
-            case GlobalStatement _: break;
+            case GlobalStatement s:
+                foreach (var name in s.Names) _ctx.GlobalNames.Add(name);
+                break;
             case TypeAliasStatement _: break;
 
             default:

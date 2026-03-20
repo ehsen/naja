@@ -52,6 +52,11 @@ public static class ComparisonOperators
             return true;
         }
 
+        // Set equality
+        if (a is System.Collections.Generic.HashSet<object> setA &&
+            b is System.Collections.Generic.HashSet<object> setB)
+            return setA.SetEquals(setB);
+
         // Numeric equality
         if (a is IConvertible && b is IConvertible)
         {

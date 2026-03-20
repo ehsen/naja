@@ -1,4 +1,6 @@
 using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 
 namespace Naja.CodeGen.Builtins;
@@ -15,6 +17,20 @@ public static class Iterators
         if (obj is IEnumerator er) return er;
         if (obj is IEnumerable e) return e.GetEnumerator();
         throw new Exception($"TypeError: '{obj?.GetType().Name}' object is not iterable");
+    }
+
+    /// <summary>
+    /// Gets a Python-semantics-aware IEnumerator for use in for loops.
+    /// Handles: string → single-char strings, Dictionary → keys only, else normal IEnumerable.
+    /// </summary>
+    public static IEnumerator GetForLoopEnumerator(object obj)
+    {
+        if (obj is null) throw new Exception("TypeError: 'NoneType' object is not iterable");
+        if (obj is string s) return s.Select(c => (object)c.ToString()).GetEnumerator();
+        if (obj is Dictionary<object, object> d) return d.Keys.GetEnumerator();
+        if (obj is IEnumerator er) return er;
+        if (obj is IEnumerable e) return e.GetEnumerator();
+        throw new Exception($"TypeError: '{obj.GetType().Name}' object is not iterable");
     }
 
     /// <summary>

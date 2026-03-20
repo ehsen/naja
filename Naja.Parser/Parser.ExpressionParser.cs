@@ -283,6 +283,14 @@ public sealed partial class Parser
             {
                 var t = Advance();
                 var index = ParseSliceOrIndex();
+                // Handle multi-arg subscripts: dict[str, int], Tuple[int, str], etc.
+                if (index is not SliceExpr && Check(TokenType.Comma))
+                {
+                    var items = new List<Expression> { index };
+                    while (Match(TokenType.Comma) && !Check(TokenType.RightBracket))
+                        items.Add(ParseSliceOrIndex());
+                    index = new TupleExpr(items, t.Line, t.Column);
+                }
                 Expect(TokenType.RightBracket);
                 expr = new SubscriptExpr(expr, index, t.Line, t.Column);
             }

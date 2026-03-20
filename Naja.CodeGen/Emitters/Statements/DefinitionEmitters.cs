@@ -20,6 +20,13 @@ public class DefinitionEmitters : StatementEmitterBase
 
     public void EmitFunctionDef(FunctionDef s)
     {
+        // Reject duplicate parameter names
+        var seen = new HashSet<string>();
+        foreach (var p in s.Params)
+            if (!seen.Add(p.Name))
+                throw new CodeGenException(
+                    $"duplicate argument '{p.Name}' in function definition", s.Line, s.Column);
+
         // Nested function — declare as a static method on the host type
         // and store a reference in a local (closures deferred to Phase 7)
         var pts = s.Params.Select(_ => typeof(object)).ToArray();

@@ -20,6 +20,13 @@ public class ScopeEmitters : StatementEmitterBase
 
     public void EmitNonlocal(NonlocalStatement s)
     {
+        foreach (var name in s.Names)
+        {
+            if (_ctx.GlobalNames.Contains(name))
+                throw new CodeGenException(
+                    $"name '{name}' is nonlocal and global", s.Line, s.Column);
+        }
+
         // For each nonlocal name, ensure it is backed by a module-level static field
         // so both the outer function and this inner function share the same storage cell.
         // If the outer function has already promoted the variable to _ctx.Fields (done
@@ -46,6 +53,9 @@ public class ScopeEmitters : StatementEmitterBase
 
     public void EmitReturn(ReturnStatement s)
     {
+        if (!_ctx.IsInsideFunction)
+            throw new CodeGenException("'return' outside function", s.Line, s.Column);
+
         // In a generator function, 'return' (with or without a value) terminates
         // iteration early. The collected yields are wrapped in a NajaGeneratorIterator
         // and returned; the return value itself is discarded in this eager model.
@@ -97,6 +107,8 @@ public class ScopeEmitters : StatementEmitterBase
 
     public void EmitExprStatement(ExprStatement s)
     {
+        if (s.Expr is StarredExpr starExpr)
+            throw new CodeGenException("starred expression not allowed here", starExpr.Line, starExpr.Column);
         _ = _exprEmitter.Emit(s.Expr);
         // Every Emit() leaves exactly one value on stack — always pop it
         IL.Emit(OpCodes.Pop);

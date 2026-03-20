@@ -31,8 +31,8 @@ public class ControlFlowEmitters : StatementEmitterBase
         var endLabel = IL.DefineLabel();
         var elseLabel = IL.DefineLabel();
 
-        _exprEmitter.Emit(s.Condition);
-        IL.Emit(OpCodes.Brfalse, s.Elifs.Count > 0 || s.Else.Count > 0 ? elseLabel : endLabel);
+        var condType = _exprEmitter.Emit(s.Condition);
+        EmitBrFalse(condType, s.Elifs.Count > 0 || s.Else.Count > 0 ? elseLabel : endLabel);
 
         EmitAll(s.Then);
         IL.Emit(OpCodes.Br, endLabel);
@@ -42,8 +42,8 @@ public class ControlFlowEmitters : StatementEmitterBase
         foreach (var (elifCond, elifBody) in s.Elifs)
         {
             var nextLabel = IL.DefineLabel();
-            _exprEmitter.Emit(elifCond);
-            IL.Emit(OpCodes.Brfalse, nextLabel);
+            var elifCondType = _exprEmitter.Emit(elifCond);
+            EmitBrFalse(elifCondType, nextLabel);
             EmitAll(elifBody);
             IL.Emit(OpCodes.Br, endLabel);
             IL.MarkLabel(nextLabel);
@@ -67,8 +67,8 @@ public class ControlFlowEmitters : StatementEmitterBase
         _continueLabels.Push(loopStart);
 
         IL.MarkLabel(loopStart);
-        _exprEmitter.Emit(s.Condition);
-        IL.Emit(OpCodes.Brfalse, normalEnd);
+        var whileCondType = _exprEmitter.Emit(s.Condition);
+        EmitBrFalse(whileCondType, normalEnd);
 
         EmitAll(s.Body);
         IL.Emit(OpCodes.Br, loopStart);
@@ -107,14 +107,9 @@ public class ControlFlowEmitters : StatementEmitterBase
         // Get the iterable
         var iterType = _exprEmitter.Emit(s.Iter);
 
-        // Call GetEnumerator — works for List<object>, string, array, etc.
-        var getEnumerator = typeof(System.Collections.IEnumerable)
-            .GetMethod("GetEnumerator")!;
-
-        // Box if needed
+        // Box and get Python-aware enumerator (string→chars, dict→keys, else normal IEnumerable)
         TypeMapper.EmitBox(IL, iterType);
-        IL.Emit(OpCodes.Castclass, typeof(System.Collections.IEnumerable));
-        IL.Emit(OpCodes.Callvirt, getEnumerator);
+        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.GetForLoopEnumerator_Method);
 
         // Store enumerator in local
         var enumLocal = _ctx.Locals.Declare($"__enum_{s.Line}_{s.Column}", typeof(System.Collections.IEnumerator));
@@ -228,5 +223,17 @@ public class ControlFlowEmitters : StatementEmitterBase
         if (_continueLabels.Count == 0)
             throw new CodeGenException("continue outside loop", s.Line, s.Column);
         IL.Emit(OpCodes.Br, _continueLabels.Peek());
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    // Emit a Brfalse respecting Python truthiness.
+    // Primitive numeric types (int/float/bool) use Brfalse directly (zero check).
+    // All other types (string, object, collections) call ToBool first.
+    private void EmitBrFalse(NajaType condType, ILLabel label)
+    {
+        if (condType is not (IntType or FloatType or BoolType))
+            IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ToBool_Method);
+        IL.Emit(OpCodes.Brfalse, label);
     }
 }

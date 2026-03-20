@@ -51,7 +51,7 @@ public static class TypeConversion
             var m = t.GetMethod("__str__", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.IgnoreCase);
             if (m != null)
             {
-                var res = NajaBuiltins.DynamicCall(obj, "__str__", System.Array.Empty<object>());
+                var res = ReflectionHelpers.DynamicCall(obj, "__str__", System.Array.Empty<object>());
                 return ToStr(res);
             }
         }
@@ -74,7 +74,7 @@ public static class TypeConversion
             var m = t.GetMethod("__bool__", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.IgnoreCase);
             if (m != null)
             {
-                var res = NajaBuiltins.DynamicCall(obj, "__bool__", System.Array.Empty<object>());
+                var res = ReflectionHelpers.DynamicCall(obj, "__bool__", System.Array.Empty<object>());
                 return ToBool(res);
             }
         }
@@ -128,7 +128,7 @@ public static class TypeConversion
             var m = t.GetMethod("__repr__", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.IgnoreCase);
             if (m != null)
             {
-                var res = NajaBuiltins.DynamicCall(obj, "__repr__", System.Array.Empty<object>());
+                var res = ReflectionHelpers.DynamicCall(obj, "__repr__", System.Array.Empty<object>());
                 return ToStr(res);
             }
         }

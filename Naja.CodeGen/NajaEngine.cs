@@ -68,7 +68,7 @@ public sealed class NajaEngine
             // Re-wrap parse errors so callers always see a CodeGenException
             // with the script name in the message for easy diagnosis.
             throw new CodeGenException(
-                $"Parse error in '{Path.GetFileName(scriptPath)}': {ex.Message}");
+                $"Syntax error in '{Path.GetFileName(scriptPath)}': {ex.Message}");
         }
 
         // ── 3. Semantic analysis ──────────────────────────────────────────────

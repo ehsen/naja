@@ -105,6 +105,25 @@ public static class Collections
         return s;
     }
 
+    public static System.Collections.Immutable.ImmutableHashSet<object> MakeFrozenSet(object[] args)
+    {
+        var builder = System.Collections.Immutable.ImmutableHashSet.CreateBuilder<object>();
+        if (args.Length == 1 && args[0] is System.Collections.IEnumerable ef && !(args[0] is string))
+            foreach (var x in ef) builder.Add(x);
+        else if (args.Length == 1 && args[0] is string str)
+            foreach (var ch in str) builder.Add(ch.ToString());
+        else
+            foreach (var x in args) builder.Add(x);
+        return builder.ToImmutable();
+    }
+
+    public static object[] MakeTuple(object[] args)
+    {
+        if (args.Length == 1 && args[0] is System.Collections.IEnumerable et && !(args[0] is string))
+            return et.Cast<object>().ToArray();
+        return args;
+    }
+
     // ── List methods ──────────────────────────────────────────────────────────
 
     public static void ListAppend(List<object> l, object item)
@@ -136,7 +155,7 @@ public static class Collections
         => l.IndexOf(item);
 
     public static long ListCount(List<object> l, object item)
-        => l.Count(x => NajaBuiltins.Equals(x, item));
+        => l.Count(x => object.Equals(x, item));
 
     public static List<object> ListCopy(List<object> l)
         => new(l);
@@ -162,7 +181,7 @@ public static class Collections
     {
         if (d.TryGetValue(key, out var v)) { d.Remove(key); return v; }
         if (def is not null) return def;
-        throw new Exception($"KeyError: {NajaBuiltins.Repr(key)}");
+        throw new Exception($"KeyError: {TypeConversion.Repr(key)}");
     }
 
     public static void DictUpdate(Dictionary<object, object> d, object other)

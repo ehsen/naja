@@ -148,6 +148,13 @@ public sealed partial class AssemblyEmitter
         if (fn.IsAsync)
             throw new CodeGenException("async/await is not yet supported.", fn.Line, fn.Column);
 
+        // Reject duplicate parameter names
+        var seenParams = new HashSet<string>();
+        foreach (var p in fn.Params)
+            if (!seenParams.Add(p.Name))
+                throw new CodeGenException(
+                    $"duplicate argument '{p.Name}' in function definition", fn.Line, fn.Column);
+
         var sym = _model.ModuleScope.Lookup(fn.Name);
         var fnType = sym?.Type as FunctionType;
         var retType = fnType is not null

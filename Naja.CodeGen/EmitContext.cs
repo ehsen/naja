@@ -56,6 +56,9 @@ public sealed class EmitContext
     /// <summary>True when emitting inside a function body (not module level).</summary>
     public bool IsInsideFunction { get; set; }
 
+    /// <summary>Names declared with 'global' in the current function scope — used to detect nonlocal+global conflicts.</summary>
+    public HashSet<string> GlobalNames { get; } = new();
+
     /// <summary>Name bound to 'self' / 'cls' in the source.</summary>
     public string? SelfName { get; set; }
 

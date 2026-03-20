@@ -27,8 +27,8 @@ public sealed class ControlFlowEmitters : ExpressionEmitterBase
         var elseLabel = IL.DefineLabel();
         var endLabel = IL.DefineLabel();
 
-        _mainEmitter.Emit(e.Condition);
-        IL.Emit(OpCodes.Brfalse, elseLabel);
+        var condType = _mainEmitter.Emit(e.Condition);
+        EmitBrFalse(condType, elseLabel);
         var thenType = _mainEmitter.Emit(e.Then);
         IL.Emit(OpCodes.Br, endLabel);
         IL.MarkLabel(elseLabel);
@@ -65,5 +65,14 @@ public sealed class ControlFlowEmitters : ExpressionEmitterBase
         throw new NotImplementedException(
             $"Use EmitIfExpr() or EmitWalrus() directly. " +
             $"Expression type: {expr.GetType().Name}");
+    }
+
+    // Emit Brfalse respecting Python truthiness.
+    // Primitives (int/float/bool) use Brfalse directly; everything else calls ToBool first.
+    private void EmitBrFalse(NajaType condType, System.Reflection.Emit.Label label)
+    {
+        if (condType is not (IntType or FloatType or BoolType))
+            IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ToBool_Method);
+        IL.Emit(OpCodes.Brfalse, label);
     }
 }

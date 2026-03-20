@@ -20,6 +20,24 @@ public sealed class CallEmitters : ExpressionEmitterBase
 
     public NajaType EmitCall(CallExpr e)
     {
+        // Validate call argument structure before emitting any IL
+        bool seenKwarg = false;
+        var seenKwargNames = new HashSet<string>();
+        foreach (var arg in e.Args)
+        {
+            if (arg.IsStar || arg.IsDoubleStar) continue;
+            if (arg.Keyword is not null)
+            {
+                seenKwarg = true;
+                if (!seenKwargNames.Add(arg.Keyword))
+                    throw new CodeGenException(
+                        $"SyntaxError: keyword argument repeated: '{arg.Keyword}'", e.Line, e.Column);
+            }
+            else if (seenKwarg)
+                throw new CodeGenException(
+                    "SyntaxError: positional argument follows keyword argument", e.Line, e.Column);
+        }
+
         // Handle escape hatches (dynamic, cast)
         if (e.Func is NameExpr { Name: "dynamic" } && e.Args.Count == 1)
         {

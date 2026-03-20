@@ -42,16 +42,16 @@ internal static class NajaBuiltinsMethodCache
 
     // ── Arithmetic operations ─────────────────────────────────────────────────
     public static readonly MethodInfo PyFloorDiv_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.PyFloorDiv))!;
+        typeof(DynamicOperators).GetMethod(nameof(DynamicOperators.PyFloorDiv))!;
     
     public static readonly MethodInfo PyFloorDivF_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.PyFloorDivF))!;
+        typeof(DynamicOperators).GetMethod(nameof(DynamicOperators.PyFloorDivF))!;
     
     public static readonly MethodInfo PyMod_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.PyMod))!;
+        typeof(DynamicOperators).GetMethod(nameof(DynamicOperators.PyMod))!;
     
     public static readonly MethodInfo PyModF_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.PyModF))!;
+        typeof(DynamicOperators).GetMethod(nameof(DynamicOperators.PyModF))!;
 
     public static readonly MethodInfo Abs_Method = 
         typeof(MathFunctions).GetMethod(nameof(MathFunctions.Abs))!;
@@ -69,7 +69,7 @@ internal static class NajaBuiltinsMethodCache
         typeof(MathFunctions).GetMethod(nameof(MathFunctions.Round))!;
 
     public static readonly MethodInfo Pow_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Pow))!;
+        typeof(MathFunctions).GetMethod(nameof(MathFunctions.Pow))!;
 
     public static readonly MethodInfo DivMod_Method = 
         typeof(MathFunctions).GetMethod(nameof(MathFunctions.DivMod))!;
@@ -108,10 +108,10 @@ internal static class NajaBuiltinsMethodCache
         typeof(Collections).GetMethod(nameof(Collections.MakeSet))!;
 
     public static readonly MethodInfo MakeFrozenSet_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.MakeFrozenSet))!;
+        typeof(Collections).GetMethod(nameof(Collections.MakeFrozenSet))!;
 
     public static readonly MethodInfo MakeTuple_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.MakeTuple))!;
+        typeof(Collections).GetMethod(nameof(Collections.MakeTuple))!;
 
     // ── Comparison operations ─────────────────────────────────────────────────
     public static readonly MethodInfo DynamicEq_Method = 
@@ -154,7 +154,7 @@ internal static class NajaBuiltinsMethodCache
 
     // ── Type operations ─────────────────────────────────────────────────────
     public static readonly MethodInfo TypeOf_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.TypeOf))!;
+        typeof(TypeSystem).GetMethod(nameof(TypeSystem.TypeOf))!;
 
     public static readonly MethodInfo IsInstance_Method = 
         typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.IsInstance))!;
@@ -212,6 +212,9 @@ internal static class NajaBuiltinsMethodCache
     public static readonly MethodInfo NextVararg_Method = 
         typeof(Iterators).GetMethod(nameof(Iterators.NextVararg))!;
 
+    public static readonly MethodInfo GetForLoopEnumerator_Method =
+        typeof(Iterators).GetMethod(nameof(Iterators.GetForLoopEnumerator))!;
+
     // ── Exception handling ───────────────────────────────────────────────────
     public static readonly MethodInfo Assert_Method = 
         typeof(ExceptionHelpers).GetMethod(nameof(ExceptionHelpers.Assert))!;
@@ -253,7 +256,7 @@ internal static class NajaBuiltinsMethodCache
 
     // ── Collection operations ────────────────────────────────────────────────
     public static readonly MethodInfo GetItem_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.GetItem))!;
+        typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.GetItem))!;
 
     public static readonly MethodInfo GetUnpackSlice_Method = 
         typeof(Collections).GetMethod(nameof(Collections.GetUnpackSlice))!;
@@ -273,13 +276,13 @@ internal static class NajaBuiltinsMethodCache
 
     // ── Dynamic call operations ──────────────────────────────────────────────
     public static readonly MethodInfo CallCallable_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.CallCallable))!;
+        typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.CallCallable))!;
 
     public static readonly MethodInfo DynamicCall_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DynamicCall))!;
+        typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.DynamicCall))!;
 
     public static readonly MethodInfo CreateDotNet_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.CreateDotNet))!;
+        typeof(TypeSystem).GetMethod(nameof(TypeSystem.CreateDotNet))!;
 
     // ── String method references ─────────────────────────────────────────────
     public static readonly MethodInfo StrRStrip_Method = 
@@ -319,22 +322,22 @@ internal static class NajaBuiltinsMethodCache
         typeof(StringFunctions).GetMethod(nameof(StringFunctions.StrRJust))!;
 
     public static readonly MethodInfo StrZFill_Method =
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrZFill))!;
+        typeof(StringFunctions).GetMethod(nameof(StringFunctions.StrZFill))!;
 
     public static readonly MethodInfo StrCount_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrCount))!;
+        typeof(StringFunctions).GetMethod(nameof(StringFunctions.StrCount))!;
 
     public static readonly MethodInfo StrJoin_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrJoin))!;
+        typeof(StringFunctions).GetMethod(nameof(StringFunctions.StrJoin))!;
 
     public static readonly MethodInfo StrSplit_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrSplit))!;
+        typeof(StringFunctions).GetMethod(nameof(StringFunctions.StrSplit))!;
 
     public static readonly MethodInfo StrSplitLines_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrSplitLines))!;
+        typeof(StringFunctions).GetMethod(nameof(StringFunctions.StrSplitLines))!;
 
     public static readonly MethodInfo StrTitle_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.StrTitle))!;
+        typeof(StringFunctions).GetMethod(nameof(StringFunctions.StrTitle))!;
 
     // ── List method references ───────────────────────────────────────────────
     public static readonly MethodInfo ListAppend_Method = 
@@ -397,5 +400,5 @@ internal static class NajaBuiltinsMethodCache
 
     // ── Type & Reflection operations ──────────────────────────────────────────
     public static readonly MethodInfo ResolveTypeByName_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ResolveTypeByName))!;
+        typeof(TypeSystem).GetMethod(nameof(TypeSystem.ResolveTypeByName))!;
 }
