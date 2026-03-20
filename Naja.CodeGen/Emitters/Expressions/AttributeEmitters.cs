@@ -135,14 +135,7 @@ public sealed class AttributeEmitters : ExpressionEmitterBase
                 IL.Emit(OpCodes.Ldtoken, dotnetType);
                 IL.Emit(OpCodes.Call, typeof(Type).GetMethod("GetTypeFromHandle")!);
                 IL.Emit(OpCodes.Ldstr, e.Attribute);
-                var staticGetAttr = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.GetStaticAttr),
-                    new[] { typeof(Type), typeof(string) });
-                if (staticGetAttr is not null)
-                {
-                    IL.Emit(OpCodes.Call, staticGetAttr);
-                    return NajaTypes.Unknown;
-                }
-                IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.GetAttr_Method);
+                IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.GetStaticAttr_Method);
                 return NajaTypes.Unknown;
             }
         }

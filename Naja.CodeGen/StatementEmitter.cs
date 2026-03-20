@@ -176,7 +176,7 @@ public sealed class StatementEmitter
                     var seqList = _ctx.Locals.Declare($"__seq_{subject.LocalIndex}", typeof(System.Collections.Generic.List<object?>));
 
                     IL.Emit(OpCodes.Ldloc, subject);
-                    IL.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.UnpackIterable))!);
+                    IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.UnpackIterable_Method);
                     IL.Emit(OpCodes.Stloc, seqList);
 
                     var countProp = typeof(System.Collections.Generic.List<object?>).GetProperty("Count")!.GetGetMethod()!;

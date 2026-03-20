@@ -1,5 +1,6 @@
 using System;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 
 namespace Naja.CodeGen.Builtins;
 
@@ -9,6 +10,61 @@ namespace Naja.CodeGen.Builtins;
 /// </summary>
 public static class ExceptionHelpers
 {
+    // ── Python exception-variable deletion sentinel ───────────────────────────
+    // Python 3 deletes 'as e' variables at the end of except blocks.
+    // We store this sentinel in the local so any subsequent load raises NameError.
+
+    /// <summary>
+    /// Sentinel stored in deleted exception-handler variables (Python 3 'as e' cleanup).
+    /// A local holding this value raises NameError when accessed.
+    /// </summary>
+    public static readonly object DeletedSentinel = new();
+
+    // ── Python exception chaining ─────────────────────────────────────────────
+    // CLR Exception has no __cause__, __context__, __suppress_context__ properties.
+    // We store them in a side-table keyed by exception identity (weak, so GC can collect).
+
+    private sealed class NajaExceptionChain
+    {
+        public object? Cause { get; set; }            // __cause__ (explicit: raise X from Y)
+        public object? Context { get; set; }          // __context__ (implicit chaining)
+        public bool SuppressContext { get; set; }     // __suppress_context__ (raise X from None)
+    }
+
+    private static readonly ConditionalWeakTable<Exception, NajaExceptionChain> _chains = new();
+
+    private static NajaExceptionChain GetOrCreateChain(Exception ex) =>
+        _chains.GetOrCreateValue(ex);
+
+    /// <summary>
+    /// Get a Python exception-chaining attribute (__cause__, __context__, __suppress_context__)
+    /// from the side-table, or null/false if not set.
+    /// Returns <c>null</c> if <paramref name="name"/> is not a chaining attribute.
+    /// </summary>
+    public static (bool found, object? value) TryGetChainingAttr(object obj, string name)
+    {
+        if (obj is not Exception ex)
+            return (false, null);
+
+        switch (name)
+        {
+            case "__cause__":
+                return _chains.TryGetValue(ex, out var ch1)
+                    ? (true, ch1.Cause)
+                    : (true, null);            // default: no cause
+            case "__context__":
+                return _chains.TryGetValue(ex, out var ch2)
+                    ? (true, ch2.Context)
+                    : (true, null);            // default: no context
+            case "__suppress_context__":
+                return _chains.TryGetValue(ex, out var ch3)
+                    ? (true, (object)(ch3.SuppressContext))
+                    : (true, (object)false);   // default: false
+            default:
+                return (false, null);
+        }
+    }
+
     /// <summary>Assert that a condition is true, raising AssertionError with optional message.</summary>
     public static void Assert(object? condition, object? message = null)
     {
@@ -20,8 +76,30 @@ public static class ExceptionHelpers
         throw new InvalidOperationException(msg!);
     }
 
-    /// <summary>Set the cause exception for exception chaining (Python 'raise X from Y').</summary>
-    public static Exception SetExceptionCause(Exception ex, object? cause) => ex;
+    /// <summary>
+    /// Set the cause exception for exception chaining (Python 'raise X from Y' / 'raise X from None').
+    /// Stores the cause in the side-table and sets __suppress_context__ when cause is null.
+    /// </summary>
+    public static Exception SetExceptionCause(Exception ex, object? cause)
+    {
+        var chain = GetOrCreateChain(ex);
+        chain.Cause = cause;
+        // 'raise X from None' sets __suppress_context__ = True
+        chain.SuppressContext = cause is null;
+        return ex;
+    }
+
+    /// <summary>
+    /// Set the implicit context (Python __context__) when an exception is raised
+    /// inside an except handler.  Called automatically by the emitted catch block.
+    /// </summary>
+    public static Exception SetExceptionContext(Exception ex, Exception? context)
+    {
+        if (context is null) return ex;
+        var chain = GetOrCreateChain(ex);
+        chain.Context ??= context;  // only set if not already set
+        return ex;
+    }
 
     /// <summary>Ensure the object is an Exception instance or exception type, creating if needed.</summary>
     public static Exception EnsureException(object? ex)

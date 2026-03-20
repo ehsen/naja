@@ -222,6 +222,9 @@ internal static class NajaBuiltinsMethodCache
     public static readonly MethodInfo SetExceptionCause_Method = 
         typeof(ExceptionHelpers).GetMethod(nameof(ExceptionHelpers.SetExceptionCause))!;
 
+    public static readonly MethodInfo SetExceptionContext_Method = 
+        typeof(ExceptionHelpers).GetMethod(nameof(ExceptionHelpers.SetExceptionContext))!;
+
     public static readonly MethodInfo EnsureException_Method = 
         typeof(ExceptionHelpers).GetMethod(nameof(ExceptionHelpers.EnsureException))!;
 
@@ -397,6 +400,17 @@ internal static class NajaBuiltinsMethodCache
 
     public static readonly MethodInfo DictCopy_Method = 
         typeof(Collections).GetMethod(nameof(Collections.DictCopy))!;
+
+    // ── Event handler operations ─────────────────────────────────────────────
+    public static readonly MethodInfo AddEventHandler_Method =
+        typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.AddEventHandler))!;
+
+    public static readonly MethodInfo RemoveEventHandler_Method =
+        typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.RemoveEventHandler))!;
+
+    // ── Exception variable deletion sentinel ────────────────────────────────
+    public static readonly FieldInfo DeletedSentinel_Field =
+        typeof(ExceptionHelpers).GetField(nameof(ExceptionHelpers.DeletedSentinel))!;
 
     // ── Type & Reflection operations ──────────────────────────────────────────
     public static readonly MethodInfo ResolveTypeByName_Method = 

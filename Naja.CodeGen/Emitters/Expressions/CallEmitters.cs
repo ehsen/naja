@@ -78,8 +78,7 @@ public sealed class CallEmitters : ExpressionEmitterBase
                 {
                     var argType = _mainEmitter.Emit(e.Args[0].Value);
                     TypeMapper.EmitBox(IL, argType);
-                    var toStr = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ToStr))!;
-                    IL.Emit(OpCodes.Call, toStr);
+                    IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ToStr_Method);
                 }
 
                 IL.Emit(OpCodes.Newobj, ctor);
@@ -159,9 +158,7 @@ public sealed class CallEmitters : ExpressionEmitterBase
 
                 IL.Emit(OpCodes.Ldloc, typeLocal);
                 IL.Emit(OpCodes.Ldloc, ctorArgs);
-                var create = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.CreateDotNet),
-                    new[] { typeof(Type), typeof(object[]) })!;
-                IL.Emit(OpCodes.Call, create);
+                IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.CreateDotNet_Method);
                 return NajaTypes.Unknown;
             }
         }
@@ -198,9 +195,7 @@ public sealed class CallEmitters : ExpressionEmitterBase
                 IL.Emit(OpCodes.Call, getTypeFromHandle);
 
                 IL.Emit(OpCodes.Ldloc, ctorArgs);
-                var create = typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.CreateDotNet),
-                    new[] { typeof(Type), typeof(object[]) })!;
-                IL.Emit(OpCodes.Call, create);
+                IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.CreateDotNet_Method);
                 return NajaTypes.Unknown;
             }
         }

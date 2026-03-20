@@ -79,8 +79,9 @@ public class AssignmentEmitters : StatementEmitterBase
                 }
                 IL.Emit(OpCodes.Ldstr, handlerMethod);
 
-                var methodName = s.Op == BinaryOp.Add ? nameof(NajaBuiltins.AddEventHandler) : nameof(NajaBuiltins.RemoveEventHandler);
-                var evMethod = typeof(NajaBuiltins).GetMethod(methodName)!;
+                var evMethod = s.Op == BinaryOp.Add
+                    ? NajaBuiltinsMethodCache.AddEventHandler_Method
+                    : NajaBuiltinsMethodCache.RemoveEventHandler_Method;
                 IL.Emit(OpCodes.Call, evMethod);
                 return;
             }

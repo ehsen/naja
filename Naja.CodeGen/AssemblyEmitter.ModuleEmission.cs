@@ -109,15 +109,16 @@ public sealed partial class AssemblyEmitter
                         _classTypes[cls.Name] = ct;
                         _classConstructors[cls.Name] = ctor;
 
-                        // Store parameter count for later inheritance lookups
+                        // Store parameter count for later inheritance lookups.
+                        // Only set when __init__ is present — if absent, DeclareClass may have
+                        // already recorded a better value (e.g. autoExceptionCtor = 1).
                         var initFn = cls.Body.OfType<FunctionDef>().FirstOrDefault(f => f.Name == "__init__");
-                        int ac = 0;
                         if (initFn != null)
                         {
                             bool hasSelf = initFn.Params.Count > 0 && initFn.Params[0].Name is "self" or "cls";
-                            ac = hasSelf ? initFn.Params.Count - 1 : initFn.Params.Count;
+                            int ac = hasSelf ? initFn.Params.Count - 1 : initFn.Params.Count;
+                            _classCtorArgCounts[cls.Name] = ac;
                         }
-                        _classCtorArgCounts[cls.Name] = ac;
 
                         // PASS 1.5: Handle class-level attributes like __match_args__
                         foreach (var member in cls.Body)

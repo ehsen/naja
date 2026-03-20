@@ -105,6 +105,23 @@ public sealed class NameEmitters : ExpressionEmitterBase
         if (local is not null)
         {
             IL.Emit(OpCodes.Ldloc, local);
+
+            // Python 3: 'as e' locals are deleted at the end of except blocks.
+            // If the local holds the DeletedSentinel, raise NameError.
+            if (_ctx.ExceptionHandlerVars.Contains(e.Name))
+            {
+                var okLabel = IL.DefineLabel();
+                IL.Emit(OpCodes.Dup);
+                IL.Emit(OpCodes.Ldsfld, NajaBuiltinsMethodCache.DeletedSentinel_Field);
+                IL.Emit(OpCodes.Ceq);
+                IL.Emit(OpCodes.Brfalse_S, okLabel);
+                IL.Emit(OpCodes.Pop);
+                IL.Emit(OpCodes.Ldstr, $"NameError: name '{e.Name}' is not defined");
+                IL.Emit(OpCodes.Newobj, typeof(MissingFieldException).GetConstructor(new[] { typeof(string) })!);
+                IL.Emit(OpCodes.Throw);
+                IL.MarkLabel(okLabel);
+            }
+
             // If the local's CLR type is `object`, treat as Unknown to avoid
             // incorrect boxing (e.g. for-loop variables stored as object).
             if (local.LocalType == typeof(object))

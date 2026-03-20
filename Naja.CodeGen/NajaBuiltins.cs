@@ -1006,6 +1006,14 @@ public static class NajaBuiltins
     public static object? GetAttr(object obj, string name)
     {
         if (obj is null) return null;
+
+        // Python type dunder attributes
+        if (obj is Type typeObj)
+        {
+            if (name == "__name__" || name == "__qualname__") return typeObj.Name;
+            if (name == "__module__") return typeObj.Namespace ?? "";
+        }
+
         var t = obj.GetType();
         var flags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
 
@@ -1825,7 +1833,8 @@ public static class NajaBuiltins
         throw new InvalidOperationException(msg!);
     }
 
-    public static Exception SetExceptionCause(Exception ex, object? cause) => ex;
+    public static Exception SetExceptionCause(Exception ex, object? cause) =>
+        Naja.CodeGen.Builtins.ExceptionHelpers.SetExceptionCause(ex, cause);
 
     // Ensure the raised object is an Exception instance. Accepts either an Exception
     // instance or a Type representing an exception class (which will be instantiated).

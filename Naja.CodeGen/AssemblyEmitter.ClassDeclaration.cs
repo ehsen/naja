@@ -101,6 +101,23 @@ public sealed partial class AssemblyEmitter
             }
         }
 
+        // Exception subclasses without __init__: auto-generate a 1-arg (message) constructor
+        // that forwards the argument to the base exception constructor.
+        bool autoExceptionCtor = false;
+        if (initFn == null && argCount == 0 && !isProxy)
+        {
+            bool baseIsClrException = typeof(Exception).IsAssignableFrom(baseType) && baseType != typeof(object);
+            string? baseName2 = cls.Bases.Count > 0 && cls.Bases[0] is NameExpr bex2 ? bex2.Name : null;
+            bool baseNajaHasMessageCtor = baseName2 != null &&
+                _classCtorArgCounts.TryGetValue(baseName2, out var bac2) && bac2 >= 1;
+            if (baseIsClrException || baseNajaHasMessageCtor)
+            {
+                argCount = 1;
+                autoExceptionCtor = true;
+                _classCtorArgCounts[cls.Name] = 1;
+            }
+        }
+
         var ctorParams = Enumerable.Repeat(typeof(object), argCount).ToArray();
         defaultCtor = tb.DefineConstructor(
             MethodAttributes.Public | MethodAttributes.HideBySig | MethodAttributes.SpecialName | MethodAttributes.RTSpecialName,
@@ -153,8 +170,43 @@ public sealed partial class AssemblyEmitter
             baseParamCount = baseCtor.GetParameters().Length;
         }
 
+        // For auto-exception-ctor against a CLR base: prefer base(string message) ctor
+        if (autoExceptionCtor && !foundNajaBase)
+        {
+            var stringCtor = baseType.GetConstructor(
+                BindingFlags.Public | BindingFlags.Instance, null, new[] { typeof(string) }, null);
+            if (stringCtor != null)
+            {
+                baseCtor = stringCtor;
+                baseParamCount = 1;
+            }
+        }
+
         ctorIL.Emit(OpCodes.Ldarg_0); // this
-        if (isProxy && foundNajaBase && baseParamCount == argCount)
+
+        if (autoExceptionCtor)
+        {
+            // Exception subclass without __init__: forward message to base
+            if (foundNajaBase && baseCtor != null)
+            {
+                ctorIL.Emit(OpCodes.Ldarg_1);
+                ctorIL.Emit(OpCodes.Call, baseCtor);
+            }
+            else if (baseParamCount == 1 && baseCtor != null)
+            {
+                ctorIL.Emit(OpCodes.Ldarg_1);
+                // Convert object → string when base ctor expects a string parameter
+                if (baseCtor.GetParameters()[0].ParameterType == typeof(string))
+                    ctorIL.Emit(OpCodes.Callvirt, typeof(object).GetMethod("ToString")!);
+                ctorIL.Emit(OpCodes.Call, baseCtor);
+            }
+            else
+            {
+                ctorIL.Emit(OpCodes.Call, baseCtor!);
+            }
+            ctorIL.Emit(OpCodes.Ret);
+        }
+        else if (isProxy && foundNajaBase && baseParamCount == argCount)
         {
             // Pass through all arguments
             for (int i = 0; i < argCount; i++)
@@ -165,33 +217,34 @@ public sealed partial class AssemblyEmitter
                 else if (argIdx == 3) ctorIL.Emit(OpCodes.Ldarg_3);
                 else ctorIL.Emit(OpCodes.Ldarg_S, (byte)argIdx);
             }
+            ctorIL.Emit(OpCodes.Call, baseCtor);
+            ctorIL.Emit(OpCodes.Ret);
         }
         else
         {
             // Push nulls for any required arguments
             for (int i = 0; i < baseParamCount; i++)
                 ctorIL.Emit(OpCodes.Ldnull);
-        }
+            ctorIL.Emit(OpCodes.Call, baseCtor);
 
-        ctorIL.Emit(OpCodes.Call, baseCtor);
-
-        if (isProxy)
-        {
-            ctorIL.Emit(OpCodes.Ret);
-        }
-        else
-        {
-            // ── Deferred constructor completion ──────────────────────────────
-            // At Pass 1 time the __init__ MethodBuilder does not exist yet —
-            // it is declared in Pass 1.5.  Emitting Call on a MethodBuilder
-            // that belongs to a type not yet created causes InvalidProgramException
-            // with both AssemblyBuilder.Run and PersistedAssemblyBuilder.
-            //
-            // Solution: leave the ILGenerator open (no Ret here) and store it
-            // so EmitClassBody (Pass 3) can complete the constructor after
-            // __init__ is available. EmitClassBody calls CompleteConstructor().
-            _pendingCtorIL[cls.Name] = (ctorIL, argCount);
-            // Ret is emitted by CompleteConstructor — NOT here.
+            if (isProxy)
+            {
+                ctorIL.Emit(OpCodes.Ret);
+            }
+            else
+            {
+                // ── Deferred constructor completion ──────────────────────────────
+                // At Pass 1 time the __init__ MethodBuilder does not exist yet —
+                // it is declared in Pass 1.5.  Emitting Call on a MethodBuilder
+                // that belongs to a type not yet created causes InvalidProgramException
+                // with both AssemblyBuilder.Run and PersistedAssemblyBuilder.
+                //
+                // Solution: leave the ILGenerator open (no Ret here) and store it
+                // so EmitClassBody (Pass 3) can complete the constructor after
+                // __init__ is available. EmitClassBody calls CompleteConstructor().
+                _pendingCtorIL[cls.Name] = (ctorIL, argCount);
+                // Ret is emitted by CompleteConstructor — NOT here.
+            }
         }
 
         return tb;

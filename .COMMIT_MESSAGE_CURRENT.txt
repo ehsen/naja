@@ -1,0 +1,82 @@
+fix: Complete exception language compliance (26/26 tests) and eliminate direct NajaBuiltins references
+
+## Summary
+
+This commit completes two major tasks:
+
+### 1. Exception Language Compliance (100% - 26/26 Tests)
+Fixed all remaining exception handling issues to achieve full compliance:
+- Fixed `TypeSystem.CreateDotNet` to use proper `BindingFlags.Instance` and bind overloaded constructors
+- Fixed exception subclass hierarchy detection in `ClassDeclaration.cs` with `autoExceptionCtor`
+- Fixed exception variable scoping with `DeletedSentinel` in exception handler cleanup
+- Added thread-local assembly tracking in `TypeSystem` to fix isinstance() with user-defined exception classes
+- Added NameError generation when accessing deleted exception variables
+
+**Result**: All 26 exception tests now pass, including:
+- Try/except/else/finally chains
+- Exception chaining (raise...from)
+- Custom exception hierarchies
+- Exception variable scoping (PEP 3110)
+- Bare except clauses
+
+### 2. NajaBuiltins.cs Refactoring - Elimination of Direct References
+Removed ALL direct `typeof(NajaBuiltins).GetMethod(...)` calls throughout the codebase:
+
+**Changes**:
+- Updated `NajaBuiltinsMethodCache.cs` with two new entries:
+  - `AddEventHandler_Method` → `ReflectionHelpers`
+  - `RemoveEventHandler_Method` → `ReflectionHelpers`
+  
+- Fixed all IL emission sites to use `NajaBuiltinsMethodCache`:
+  - `CallEmitters.cs` (3 references: ToStr, CreateDotNet)
+  - `AttributeEmitters.cs` (GetStaticAttr)
+  - `AssignmentEmitters.cs` (AddEventHandler/RemoveEventHandler)
+  - `AssemblyEmitter.ClassBody.cs` (IteratorMoveNext)
+  - `StatementEmitter.cs` (UnpackIterable)
+
+- Updated runtime method lookup in `ReflectionHelpers.DynamicCall` to search specialist classes
+  (StringFunctions, Collections) instead of NajaBuiltins
+
+- Replaced assembly anchor in `AssemblyPEWriter.cs` from NajaBuiltins to DynamicOperators
+
+- Removed `using static Naja.CodeGen.NajaBuiltins` from `TypeMapper.cs`
+
+**Build Status**: ✅ PASSING (Clean compilation)
+**Test Status**: ✅ 26/26 ExceptionTests PASSING, 391/467 overall (baseline maintained)
+
+## Files Modified
+
+### Exception Compliance Fixes
+- `Naja.CodeGen/Builtins/TypeSystem.cs` - Thread-local assembly + CreateDotNet fix
+- `Naja.CodeGen/AssemblyEmitter.ClassDeclaration.cs` - autoExceptionCtor detection
+- `Naja.CodeGen/AssemblyEmitter.MethodGeneration.cs` - Modified emission
+- `Naja.CodeGen/Builtins/ExceptionHelpers.cs` - DeletedSentinel added
+- `Naja.CodeGen/Builtins/NajaBuiltinsMethodCache.cs` - DeletedSentinel_Field added
+- `Naja.CodeGen/EmitContext.cs` - ExceptionHandlerVars tracking
+- `Naja.CodeGen/Emitters/Expressions/NameEmitters.cs` - Sentinel check for deleted vars
+- `Naja.CodeGen/Emitters/Statements/ExceptionEmitters.cs` - Sentinel on deletion
+- `Naja.CodeGen/NajaEngine.cs` - SetCurrentAssembly wrapper
+
+### NajaBuiltins Refactoring
+- `Naja.CodeGen/Builtins/NajaBuiltinsMethodCache.cs` - Added event handler methods
+- `Naja.CodeGen/Builtins/ReflectionHelpers.cs` - Updated bridge lookup
+- `Naja.CodeGen/Emitters/Assembly/AssemblyPEWriter.cs` - Updated assembly anchor
+- `Naja.CodeGen/Emitters/Expressions/AttributeEmitters.cs` - Use cache for GetStaticAttr
+- `Naja.CodeGen/Emitters/Expressions/CallEmitters.cs` - Use cache for ToStr, CreateDotNet
+- `Naja.CodeGen/Emitters/Statements/AssignmentEmitters.cs` - Use cache for event handlers
+- `Naja.CodeGen/AssemblyEmitter.ClassBody.cs` - Use cache for IteratorMoveNext
+- `Naja.CodeGen/StatementEmitter.cs` - Use cache for UnpackIterable
+- `Naja.CodeGen/TypeMapper.cs` - Remove static import, fix NajaExceptionGroup reference
+
+## Next Steps
+
+Remaining work in Phase 3 (NajaBuiltins Elimination):
+1. Move remaining methods from NajaBuiltins to specialist files
+2. Trim NajaBuiltins.cs to facade or delete entirely
+3. Task 3: Split AssemblyEmitter.ClassGeneration.cs (746 lines)
+
+See REMAINING_WORK_PLAN.md for full roadmap.
+
+## Related Issues
+- Fixes: Exception language compliance gap (26 failing tests)
+- Improves: Code organization (direct NajaBuiltins references eliminated)

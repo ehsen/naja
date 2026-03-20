@@ -110,22 +110,68 @@ public class DefinitionEmitters : StatementEmitterBase
         var bodyEmitter = new StatementEmitter(fnCtx);
         bodyEmitter.EmitAll(s.Body);
 
-        bool endsWithReturn = s.Body.Count > 0 && s.Body[^1] is ReturnStatement;
-        if (!endsWithReturn)
+        if (isGenerator)
         {
-            if (isGenerator)
+            if (fnCtx.MethodReturnLabel.HasValue)
             {
-                // Wrap the collected yields in a NajaGeneratorIterator and return it
-                fnIL.Emit(OpCodes.Ldloc, fnCtx.GeneratorListLocal);
-                var iterCtor = typeof(NajaGeneratorIterator)
-                    .GetConstructor(new[] { typeof(System.Collections.Generic.List<object>) })!;
-                fnIL.Emit(OpCodes.Newobj, iterCtor);
+                if (fnCtx.ReturnValueLocal != null)
+                {
+                    fnIL.Emit(OpCodes.Ldnull);
+                    fnIL.Emit(OpCodes.Stloc, fnCtx.ReturnValueLocal);
+                }
+                fnIL.Emit(OpCodes.Br, fnCtx.MethodReturnLabel.Value);
+                fnIL.MarkLabel(fnCtx.MethodReturnLabel.Value);
+                if (fnCtx.ReturnValueLocal != null)
+                    fnIL.Emit(OpCodes.Ldloc, fnCtx.ReturnValueLocal);
+                else
+                {
+                    fnIL.Emit(OpCodes.Ldloc, fnCtx.GeneratorListLocal!);
+                    var iterCtor2 = typeof(NajaGeneratorIterator)
+                        .GetConstructor(new[] { typeof(System.Collections.Generic.List<object>) })!;
+                    fnIL.Emit(OpCodes.Newobj, iterCtor2);
+                }
+                fnIL.Emit(OpCodes.Ret);
             }
             else
             {
-                fnIL.Emit(OpCodes.Ldnull);
+                bool endsWithReturn = s.Body.Count > 0 && s.Body[^1] is ReturnStatement;
+                if (!endsWithReturn)
+                {
+                    fnIL.Emit(OpCodes.Ldloc, fnCtx.GeneratorListLocal!);
+                    var iterCtor = typeof(NajaGeneratorIterator)
+                        .GetConstructor(new[] { typeof(System.Collections.Generic.List<object>) })!;
+                    fnIL.Emit(OpCodes.Newobj, iterCtor);
+                    fnIL.Emit(OpCodes.Ret);
+                }
             }
-            fnIL.Emit(OpCodes.Ret);
+        }
+        else
+        {
+            // Non-generator: use the shared epilog helper pattern inline
+            if (fnCtx.MethodReturnLabel.HasValue)
+            {
+                if (fnCtx.ReturnValueLocal != null)
+                {
+                    fnIL.Emit(OpCodes.Ldnull);
+                    fnIL.Emit(OpCodes.Stloc, fnCtx.ReturnValueLocal);
+                }
+                fnIL.Emit(OpCodes.Br, fnCtx.MethodReturnLabel.Value);
+                fnIL.MarkLabel(fnCtx.MethodReturnLabel.Value);
+                if (fnCtx.ReturnValueLocal != null)
+                    fnIL.Emit(OpCodes.Ldloc, fnCtx.ReturnValueLocal);
+                else
+                    fnIL.Emit(OpCodes.Ldnull);
+                fnIL.Emit(OpCodes.Ret);
+            }
+            else
+            {
+                bool endsWithReturn = s.Body.Count > 0 && s.Body[^1] is ReturnStatement;
+                if (!endsWithReturn)
+                {
+                    fnIL.Emit(OpCodes.Ldnull);
+                    fnIL.Emit(OpCodes.Ret);
+                }
+            }
         }
 
         // Register in current context so calls within scope find it

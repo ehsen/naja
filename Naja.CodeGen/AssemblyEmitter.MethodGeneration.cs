@@ -133,12 +133,7 @@ public sealed partial class AssemblyEmitter
         var emitter = new StatementEmitter(ctx);
         emitter.EmitAll(fn.Body);
 
-        bool endsWithReturn = fn.Body.Count > 0 && fn.Body[^1] is ReturnStatement;
-        if (!endsWithReturn)
-        {
-            il.Emit(OpCodes.Ldnull);
-            il.Emit(OpCodes.Ret);
-        }
+        EmitMethodEpilog(il, ctx, typeof(object));
     }
 
     // ── Module-level function declaration stub ────────────────────────────────
@@ -243,20 +238,83 @@ public sealed partial class AssemblyEmitter
         var emitter = new StatementEmitter(ctx);
         emitter.EmitAll(fn.Body);
 
-        bool endsWithReturn = fn.Body.Count > 0 && fn.Body[^1] is ReturnStatement;
-        if (!endsWithReturn)
+        if (isGenerator)
         {
-            if (isGenerator)
+            // Generator: emit fall-through epilog (no return-inside-exception epilog needed
+            // because generator functions always fall through to here; the Leave epilog
+            // for generator return is handled by the normal EmitMethodEpilog path when
+            // ctx.MethodReturnLabel is set).
+            if (ctx.MethodReturnLabel.HasValue)
             {
-                // Wrap the collected yields in a NajaGeneratorIterator and return it
-                il.Emit(OpCodes.Ldloc, ctx.GeneratorListLocal);
-                var iterCtor = typeof(NajaGeneratorIterator)
-                    .GetConstructor(new[] { typeof(System.Collections.Generic.List<object>) })!;
-                il.Emit(OpCodes.Newobj, iterCtor);
+                il.MarkLabel(ctx.MethodReturnLabel.Value);
+                if (ctx.ReturnValueLocal != null)
+                    il.Emit(OpCodes.Ldloc, ctx.ReturnValueLocal);
+                else
+                {
+                    il.Emit(OpCodes.Ldloc, ctx.GeneratorListLocal!);
+                    var iterCtor2 = typeof(NajaGeneratorIterator)
+                        .GetConstructor(new[] { typeof(System.Collections.Generic.List<object>) })!;
+                    il.Emit(OpCodes.Newobj, iterCtor2);
+                }
+                il.Emit(OpCodes.Ret);
             }
-            else if (returnType != typeof(void))
+            else
+            {
+                bool endsWithReturn = fn.Body.Count > 0 && fn.Body[^1] is ReturnStatement;
+                if (!endsWithReturn)
+                {
+                    il.Emit(OpCodes.Ldloc, ctx.GeneratorListLocal!);
+                    var iterCtor = typeof(NajaGeneratorIterator)
+                        .GetConstructor(new[] { typeof(System.Collections.Generic.List<object>) })!;
+                    il.Emit(OpCodes.Newobj, iterCtor);
+                    il.Emit(OpCodes.Ret);
+                }
+            }
+        }
+        else
+        {
+            EmitMethodEpilog(il, ctx, returnType);
+        }
+    }
+
+    /// <summary>
+    /// Emits the function epilog after all statement emission is complete.
+    /// If any <c>return</c> inside an exception block used <c>leave</c> to the
+    /// <see cref="EmitContext.MethodReturnLabel"/>, we mark that label here and
+    /// emit the final <c>ret</c>.  Otherwise we just emit a fall-through <c>ret</c>.
+    /// </summary>
+    private static void EmitMethodEpilog(ILGenerator il, EmitContext ctx, Type returnType)
+    {
+        if (ctx.MethodReturnLabel.HasValue)
+        {
+            // At least one `return` inside an exception block used `leave` to jump here.
+            // The fall-through path (function body exits without an explicit return) also
+            // needs to reach the epilog. Since we're outside exception blocks at this point
+            // a plain `br` is valid.
+            if (ctx.ReturnValueLocal != null)
             {
                 il.Emit(OpCodes.Ldnull);
+                il.Emit(OpCodes.Stloc, ctx.ReturnValueLocal);
+            }
+            il.Emit(OpCodes.Br, ctx.MethodReturnLabel.Value);
+
+            il.MarkLabel(ctx.MethodReturnLabel.Value);
+            if (ctx.ReturnValueLocal != null)
+                il.Emit(OpCodes.Ldloc, ctx.ReturnValueLocal);
+            else if (returnType != typeof(void))
+                il.Emit(OpCodes.Ldnull);
+            il.Emit(OpCodes.Ret);
+        }
+        else
+        {
+            // No leave-based returns. Emit a plain fallthrough ret.
+            if (returnType == typeof(object))
+                il.Emit(OpCodes.Ldnull);
+            else if (returnType != typeof(void))
+            {
+                il.Emit(OpCodes.Ldc_I4_0);
+                if (returnType == typeof(long)) il.Emit(OpCodes.Conv_I8);
+                if (returnType == typeof(double)) il.Emit(OpCodes.Conv_R8);
             }
             il.Emit(OpCodes.Ret);
         }

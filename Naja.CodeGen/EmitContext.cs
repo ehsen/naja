@@ -106,6 +106,43 @@ public sealed class EmitContext
     public LocalBuilder? GeneratorListLocal { get; set; }
 
     /// <summary>
+    /// Tracks nesting depth of open exception blocks (BeginExceptionBlock increments,
+    /// EndExceptionBlock decrements). Used to determine when `ret`/`br` must be
+    /// replaced with `leave` to legally exit a protected region.
+    /// </summary>
+    public int ExceptionBlockDepth { get; set; }
+
+    /// <summary>
+    /// Label placed after all exception blocks in a function; targeted by `leave`
+    /// instructions emitted for `return` statements inside protected regions.
+    /// Lazily initialised the first time a return-inside-exception is encountered.
+    /// </summary>
+    public System.Reflection.Emit.Label? MethodReturnLabel { get; set; }
+
+    /// <summary>
+    /// Temp local used to hold a return value when the function body contains
+    /// `return` inside a protected region. The epilog loads this local and executes `ret`.
+    /// </summary>
+    public LocalBuilder? ReturnValueLocal { get; set; }
+
+    /// <summary>
+    /// When emitting handler body code inside a catch dispatch block, holds the
+    /// <see cref="LocalBuilder"/> that stores the caught exception. Set before
+    /// emitting handler.Body and restored to the previous value afterward.
+    /// <c>null</c> when not inside a handler body.
+    /// Used by <c>EmitRaise</c> to set <c>__context__</c> on newly raised exceptions
+    /// (Python implicit exception chaining).
+    /// </summary>
+    public LocalBuilder? ActiveHandlerExceptionLocal { get; set; }
+
+    /// <summary>
+    /// Names of locals that were bound as exception handler variables (except … as e)
+    /// and have been deleted at the end of their handler. Accessing them at runtime
+    /// throws NameError (MissingFieldException) to match Python 3 semantics.
+    /// </summary>
+    public HashSet<string> ExceptionHandlerVars { get; } = new();
+
+    /// <summary>
     /// For comprehension helpers: unique scope ID for hoisted loop variables.
     /// Used to avoid name collisions when multiple comprehensions use the same variable name.
     /// Format: "comp_{line}_{col}" or null if not in a comprehension helper.

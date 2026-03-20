@@ -70,7 +70,7 @@ public class ScopeEmitters : StatementEmitterBase
             var iterCtor = typeof(NajaGeneratorIterator)
                 .GetConstructor(new[] { typeof(System.Collections.Generic.List<object>) })!;
             IL.Emit(OpCodes.Newobj, iterCtor);
-            IL.Emit(OpCodes.Ret);
+            EmitReturnOrLeave();
             return;
         }
 
@@ -80,27 +80,68 @@ public class ScopeEmitters : StatementEmitterBase
             if (_ctx.ReturnType == typeof(void))
             {
                 IL.Emit(OpCodes.Pop);
+                EmitReturnOrLeave(hasValue: false);
+                return;
             }
             else if (_ctx.ReturnType == typeof(object))
             {
-                // Box value types so they fit in object return slot
                 TypeMapper.EmitBox(IL, type);
             }
-            // else types match directly — emit as-is
+            // else types match directly — value already on stack
+            EmitReturnOrLeave(hasValue: true);
+            return;
         }
         else if (_ctx.ReturnType == typeof(object))
         {
             IL.Emit(OpCodes.Ldnull);
+            EmitReturnOrLeave(hasValue: true);
+            return;
         }
         else if (_ctx.ReturnType != typeof(void))
         {
-            // Return default for value types — push zero
             IL.Emit(OpCodes.Ldc_I4_0);
             if (_ctx.ReturnType == typeof(long)) IL.Emit(OpCodes.Conv_I8);
             if (_ctx.ReturnType == typeof(double)) IL.Emit(OpCodes.Conv_R8);
+            EmitReturnOrLeave(hasValue: true);
+            return;
         }
 
-        IL.Emit(OpCodes.Ret);
+        EmitReturnOrLeave(hasValue: false);
+    }
+
+    /// <summary>
+    /// Emits either `ret` (outside any exception block) or `leave` (inside one).
+    /// When using `leave`, the return value (if any) is first stored to
+    /// <see cref="EmitContext.ReturnValueLocal"/> and the method epilog will
+    /// reload and `ret` it after the exception block ends.
+    /// Caller must have already pushed the return value onto the stack when hasValue=true.
+    /// </summary>
+    private void EmitReturnOrLeave(bool hasValue = false)
+    {
+        if (_ctx.ExceptionBlockDepth == 0)
+        {
+            IL.Emit(OpCodes.Ret);
+            return;
+        }
+
+        // Inside a protected region: must use `leave` instead of `ret`.
+        // Store the return value (if any) into a shared local so the epilog
+        // can reload it after the exception block.
+        if (hasValue)
+        {
+            if (_ctx.ReturnValueLocal is null)
+            {
+                var rvType = _ctx.ReturnType == typeof(void) ? typeof(object) : _ctx.ReturnType;
+                _ctx.ReturnValueLocal = _ctx.Locals.Declare("__retval__", rvType);
+            }
+            IL.Emit(OpCodes.Stloc, _ctx.ReturnValueLocal);
+        }
+
+        // Lazily define the return-epilog label
+        if (_ctx.MethodReturnLabel is null)
+            _ctx.MethodReturnLabel = IL.DefineLabel();
+
+        IL.Emit(OpCodes.Leave, _ctx.MethodReturnLabel.Value);
     }
 
     // ── Expression statement ──────────────────────────────────────────────────

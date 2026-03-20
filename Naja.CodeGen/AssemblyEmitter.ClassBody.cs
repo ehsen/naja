@@ -498,7 +498,7 @@ public sealed partial class AssemblyEmitter
             mnIl.Emit(OpCodes.Ldflda, currentValueField);  // ref to current value field
             mnIl.Emit(OpCodes.Ldarg_0);
             mnIl.Emit(OpCodes.Ldflda, exhaustedField);  // ref to exhausted field
-            mnIl.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.IteratorMoveNext))!);
+            mnIl.Emit(OpCodes.Call, NajaBuiltinsMethodCache.IteratorMoveNext_Method);
             mnIl.Emit(OpCodes.Ret);
 
             // Reset - throw NotSupportedException

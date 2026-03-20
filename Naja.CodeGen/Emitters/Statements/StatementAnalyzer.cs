@@ -92,6 +92,36 @@ public static class StatementAnalyzer
     }
 
     /// <summary>
+    /// Returns true if <paramref name="statements"/> contains at least one <see cref="ReturnStatement"/>
+    /// at any nesting depth (but not inside nested function definitions).
+    /// Used to detect <c>return</c> inside <c>finally</c> blocks.
+    /// </summary>
+    public static bool ContainsReturnStatement(IReadOnlyList<Statement> statements)
+    {
+        foreach (var stmt in statements)
+        {
+            if (ContainsReturnInStatement(stmt))
+                return true;
+        }
+        return false;
+    }
+
+    private static bool ContainsReturnInStatement(Statement stmt) => stmt switch
+    {
+        ReturnStatement => true,
+        IfStatement ifs => ContainsReturnStatement(ifs.Then) ||
+                           ifs.Elifs.Any(e => ContainsReturnStatement(e.Body)) ||
+                           ContainsReturnStatement(ifs.Else),
+        WhileStatement ws => ContainsReturnStatement(ws.Body),
+        ForStatement fs => ContainsReturnStatement(fs.Body),
+        TryStatement ts => ContainsReturnStatement(ts.Body) ||
+                           ts.Handlers.Any(h => ContainsReturnStatement(h.Body)) ||
+                           ContainsReturnStatement(ts.Finally),
+        WithStatement ws => ContainsReturnStatement(ws.Body),
+        _ => false  // FunctionDef intentionally excluded: nested function returns are independent
+    };
+
+    /// <summary>
     /// Check if a statement list contains any yield expressions.
     /// </summary>
     public static bool ContainsYield(IReadOnlyList<Statement> statements)

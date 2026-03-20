@@ -6,6 +6,7 @@ using System.Reflection.Metadata;
 using System.Reflection.Metadata.Ecma335;
 using System.Reflection.PortableExecutable;
 using System.Runtime.InteropServices;
+using Naja.CodeGen.Builtins;
 
 namespace Naja.CodeGen;
 
@@ -88,7 +89,7 @@ internal static class AssemblyPEWriter
 
     private static void WriteDepsJson(string assemblyPath)
     {
-        var najaAsm = typeof(NajaBuiltins).Assembly.GetName();
+        var najaAsm = typeof(DynamicOperators).Assembly.GetName();
         var najaName = najaAsm.Name ?? "Naja.CodeGen";
         var najaVersion = najaAsm.Version?.ToString() ?? "1.0.0.0";
         var najaTarget = $"{najaName}/{najaVersion}";

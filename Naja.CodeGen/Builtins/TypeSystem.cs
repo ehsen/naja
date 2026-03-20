@@ -44,9 +44,21 @@ public static class TypeSystem
     /// <summary>
     /// Resolves a Naja user-defined class by simple name from all loaded assemblies.
     /// Used by EmitName instead of ldtoken, which fails on unfinished TypeBuilders.
+    /// Checks the currently-executing assembly first to avoid returning stale types
+    /// from previous Eval() runs when the engine is shared across test runs.
     /// </summary>
     public static Type? ResolveTypeByName(string name)
     {
+        if (_currentAssembly is not null)
+        {
+            try
+            {
+                var t = _currentAssembly.GetType(name, throwOnError: false, ignoreCase: false);
+                if (t is not null) return t;
+            }
+            catch { }
+        }
+
         foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
         {
             try
@@ -59,43 +71,43 @@ public static class TypeSystem
         return null;
     }
 
+    [ThreadStatic]
+    private static Assembly? _currentAssembly;
+
+    public static void SetCurrentAssembly(Assembly? asm) => _currentAssembly = asm;
+
     /// <summary>
     /// Creates a .NET object via reflection, supporting both parameterless and parameterized constructors.
     /// </summary>
     public static object? CreateDotNet(Type type, object[] args)
     {
-        // Try direct instantiation
-        try
+        if (type is null)
+            throw new TypeLoadException("Cannot instantiate type: null");
+
+        // Enum: FontStyle(1) → (FontStyle)1
+        if (type.IsEnum)
         {
-            if (args.Length == 0)
-            {
-                var ctor0 = type.GetConstructor(Type.EmptyTypes);
-                if (ctor0 != null) return ctor0.Invoke(Array.Empty<object>());
-            }
-
-            // Try finding a matching constructor by argument count
-            var ctors = type.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic)
-                .Where(c => c.GetParameters().Length == args.Length)
-                .ToList();
-
-            if (ctors.Count > 0)
-            {
-                var ctor = ctors[0];
-                var ps = ctor.GetParameters();
-
-                // Coerce arguments to match parameter types
-                var coercedArgs = new object?[args.Length];
-                for (int i = 0; i < args.Length; i++)
-                    coercedArgs[i] = CoerceValue(args[i], ps[i].ParameterType);
-
-                return ctor.Invoke(coercedArgs);
-            }
-
-            throw new Exception($"No matching constructor found for type '{type.Name}' with {args.Length} arguments");
+            if (args.Length == 0) return Enum.ToObject(type, 0);
+            if (args.Length == 1) return Enum.ToObject(type, Convert.ToInt64(args[0]));
+            throw new ArgumentException($"Enum '{type.FullName}' accepts 0 or 1 argument, got {args.Length}");
         }
-        catch (TargetInvocationException tie) when (tie.InnerException != null)
+
+        var ctors = type.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+        var candidates = ctors.Cast<MethodBase>();
+
+        if (!ReflectionHelpers.TryBindBestCallable(candidates, args, out var ctor, out var boundArgs))
         {
-            throw tie.InnerException;
+            var available = string.Join(", ", ctors.Select(c =>
+                "(" + string.Join(", ", c.GetParameters().Select(p => p.ParameterType.Name)) + ")"));
+            throw new MissingMethodException(
+                $"No matching constructor for '{type.FullName}' with {args.Length} arg(s). Available: [{available}]");
+        }
+
+        try { return ((ConstructorInfo)ctor).Invoke(boundArgs); }
+        catch (TargetInvocationException tie) when (tie.InnerException is not null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(tie.InnerException).Throw();
+            throw;
         }
     }
 

@@ -27,16 +27,63 @@ public class ExceptionEmitters : StatementEmitterBase
         if (hasElse)
             noExFlag = _ctx.Locals.Declare($"__noex_{s.Line}", typeof(bool));
 
+        // ── Special case: return inside finally swallows any exception ─────────
+        // Python semantics: `return` in a `finally` block discards any in-flight
+        // exception. The CLR prohibits `leave` (and `ret`) inside BeginFinallyBlock,
+        // so we instead wrap the try body in a swallowing try/catch and emit the
+        // finally body as ordinary straight-line code after that block.
+        bool finallyHasReturn = hasFinally && !hasHandlers &&
+            StatementAnalyzer.ContainsReturnStatement(s.Finally);
+
+        if (finallyHasReturn)
+        {
+            var afterSwallow = IL.DefineLabel();
+            IL.BeginExceptionBlock();
+            _ctx.ExceptionBlockDepth++;
+            EmitAll(s.Body);
+            if (noExFlag is not null)
+            {
+                IL.Emit(OpCodes.Ldc_I4_1);
+                IL.Emit(OpCodes.Stloc, noExFlag);
+            }
+            // Catch and discard any exception — the return below overrides it.
+            IL.BeginCatchBlock(typeof(Exception));
+            IL.Emit(OpCodes.Pop);
+            IL.Emit(OpCodes.Leave, afterSwallow);
+            IL.EndExceptionBlock();
+            _ctx.ExceptionBlockDepth--;
+            IL.MarkLabel(afterSwallow);
+
+            // Emit the finally body using normal return semantics (no Leave restriction).
+            EmitAll(s.Finally);
+
+            if (hasElse && noExFlag is not null)
+            {
+                IL.Emit(OpCodes.Ldloc, noExFlag);
+                var skipElse2 = IL.DefineLabel();
+                IL.Emit(OpCodes.Brfalse, skipElse2);
+                EmitAll(s.Else);
+                IL.MarkLabel(skipElse2);
+            }
+            return;
+        }
+
+        // ── Normal path ───────────────────────────────────────────────────────
         if (hasFinally)
         {
             // Outer exception block for finally
             IL.BeginExceptionBlock();
+            _ctx.ExceptionBlockDepth++;
         }
 
         if (hasHandlers)
         {
-            // Inner exception block for handlers
+            // Inner exception block for handlers.
+            // IMPORTANT: CLR only allows ONE BeginCatchBlock per exception type per
+            // try block. We open a single catch(Exception) and dispatch to the
+            // correct Python handler body using isinst checks at runtime.
             IL.BeginExceptionBlock();
+            _ctx.ExceptionBlockDepth++;
             EmitAll(s.Body);
 
             if (noExFlag is not null)
@@ -45,46 +92,85 @@ public class ExceptionEmitters : StatementEmitterBase
                 IL.Emit(OpCodes.Stloc, noExFlag);
             }
 
-            foreach (var handler in s.Handlers)
+            // Single catch block for ALL handlers
+            IL.BeginCatchBlock(typeof(Exception));
+            var exTmp = _ctx.Locals.Declare($"__ex_{s.Line}", typeof(Exception));
+            IL.Emit(OpCodes.Stloc, exTmp);
+
+            if (noExFlag is not null)
             {
-                IL.BeginCatchBlock(typeof(Exception));
+                IL.Emit(OpCodes.Ldc_I4_0);
+                IL.Emit(OpCodes.Stloc, noExFlag);
+            }
 
+            // Label placed after EndExceptionBlock — all matched handlers Leave here
+            var afterHandlers = IL.DefineLabel();
+
+            for (int hi = 0; hi < s.Handlers.Count; hi++)
+            {
+                var handler = s.Handlers[hi];
+                var skipHandler = IL.DefineLabel();
                 var catchTypes = ResolveCatchTypes(handler);
-                var exTmp = _ctx.Locals.Declare($"__ex_{s.Line}_{handler.Line}", typeof(Exception));
-                IL.Emit(OpCodes.Stloc, exTmp);
 
-                if (catchTypes.Count > 1 || catchTypes[0] != typeof(Exception))
+                // Emit type check unless this is a bare `except:` (catches everything)
+                bool isBareExcept = handler.ExceptionType is null;
+                if (!isBareExcept)
                 {
-                    var matchedLabel = IL.DefineLabel();
+                    var matchLabel = IL.DefineLabel();
                     foreach (var ct in catchTypes)
                     {
                         IL.Emit(OpCodes.Ldloc, exTmp);
                         IL.Emit(OpCodes.Isinst, ct);
-                        IL.Emit(OpCodes.Brtrue, matchedLabel);
+                        IL.Emit(OpCodes.Brtrue, matchLabel);
                     }
-                    IL.Emit(OpCodes.Ldloc, exTmp);
-                    IL.Emit(OpCodes.Throw);
-                    IL.MarkLabel(matchedLabel);
+                    IL.Emit(OpCodes.Br, skipHandler);
+                    IL.MarkLabel(matchLabel);
                 }
 
+                // Bind exception variable if handler has `as <name>`.
+                // Fields (module-level vars) take priority over locals — same ordering
+                // as NameEmitters.EmitName and AssignmentEmitters.EmitStore.
                 if (handler.Name is not null)
                 {
-                    if (!_ctx.Locals.Contains(handler.Name))
-                        _ctx.Locals.Declare(handler.Name, typeof(Exception));
                     IL.Emit(OpCodes.Ldloc, exTmp);
-                    _ctx.Locals.EmitStore(handler.Name);
+                    if (_ctx.Fields.TryGetValue(handler.Name, out var exField))
+                        IL.Emit(OpCodes.Stsfld, exField);
+                    else
+                    {
+                        if (!_ctx.Locals.Contains(handler.Name))
+                            _ctx.Locals.Declare(handler.Name, typeof(object));
+                        _ctx.Locals.EmitStore(handler.Name);
+                        _ctx.ExceptionHandlerVars.Add(handler.Name);
+                    }
                 }
 
-                if (noExFlag is not null)
-                {
-                    IL.Emit(OpCodes.Ldc_I4_0);
-                    IL.Emit(OpCodes.Stloc, noExFlag);
-                }
-
+                // Track the active handler exception for implicit chaining (__context__).
+                // Any 'raise X' inside the handler body will see this and set X.__context__.
+                var prevHandlerEx = _ctx.ActiveHandlerExceptionLocal;
+                _ctx.ActiveHandlerExceptionLocal = exTmp;
                 EmitAll(handler.Body);
+                _ctx.ActiveHandlerExceptionLocal = prevHandlerEx;
+
+                // Per Python semantics: delete the handler variable after the block.
+                if (handler.Name is not null)
+                {
+                    IL.Emit(OpCodes.Ldsfld, NajaBuiltinsMethodCache.DeletedSentinel_Field);
+                    if (_ctx.Fields.TryGetValue(handler.Name, out var exFieldDel))
+                        IL.Emit(OpCodes.Stsfld, exFieldDel);
+                    else
+                        _ctx.Locals.EmitStore(handler.Name);
+                }
+
+                IL.Emit(OpCodes.Leave, afterHandlers);
+                IL.MarkLabel(skipHandler);
             }
 
-            IL.EndExceptionBlock();  // end inner (handler) block
+            // No handler matched — rethrow with original stack trace
+            IL.Emit(OpCodes.Rethrow);
+
+            IL.EndExceptionBlock();
+            _ctx.ExceptionBlockDepth--;
+            IL.MarkLabel(afterHandlers);
         }
         else
         {
@@ -104,7 +190,8 @@ public class ExceptionEmitters : StatementEmitterBase
         {
             IL.BeginFinallyBlock();
             EmitAll(s.Finally);
-            IL.EndExceptionBlock();  // end outer (finally) block
+            IL.EndExceptionBlock();
+            _ctx.ExceptionBlockDepth--;
         }
 
         // Emit else clause AFTER the entire exception handling structure
@@ -149,20 +236,39 @@ public class ExceptionEmitters : StatementEmitterBase
             // NajaBuiltins.EnsureException to normalize to a CLR Exception instance.
             IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.EnsureException_Method);
 
-            if (s.Cause is not null)
+            bool hasImplicitChain = _ctx.ActiveHandlerExceptionLocal is not null;
+            bool hasExplicitCause = s.Cause is not null;
+
+            if (hasImplicitChain || hasExplicitCause)
             {
-                // Must store exception first — cause gets emitted second
-                // so arg order on stack matches (Exception, object)
+                // Must save/restore the exception so we can call chaining helpers
+                // before the final Throw.
                 var exTmp = _ctx.Locals.Declare($"__raise_{s.Line}", typeof(Exception));
-                IL.Emit(OpCodes.Stloc, exTmp);          // pop Exception, save it
+                IL.Emit(OpCodes.Stloc, exTmp);
 
-                IL.Emit(OpCodes.Ldloc, exTmp);          // push Exception  (arg0)
-                _exprEmitter.Emit(s.Cause);                    // push cause      (arg1)
-                TypeMapper.EmitBox(IL, NajaTypes.Unknown);
+                // Implicit chaining: when a new exception is raised inside an except
+                // handler, Python sets new.__context__ = caught_exception.
+                if (hasImplicitChain)
+                {
+                    IL.Emit(OpCodes.Ldloc, exTmp);
+                    IL.Emit(OpCodes.Ldloc, _ctx.ActiveHandlerExceptionLocal!);
+                    IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.SetExceptionContext_Method);
+                    IL.Emit(OpCodes.Pop);  // discard returned Exception; we have exTmp
+                }
 
-                var setCause = typeof(NajaBuiltins)
-                    .GetMethod(nameof(NajaBuiltins.SetExceptionCause))!;
-                IL.Emit(OpCodes.Call, setCause);        // returns Exception, stack: [Exception]
+                // Explicit cause: 'raise X from Y' / 'raise X from None'
+                if (hasExplicitCause)
+                {
+                    IL.Emit(OpCodes.Ldloc, exTmp);          // push Exception  (arg0)
+                    _exprEmitter.Emit(s.Cause!);             // push cause      (arg1)
+                    TypeMapper.EmitBox(IL, NajaTypes.Unknown);
+                    IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.SetExceptionCause_Method);
+                    // SetExceptionCause returns Exception — leave on stack for Throw
+                }
+                else
+                {
+                    IL.Emit(OpCodes.Ldloc, exTmp);           // push Exception for Throw
+                }
             }
 
             IL.Emit(OpCodes.Throw);

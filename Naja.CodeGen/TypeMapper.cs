@@ -1,7 +1,6 @@
 using Naja.Semantics;
 using System.Reflection;
 using System.Reflection.Emit;
-using static Naja.CodeGen.NajaBuiltins;
 
 namespace Naja.CodeGen;
 
@@ -231,7 +230,7 @@ public static class TypeMapper
         "SystemExit" => typeof(Exception),
         "KeyboardInterrupt" => typeof(Exception),
         "BaseException" => typeof(Exception),
-        "ExceptionGroup" or "BaseExceptionGroup" => typeof(NajaExceptionGroup),
+        "ExceptionGroup" or "BaseExceptionGroup" => typeof(NajaBuiltins.NajaExceptionGroup),
         _ => null
     };
 }

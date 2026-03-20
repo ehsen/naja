@@ -65,6 +65,14 @@ public static class ReflectionHelpers
     public static object? GetAttr(object obj, string name)
     {
         if (obj is null) return null;
+
+        // Python type dunder attributes
+        if (obj is Type typeObj)
+        {
+            if (name == "__name__" || name == "__qualname__") return typeObj.Name;
+            if (name == "__module__") return typeObj.Namespace ?? "";
+        }
+
         var t = obj.GetType();
         var flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
 
@@ -91,6 +99,10 @@ public static class ReflectionHelpers
         // Try dict-like storage for Python objects
         if (obj is System.Collections.Generic.Dictionary<string, object> d &&
             d.TryGetValue(name, out var v)) return v;
+
+        // Python exception chaining attributes (__cause__, __context__, __suppress_context__)
+        var (chainFound, chainVal) = ExceptionHelpers.TryGetChainingAttr(obj, name);
+        if (chainFound) return chainVal;
 
         throw new Exception($"AttributeError: '{t.Name}' object has no attribute '{name}'");
     }
@@ -228,13 +240,14 @@ public static class ReflectionHelpers
             return StaticCall(type, method, args);
 
         string? bridgeName = null;
-        if (obj is string) bridgeName = "Str" + method;
-        else if (obj is System.Collections.Generic.List<object>) bridgeName = "List" + method;
-        else if (obj is System.Collections.Generic.Dictionary<object, object>) bridgeName = "Dict" + method;
+        Type? bridgeClass = null;
+        if (obj is string)                                                     { bridgeName = "Str"  + method; bridgeClass = typeof(StringFunctions); }
+        else if (obj is System.Collections.Generic.List<object>)               { bridgeName = "List" + method; bridgeClass = typeof(Collections); }
+        else if (obj is System.Collections.Generic.Dictionary<object, object>) { bridgeName = "Dict" + method; bridgeClass = typeof(Collections); }
 
-        if (bridgeName is not null)
+        if (bridgeName is not null && bridgeClass is not null)
         {
-            var bridgeM = typeof(NajaBuiltins).GetMethod(bridgeName,
+            var bridgeM = bridgeClass.GetMethod(bridgeName,
                 BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.IgnoreCase);
 
             if (bridgeM is not null)
@@ -509,7 +522,7 @@ public static class ReflectionHelpers
     /// Best-effort method binding for dynamic calls with argument coercion.
     /// Tries to match the given arguments to the best overload of a callable.
     /// </summary>
-    private static bool TryBindBestCallable(
+    internal static bool TryBindBestCallable(
         IEnumerable<MethodBase> candidates,
         object[] args,
         out MethodBase method,

@@ -15,6 +15,10 @@ public class ControlFlowEmitters : StatementEmitterBase
 {
     private readonly Stack<ILLabel> _breakLabels = new();
     private readonly Stack<ILLabel> _continueLabels = new();
+    // Exception-block depth at the point each loop was entered.
+    // If current depth > entry depth the branch must use `leave` instead of `br`.
+    private readonly Stack<int> _breakDepths = new();
+    private readonly Stack<int> _continueDepths = new();
 
     public ControlFlowEmitters(EmitContext ctx, ExpressionEmitter exprEmitter, Action<Statement> emitStatement)
         : base(ctx, exprEmitter, emitStatement)
@@ -64,26 +68,30 @@ public class ControlFlowEmitters : StatementEmitterBase
 
         // Push labels for break/continue
         _breakLabels.Push(endLabel);      // break skips else
+        _breakDepths.Push(_ctx.ExceptionBlockDepth);
         _continueLabels.Push(loopStart);
+        _continueDepths.Push(_ctx.ExceptionBlockDepth);
 
         IL.MarkLabel(loopStart);
         var whileCondType = _exprEmitter.Emit(s.Condition);
         EmitBrFalse(whileCondType, normalEnd);
 
         EmitAll(s.Body);
-        IL.Emit(OpCodes.Br, loopStart);
+        EmitLoopBack(loopStart);
 
         // Normal termination: run else
         IL.MarkLabel(normalEnd);
 
         _breakLabels.Pop();
+        _breakDepths.Pop();
         _continueLabels.Pop();
+        _continueDepths.Pop();
 
         EmitAll(s.Else);
         IL.MarkLabel(endLabel);
     }
 
-    // ── For statement ─────────────────────────────────────────────────────────
+    // ── For statement
 
     public void EmitFor(ForStatement s)
     {
@@ -102,7 +110,9 @@ public class ControlFlowEmitters : StatementEmitterBase
         var endLabel = IL.DefineLabel();
 
         _breakLabels.Push(endLabel);      // break skips else
+        _breakDepths.Push(_ctx.ExceptionBlockDepth);
         _continueLabels.Push(loopStart);
+        _continueDepths.Push(_ctx.ExceptionBlockDepth);
 
         // Get the iterable
         var iterType = _exprEmitter.Emit(s.Iter);
@@ -167,13 +177,15 @@ public class ControlFlowEmitters : StatementEmitterBase
 
         // Body
         EmitAll(s.Body);
-        IL.Emit(OpCodes.Br, loopStart);
+        EmitLoopBack(loopStart);
 
         // Normal termination: run else
         IL.MarkLabel(normalEnd);
 
         _breakLabels.Pop();
+        _breakDepths.Pop();
         _continueLabels.Pop();
+        _continueDepths.Pop();
 
         EmitAll(s.Else);
         IL.MarkLabel(endLabel);
@@ -231,14 +243,37 @@ public class ControlFlowEmitters : StatementEmitterBase
     {
         if (_breakLabels.Count == 0)
             throw new CodeGenException("break outside loop", s.Line, s.Column);
-        IL.Emit(OpCodes.Br, _breakLabels.Peek());
+        EmitJumpToLoopTarget(_breakLabels.Peek(), _breakDepths.Peek());
     }
 
     public void EmitContinue(ContinueStatement s)
     {
         if (_continueLabels.Count == 0)
             throw new CodeGenException("continue outside loop", s.Line, s.Column);
-        IL.Emit(OpCodes.Br, _continueLabels.Peek());
+        EmitJumpToLoopTarget(_continueLabels.Peek(), _continueDepths.Peek());
+    }
+
+    /// <summary>
+    /// Emit a branch back to a loop start/end label.
+    /// Uses `leave` when the current exception block depth is greater than it was
+    /// when the loop was entered (the branch must exit one or more protected regions).
+    /// </summary>
+    private void EmitJumpToLoopTarget(ILLabel target, int loopEntryDepth)
+    {
+        if (_ctx.ExceptionBlockDepth > loopEntryDepth)
+            IL.Emit(OpCodes.Leave, target);
+        else
+            IL.Emit(OpCodes.Br, target);
+    }
+
+    /// <summary>
+    /// Emit the loop back-edge (end of body → loop-start label).
+    /// </summary>
+    private void EmitLoopBack(ILLabel loopStart)
+    {
+        // The loop back-edge always targets a label at the same depth as loop entry
+        // (inside the same try block, or outside any try block), so `br` is fine.
+        IL.Emit(OpCodes.Br, loopStart);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

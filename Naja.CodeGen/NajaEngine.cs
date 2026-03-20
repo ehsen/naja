@@ -163,6 +163,7 @@ public sealed class NajaEngine
         // the Exception thrown by failed assert statements, which the test
         // runner distinguishes from CodeGenException.
 
+        Builtins.TypeSystem.SetCurrentAssembly(assembly);
         try
         {
             entryMethod.Invoke(null, null);
@@ -172,6 +173,10 @@ public sealed class NajaEngine
             System.Runtime.ExceptionServices.ExceptionDispatchInfo
                 .Capture(tie.InnerException)
                 .Throw();
+        }
+        finally
+        {
+            Builtins.TypeSystem.SetCurrentAssembly(null);
         }
     }
 }
