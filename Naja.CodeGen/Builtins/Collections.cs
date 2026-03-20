@@ -187,10 +187,34 @@ public static class Collections
     }
 
     /// <summary>Return an enumerate object that yields (index, value) tuples.</summary>
-    public static List<object> Enumerate(object[] args) => NajaBuiltins.Enumerate(args);
+    public static List<object> Enumerate(object[] args)
+    {
+        var iterable = args[0];
+        long start = args.Length > 1 ? Convert.ToInt64(args[1]) : 0;
+        var result = new List<object>();
+        long i = start;
+        foreach (var item in (System.Collections.IEnumerable)iterable)
+            result.Add(new object[] { (object)i++, item });
+        return result;
+    }
 
     /// <summary>Zip multiple iterables into tuples.</summary>
-    public static List<object> Zip(object[] args) => NajaBuiltins.Zip(args);
+    public static List<object> Zip(object[] args)
+    {
+        var iters = args.Select(a =>
+            ((System.Collections.IEnumerable)a).GetEnumerator()).ToArray();
+        var result = new List<object>();
+        while (iters.All(e => e.MoveNext()))
+            result.Add(iters.Select(e => e.Current).ToArray());
+        return result;
+    }
+
+    /// <summary>Convert any iterable to an object list for unpacking (e.g., *args).</summary>
+    public static List<object?> UnpackIterable(object? obj)
+    {
+        if (obj is null) throw new Exception("TypeError: cannot unpack non-iterable None");
+        return ((System.Collections.IEnumerable)obj).Cast<object?>().ToList();
+    }
 
     /// <summary>Apply a function to every item of an iterable.</summary>
     public static List<object> Map(object func, object iterable) => NajaBuiltins.Map(func, iterable);

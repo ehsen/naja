@@ -81,10 +81,10 @@ internal static class NajaBuiltinsMethodCache
         typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Reversed))!;
 
     public static readonly MethodInfo Enumerate_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Enumerate))!;
+        typeof(Collections).GetMethod(nameof(Collections.Enumerate))!;
 
     public static readonly MethodInfo Zip_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Zip))!;
+        typeof(Collections).GetMethod(nameof(Collections.Zip))!;
 
     public static readonly MethodInfo Map_Method = 
         typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Map))!;
@@ -164,10 +164,10 @@ internal static class NajaBuiltinsMethodCache
 
     // ── I/O operations ──────────────────────────────────────────────────────
     public static readonly MethodInfo Print_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Print))!;
+        typeof(IOFunctions).GetMethod(nameof(IOFunctions.Print))!;
 
     public static readonly MethodInfo Input_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Input))!;
+        typeof(IOFunctions).GetMethod(nameof(IOFunctions.Input))!;
 
     // ── Collection operations ────────────────────────────────────────────────
     public static readonly MethodInfo Len_Method = 
@@ -192,7 +192,7 @@ internal static class NajaBuiltinsMethodCache
         typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Oct))!;
 
     public static readonly MethodInfo Open_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Open))!;
+        typeof(IOFunctions).GetMethod(nameof(IOFunctions.Open))!;
 
     public static readonly MethodInfo Id_Method = 
         typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.Id))!;
@@ -210,7 +210,7 @@ internal static class NajaBuiltinsMethodCache
         typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.Iter))!;
 
     public static readonly MethodInfo NextVararg_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.NextVararg))!;
+        typeof(Iterators).GetMethod(nameof(Iterators.NextVararg))!;
 
     // ── Exception handling ───────────────────────────────────────────────────
     public static readonly MethodInfo Assert_Method = 
@@ -233,7 +233,7 @@ internal static class NajaBuiltinsMethodCache
         typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.CreateFunctionWithDefaults))!;
 
     public static readonly MethodInfo IteratorMoveNext_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.IteratorMoveNext))!;
+        typeof(Iterators).GetMethod(nameof(Iterators.IteratorMoveNext))!;
 
     // ── String operations ────────────────────────────────────────────────────
     public static readonly MethodInfo Format_Method = 
@@ -259,7 +259,7 @@ internal static class NajaBuiltinsMethodCache
         typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.GetUnpackSlice))!;
 
     public static readonly MethodInfo UnpackIterable_Method = 
-        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.UnpackIterable))!;
+        typeof(Collections).GetMethod(nameof(Collections.UnpackIterable))!;
 
     // ── Exception & Context operations ───────────────────────────────────────
     public static readonly MethodInfo ToStr_Method = 

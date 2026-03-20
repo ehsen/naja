@@ -77,4 +77,35 @@ public static class Iterators
 
         public void Reset() => throw new NotSupportedException("Python iterators do not support Reset()");
     }
+
+    /// <summary>Variadic next() entry point: next(iterator) or next(iterator, default).</summary>
+    public static object? NextVararg(object[] args)
+    {
+        if (args.Length == 0)
+            throw new Exception("TypeError: next expected at least 1 argument");
+        var iterator = args[0];
+        if (iterator is null)
+            throw new Exception("TypeError: 'NoneType' object is not an iterator. Did you forget to return a generator from your function?");
+        var e = (System.Collections.IEnumerator)iterator;
+        if (e.MoveNext()) return e.Current;
+        if (args.Length > 1) return args[1];
+        throw new InvalidOperationException("StopIteration");
+    }
+
+    /// <summary>Helper for implementing IEnumerator.MoveNext() using Python __next__ method.</summary>
+    public static bool IteratorMoveNext(Func<object> nextMethod, ref object currentValue, ref bool exhausted)
+    {
+        if (exhausted) return false;
+
+        try
+        {
+            currentValue = nextMethod();
+            return true;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException || ex.Message == "StopIteration")
+        {
+            exhausted = true;
+            return false;
+        }
+    }
 }
