@@ -7,6 +7,7 @@ using NajaParser = Naja.Parser.Parser;
 
 namespace Naja.CodeGen.Tests;
 
+[Collection("SerialConsole")]
 public class CodeGenTests
 {
     private static readonly object _runLock = new();

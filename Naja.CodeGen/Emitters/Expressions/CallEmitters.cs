@@ -302,7 +302,14 @@ public sealed class CallEmitters : ExpressionEmitterBase
 
             if (candidates.Count == 0 && attr.Attribute == "__init__")
             {
-                var ctors = baseType.GetConstructors(flags).ToList();
+                // If the base is an uncreated TypeBuilder, GetConstructors() throws
+                // NotSupportedException — use the registry instead.
+                List<ConstructorInfo> ctors;
+                if (baseType is TypeBuilder && _ctx.ClassConstructors.TryGetValue(baseType.Name, out var knownCb))
+                    ctors = new List<ConstructorInfo> { knownCb };
+                else
+                    ctors = baseType.GetConstructors(flags).ToList();
+
                 var ctor = ctors.FirstOrDefault(c =>
                 {
                     if (c is ConstructorBuilder && _ctx.ClassCtorArgCounts.TryGetValue(baseType.Name, out var count))

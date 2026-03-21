@@ -63,12 +63,11 @@ public sealed class GeneratorEmitters : ExpressionEmitterBase
         if (_ctx.GeneratorListLocal is null)
             throw new CodeGenException("'yield from' used in non-generator function", e.Line, e.Column);
 
-        // Iterate the sub-iterable and add every value to the generator list
+        // Iterate the sub-iterable and add every value to the generator list.
+        // Use GetForLoopEnumerator so strings yield single-char strings, not chars.
         var iterType = _mainEmitter.Emit(e.Value);
         TypeMapper.EmitBox(IL, iterType);
-        IL.Emit(OpCodes.Castclass, typeof(System.Collections.IEnumerable));
-        var getEnum = typeof(System.Collections.IEnumerable).GetMethod("GetEnumerator")!;
-        IL.Emit(OpCodes.Callvirt, getEnum);
+        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.GetForLoopEnumerator_Method);
 
         var enumLocal = _ctx.Locals.Declare($"__yf_enum_{e.Line}_{e.Column}", typeof(System.Collections.IEnumerator));
         IL.Emit(OpCodes.Stloc, enumLocal);

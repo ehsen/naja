@@ -1,4 +1,5 @@
 using Naja.CodeGen;
+using Naja.CodeGen.Emitters.Statements;
 using Naja.Inference;
 using Naja.Parser;
 using Naja.Semantics;
@@ -134,7 +135,10 @@ public sealed partial class AssemblyEmitter
                                     if (target is NameExpr cn)
                                     {
                                         // Emit as public static field on the class
-                                        ct.DefineField(cn.Name, typeof(object), FieldAttributes.Public | FieldAttributes.Static);
+                                        var sfb = ct.DefineField(cn.Name, typeof(object), FieldAttributes.Public | FieldAttributes.Static);
+                                        if (!_classStaticFieldBuilders.ContainsKey(cls.Name))
+                                            _classStaticFieldBuilders[cls.Name] = new();
+                                        _classStaticFieldBuilders[cls.Name][cn.Name] = sfb;
                                     }
                                 }
                             }
@@ -202,6 +206,19 @@ public sealed partial class AssemblyEmitter
                         }
                         break;
                     }
+            }
+        }
+
+        // Deep scan: hoist module-level control-flow variables referenced by nested functions
+        // (e.g. `for i in range(3): def f(): return i` — `i` must be a static field, not a local)
+        {
+            var moduleNestedRefs = StatementAnalyzer.CollectNamesReferencedByNestedFunctions(module.Body);
+            var moduleAssigned = StatementAnalyzer.CollectAssignedNames(module.Body);
+            foreach (var r in moduleNestedRefs.Intersect(moduleAssigned))
+            {
+                if (!fields.ContainsKey(r))
+                    fields[r] = typeBuilder.DefineField(r, typeof(object),
+                        FieldAttributes.Public | FieldAttributes.Static);
             }
         }
 

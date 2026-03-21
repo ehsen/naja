@@ -87,6 +87,10 @@ public sealed partial class AssemblyEmitter
     // Key = class name. Value = (ILGenerator, argCount).
     private readonly Dictionary<string, (ILGenerator IL, int ArgCount)> _pendingCtorIL = new();
 
+    // Stores FieldBuilders for class-level static variables (x = 42 at class scope).
+    // Populated by Pass 1.5, used by Pass 3 (.cctor emission).
+    private readonly Dictionary<string, Dictionary<string, FieldBuilder>> _classStaticFieldBuilders = new();
+
     // Stashed by EmitModule so EmitToFile can wire it as PE entry point.
     // Must be a MethodBuilder — PersistedAssemblyBuilder only accepts the handle form.
     private MethodBuilder? _mainMethod;

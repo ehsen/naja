@@ -118,17 +118,14 @@ public sealed class ExpressionEmitter
         {
             // Load the iterable from the method parameter (ldarg.0)
             IL.Emit(OpCodes.Ldarg_0);
-            IL.Emit(OpCodes.Castclass, typeof(System.Collections.IEnumerable));
         }
         else
         {
             var iterType = Emit(gen.Iter);
             TypeMapper.EmitBox(IL, iterType);
-            IL.Emit(OpCodes.Castclass, typeof(System.Collections.IEnumerable));
         }
 
-        var getEnum = typeof(System.Collections.IEnumerable).GetMethod("GetEnumerator")!;
-        IL.Emit(OpCodes.Callvirt, getEnum);
+        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.GetForLoopEnumerator_Method);
 
         var enumLocal = _ctx.Locals.Declare($"__cenum_{depth}_{gen.Iter.Line}_{gen.Iter.Column}",
             typeof(System.Collections.IEnumerator));
@@ -148,7 +145,9 @@ public sealed class ExpressionEmitter
 
         foreach (var cond in gen.Conditions)
         {
-            Emit(cond);
+            var condType = Emit(cond);
+            if (condType is not (IntType or FloatType or BoolType))
+                IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ToBool_Method);
             var condTrueLabel = IL.DefineLabel();
             IL.Emit(OpCodes.Brtrue_S, condTrueLabel);
             IL.Emit(OpCodes.Br, loopStart);

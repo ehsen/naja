@@ -61,8 +61,14 @@ public static class StatementAnalyzer
         {
             if (stmt is FunctionDef fn)
             {
-                var nested = CollectReferencedNames(fn.Body);
-                foreach (var n in nested) names.Add(n);
+                var referenced = CollectReferencedNames(fn.Body);
+                var locallyAssigned = CollectAssignedNames(fn.Body);
+                var nonlocalNames = CollectNonlocalNames(fn.Body);
+                foreach (var nl in nonlocalNames) locallyAssigned.Remove(nl);
+                foreach (var p in fn.Params) locallyAssigned.Add(p.Name);
+                foreach (var n in referenced)
+                    if (!locallyAssigned.Contains(n))
+                        names.Add(n);
             }
             else if (stmt is IfStatement ifs)
             {
@@ -89,6 +95,17 @@ public static class StatementAnalyzer
             }
         }
         return names;
+    }
+
+    /// <summary>
+    /// Returns true if the last statement in <paramref name="body"/> always transfers
+    /// control unconditionally (raise, return), so no further IL is needed after it.
+    /// Used to avoid emitting dead code (Leave/store) after Throw/Rethrow in catch handlers.
+    /// </summary>
+    public static bool EndsWithUnconditionalTransfer(IReadOnlyList<Statement> body)
+    {
+        if (body.Count == 0) return false;
+        return body[^1] is RaiseStatement or ReturnStatement;
     }
 
     /// <summary>
@@ -261,6 +278,51 @@ public static class StatementAnalyzer
             case ListCompExpr lce: CollectNamesInExpr(lce.Element, names); foreach (var g in lce.Generators) { CollectNamesInExpr(g.Iter, names); foreach (var c in g.Conditions) CollectNamesInExpr(c, names); } break;
             case LambdaExpr le2: CollectNamesInExpr(le2.Body, names); break;
             default: break;
+        }
+    }
+
+    public static HashSet<string> CollectNonlocalNames(IReadOnlyList<Statement> body)
+    {
+        var names = new HashSet<string>();
+        foreach (var stmt in body) CollectNonlocalNamesInStmt(stmt, names);
+        return names;
+    }
+
+    public static HashSet<string> CollectGlobalNames(IReadOnlyList<Statement> body)
+    {
+        var names = new HashSet<string>();
+        foreach (var stmt in body)
+            if (stmt is GlobalStatement gs)
+                foreach (var n in gs.Names) names.Add(n);
+        return names;
+    }
+
+    private static void CollectNonlocalNamesInStmt(Statement stmt, HashSet<string> names)
+    {
+        switch (stmt)
+        {
+            case NonlocalStatement nl:
+                foreach (var n in nl.Names) names.Add(n);
+                break;
+            case IfStatement ifs:
+                foreach (var s in ifs.Then) CollectNonlocalNamesInStmt(s, names);
+                foreach (var (_, b) in ifs.Elifs) foreach (var s in b) CollectNonlocalNamesInStmt(s, names);
+                foreach (var s in ifs.Else) CollectNonlocalNamesInStmt(s, names);
+                break;
+            case WhileStatement ws:
+                foreach (var s in ws.Body) CollectNonlocalNamesInStmt(s, names);
+                break;
+            case ForStatement fs:
+                foreach (var s in fs.Body) CollectNonlocalNamesInStmt(s, names);
+                break;
+            case TryStatement ts:
+                foreach (var s in ts.Body) CollectNonlocalNamesInStmt(s, names);
+                foreach (var h in ts.Handlers) foreach (var s in h.Body) CollectNonlocalNamesInStmt(s, names);
+                break;
+            case WithStatement wts:
+                foreach (var s in wts.Body) CollectNonlocalNamesInStmt(s, names);
+                break;
+            // Do NOT recurse into nested FunctionDef — nonlocal scope is per-function
         }
     }
 }

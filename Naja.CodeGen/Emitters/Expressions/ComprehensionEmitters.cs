@@ -196,17 +196,14 @@ public sealed class ComprehensionEmitters : ExpressionEmitterBase
         {
             // Load the iterable from the method parameter (ldarg.0)
             IL.Emit(OpCodes.Ldarg_0);
-            IL.Emit(OpCodes.Castclass, typeof(System.Collections.IEnumerable));
         }
         else
         {
             var iterType = _mainEmitter.Emit(gen.Iter);
             TypeMapper.EmitBox(IL, iterType);
-            IL.Emit(OpCodes.Castclass, typeof(System.Collections.IEnumerable));
         }
 
-        var getEnum = typeof(System.Collections.IEnumerable).GetMethod("GetEnumerator")!;
-        IL.Emit(OpCodes.Callvirt, getEnum);
+        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.GetForLoopEnumerator_Method);
 
         var enumLocal = _ctx.Locals.Declare($"__cenum_{depth}_{gen.Iter.Line}_{gen.Iter.Column}",
             typeof(System.Collections.IEnumerator));
@@ -226,7 +223,9 @@ public sealed class ComprehensionEmitters : ExpressionEmitterBase
 
         foreach (var cond in gen.Conditions)
         {
-            _mainEmitter.Emit(cond);
+            var condType = _mainEmitter.Emit(cond);
+            if (condType is not (IntType or FloatType or BoolType))
+                IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ToBool_Method);
             var condTrueLabel = IL.DefineLabel();
             IL.Emit(OpCodes.Brtrue_S, condTrueLabel);
             IL.Emit(OpCodes.Br, loopStart);
@@ -261,9 +260,7 @@ public sealed class ComprehensionEmitters : ExpressionEmitterBase
         // Get enumerator
         var iterType = _mainEmitter.Emit(gen.Iter);
         TypeMapper.EmitBox(IL, iterType);
-        IL.Emit(OpCodes.Castclass, typeof(System.Collections.IEnumerable));
-        var getEnum = typeof(System.Collections.IEnumerable).GetMethod("GetEnumerator")!;
-        IL.Emit(OpCodes.Callvirt, getEnum);
+        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.GetForLoopEnumerator_Method);
 
         var enumLocal = _ctx.Locals.Declare($"__cenum_{depth}_{generators[depth].Iter.Line}",
             typeof(System.Collections.IEnumerator));
@@ -287,8 +284,9 @@ public sealed class ComprehensionEmitters : ExpressionEmitterBase
         // Emit filter conditions (if clauses)
         foreach (var cond in gen.Conditions)
         {
-            _mainEmitter.Emit(cond);
-            // If condition is Unknown (object), unbox to bool
+            var condType = _mainEmitter.Emit(cond);
+            if (condType is not (IntType or FloatType or BoolType))
+                IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ToBool_Method);
             var condTrueLabel = IL.DefineLabel();
             IL.Emit(OpCodes.Brtrue_S, condTrueLabel);
             IL.Emit(OpCodes.Br, loopStart);

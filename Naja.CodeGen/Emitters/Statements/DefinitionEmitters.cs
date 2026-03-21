@@ -383,8 +383,17 @@ public class DefinitionEmitters : StatementEmitterBase
         {
             if (stmt is FunctionDef fn)
             {
-                var nested = CollectReferencedNames(fn.Body);
-                foreach (var n in nested) names.Add(n);
+                // Only hoist names that are FREE in the nested function:
+                // referenced but NOT locally assigned AND NOT a parameter of that function.
+                // Names declared nonlocal are free vars (they reference the enclosing scope).
+                var referenced = CollectReferencedNames(fn.Body);
+                var locallyAssigned = CollectAssignedNames(fn.Body);
+                var nonlocalNames = CollectNonlocalNames(fn.Body);
+                foreach (var nl in nonlocalNames) locallyAssigned.Remove(nl);
+                foreach (var p in fn.Params) locallyAssigned.Add(p.Name);
+                foreach (var n in referenced)
+                    if (!locallyAssigned.Contains(n))
+                        names.Add(n);
             }
             else if (stmt is IfStatement ifs)
             {

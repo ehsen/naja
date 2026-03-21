@@ -66,11 +66,26 @@ public static class ReflectionHelpers
     {
         if (obj is null) return null;
 
-        // Python type dunder attributes
+        // Python type dunder attributes + class-level attribute access (Foo.x)
         if (obj is Type typeObj)
         {
             if (name == "__name__" || name == "__qualname__") return typeObj.Name;
             if (name == "__module__") return typeObj.Namespace ?? "";
+
+            // Class-level attribute access: Foo.x → static field/property on the type
+            var classFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy;
+            try
+            {
+                var sProp = typeObj.GetProperty(name, classFlags);
+                if (sProp is not null) return sProp.GetValue(null);
+            }
+            catch { }
+            try
+            {
+                var sFld = typeObj.GetField(name, classFlags);
+                if (sFld is not null) return sFld.GetValue(null);
+            }
+            catch { }
         }
 
         var t = obj.GetType();
@@ -95,6 +110,16 @@ public static class ReflectionHelpers
         }
 
         if (field is not null) return field.GetValue(obj);
+
+        // Python MRO fallback: class variables (static fields) accessible via instance
+        FieldInfo? staticField = null;
+        try
+        {
+            staticField = t.GetField(name,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy);
+        }
+        catch { }
+        if (staticField is not null) return staticField.GetValue(null);
 
         // Try dict-like storage for Python objects
         if (obj is System.Collections.Generic.Dictionary<string, object> d &&
@@ -412,15 +437,31 @@ public static class ReflectionHelpers
         => obj is null ? 0 : RuntimeHelpers.GetHashCode(obj);
 
     /// <summary>Get the hash code of an object.</summary>
-    public static int Hash(object obj)
+    public static long Hash(object obj)
     {
-        if (obj is null) return 0;
-        if (obj is int i) return i;
-        if (obj is long l) return l.GetHashCode();
-        if (obj is string s) return s.GetHashCode();
-        if (obj is double d) return d.GetHashCode();
-        if (obj is bool b) return b.GetHashCode();
-        return obj.GetHashCode();
+        if (obj is null) return 0L;
+        if (obj is int i) return (long)i;
+        if (obj is long l) return (long)(int)l;
+        if (obj is string s) return (long)s.GetHashCode();
+        if (obj is double d) return (long)d.GetHashCode();
+        if (obj is bool b) return b ? 1L : 0L;
+        // object[] is a Naja tuple — hash structurally like Python
+        if (obj is object[] arr)
+        {
+            unchecked
+            {
+                long h = 0x345678L;
+                foreach (var item in arr)
+                {
+                    long ih = Hash(item);
+                    h = (h ^ ih) * 1000003L;
+                }
+                h ^= arr.Length;
+                if (h == -1) h = -2;
+                return (long)(int)h;
+            }
+        }
+        return (long)obj.GetHashCode();
     }
 
     /// <summary>Get the __dict__ of an object (its attributes as a dictionary).</summary>
@@ -511,10 +552,21 @@ public static class ReflectionHelpers
     public static bool Contains(object container, object item)
     {
         if (container is null) return false;
-        if (container is string s && item is string si) return s.Contains(si);
-        if (container is System.Collections.Generic.List<object> l) return l.Contains(item);
-        if (container is System.Collections.Generic.Dictionary<object, object> d) return d.ContainsKey(item);
-        if (container is System.Collections.IEnumerable e) return e.Cast<object>().Contains(item);
+        if (container is string s)
+            return s.Contains(item is string si ? si : NajaBuiltins.ToStr(item));
+        if (container is System.Collections.Generic.List<object> l)
+            return l.Any(x => ComparisonOperators.DynamicEq(x, item));
+        if (container is System.Collections.Generic.Dictionary<object, object> d)
+            return d.Keys.Any(k => ComparisonOperators.DynamicEq(k, item));
+        if (container is System.Collections.Generic.HashSet<object> h)
+            return h.Any(x => ComparisonOperators.DynamicEq(x, item));
+        // Custom __contains__ dunder for user-defined types
+        var cm = container.GetType().GetMethod("__contains__",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+        if (cm is not null)
+            return Convert.ToBoolean(cm.Invoke(container, new object[] { item }));
+        if (container is System.Collections.IEnumerable e)
+            return e.Cast<object>().Any(x => ComparisonOperators.DynamicEq(x, item));
         return false;
     }
 

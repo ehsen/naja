@@ -206,7 +206,15 @@ public sealed partial class AssemblyEmitter
         foreach (var mn in _classMethodNames) ctx.ClassMethods.Add(mn);
         foreach (var (k, v) in importMap) ctx.ImportMap[k] = v;
 
-        // Hoist variables referenced by nested functions: if an inner function
+        // LEGB: locally-assigned names shadow module-level fields unless declared 'global'.
+        // Remove the module field from ctx so the emitter creates a proper local instead.
+        var fnGlobals = Naja.CodeGen.Emitters.Statements.StatementAnalyzer.CollectGlobalNames(fn.Body);
+        var fnAssigned = Naja.CodeGen.Emitters.Statements.StatementAnalyzer.CollectAssignedNames(fn.Body);
+        foreach (var name in fnAssigned)
+            if (!fnGlobals.Contains(name))
+                ctx.Fields.Remove(name);
+
+        // Hoist variables referenced by nested functions:
         // references a name that is assigned in this function, promote that name
         // to a module-level static field so the inner function sees the enclosing
         // binding (Python LEGB semantics).

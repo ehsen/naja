@@ -64,7 +64,8 @@ public static class ComparisonOperators
             catch { }
         }
 
-        return false;
+        // Custom class equality via overridden Equals (delegates to __eq__)
+        return a.Equals(b);
     }
 
     /// <summary>
@@ -86,6 +87,9 @@ public static class ComparisonOperators
             catch { }
         }
         if (a is string sa && b is string sb) return sa.CompareTo(sb) < 0;
+        var ltM = a?.GetType().GetMethod("__lt__",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+        if (ltM is not null) return System.Convert.ToBoolean(ltM.Invoke(a, new object[] { b }));
         throw new TypeError($"'<' not supported between instances of '{a?.GetType().Name}' and '{b?.GetType().Name}'");
     }
 
@@ -108,6 +112,9 @@ public static class ComparisonOperators
             catch { }
         }
         if (a is string sa && b is string sb) return sa.CompareTo(sb) > 0;
+        var gtM = a?.GetType().GetMethod("__gt__",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+        if (gtM is not null) return System.Convert.ToBoolean(gtM.Invoke(a, new object[] { b }));
         throw new TypeError($"'>' not supported between instances of '{a?.GetType().Name}' and '{b?.GetType().Name}'");
     }
 

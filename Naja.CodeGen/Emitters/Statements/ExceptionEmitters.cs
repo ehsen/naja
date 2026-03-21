@@ -151,17 +151,24 @@ public class ExceptionEmitters : StatementEmitterBase
                 EmitAll(handler.Body);
                 _ctx.ActiveHandlerExceptionLocal = prevHandlerEx;
 
-                // Per Python semantics: delete the handler variable after the block.
-                if (handler.Name is not null)
+                // If the handler body always terminates unconditionally (bare raise,
+                // raise X, return), skip the deletion and Leave to avoid dead code
+                // after Throw/Rethrow which can cause InvalidProgramException.
+                bool handlerTerminates = StatementAnalyzer.EndsWithUnconditionalTransfer(handler.Body);
+                if (!handlerTerminates)
                 {
-                    IL.Emit(OpCodes.Ldsfld, NajaBuiltinsMethodCache.DeletedSentinel_Field);
-                    if (_ctx.Fields.TryGetValue(handler.Name, out var exFieldDel))
-                        IL.Emit(OpCodes.Stsfld, exFieldDel);
-                    else
-                        _ctx.Locals.EmitStore(handler.Name);
-                }
+                    // Per Python semantics: delete the handler variable after the block.
+                    if (handler.Name is not null)
+                    {
+                        IL.Emit(OpCodes.Ldsfld, NajaBuiltinsMethodCache.DeletedSentinel_Field);
+                        if (_ctx.Fields.TryGetValue(handler.Name, out var exFieldDel))
+                            IL.Emit(OpCodes.Stsfld, exFieldDel);
+                        else
+                            _ctx.Locals.EmitStore(handler.Name);
+                    }
 
-                IL.Emit(OpCodes.Leave, afterHandlers);
+                    IL.Emit(OpCodes.Leave, afterHandlers);
+                }
                 IL.MarkLabel(skipHandler);
             }
 

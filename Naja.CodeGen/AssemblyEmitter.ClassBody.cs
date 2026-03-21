@@ -250,6 +250,29 @@ public sealed partial class AssemblyEmitter
             }
         }
 
+        // ── Emit static constructor for class-level variable initialization ──────
+        if (_classStaticFieldBuilders.TryGetValue(cls.Name, out var staticFBs) && staticFBs.Count > 0)
+        {
+            var cctorMb = ct.DefineTypeInitializer();
+            var cctorIL = cctorMb.GetILGenerator();
+            var cctorCtx = new EmitContext(cctorIL, _model, ct, modBuilder, typeof(void), []);
+            foreach (var (k, v) in moduleFields) cctorCtx.Fields[k] = v;
+            foreach (var (k, v) in moduleMethods) cctorCtx.Methods[k] = v;
+            var cctorExpr = new ExpressionEmitter(cctorCtx);
+            foreach (var member in cls.Body)
+            {
+                if (member is AssignStatement assign)
+                    foreach (var target in assign.Targets)
+                        if (target is NameExpr ne && staticFBs.TryGetValue(ne.Name, out var sfb))
+                        {
+                            var valType = cctorExpr.Emit(assign.Value);
+                            TypeMapper.EmitBox(cctorIL, valType);
+                            cctorIL.Emit(OpCodes.Stsfld, sfb);
+                        }
+            }
+            cctorIL.Emit(OpCodes.Ret);
+        }
+
         // ── Emit method bodies ────────────────────────────────────────────────
         foreach (var member in cls.Body)
         {

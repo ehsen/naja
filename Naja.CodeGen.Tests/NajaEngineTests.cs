@@ -7,6 +7,7 @@ namespace Naja.CodeGen.Tests;
 /// <summary>
 /// Tests for the NajaEngine scripting entry point.
 /// </summary>
+[Collection("SerialConsole")]
 public class NajaEngineTests : IDisposable
 {
     private readonly string _tempDir;
