@@ -1,4 +1,5 @@
 using System.Reflection.Emit;
+using Naja.CodeGen.Builtins;
 using Naja.Parser;
 using Naja.Semantics;
 
@@ -160,25 +161,36 @@ public sealed class NameEmitters : ExpressionEmitterBase
         {
             var pts = _ctx.MethodParamTypes.TryGetValue(e.Name, out var t) ? t : System.Array.Empty<Type>();
 
-            // If this function captures outer-scope params or cell vars, wrap in NajaFunction
-            // so each call to the outer function gets its own snapshot.
+            // Check if this function has parameter defaults or captures
             _ctx.FunctionCapturedParams.TryGetValue(e.Name, out var capturedParams);
             _ctx.FunctionCapturedCells.TryGetValue(e.Name, out var capturedCells);
+            _ctx.FunctionDefs.TryGetValue(e.Name, out var functionDef);
             capturedParams ??= new List<string>();
             capturedCells ??= new List<string>();
 
-            if (capturedParams.Count > 0 || capturedCells.Count > 0)
+            // Count parameters with default values
+            int defaultParamCount = 0;
+            if (functionDef is not null)
             {
-                var totalCaptures = capturedParams.Count + capturedCells.Count;
+                defaultParamCount = functionDef.Params.Count(p => p.Default is not null);
+            }
+
+            // If this function has captures OR defaults, wrap in NajaFunction
+            if (capturedParams.Count > 0 || capturedCells.Count > 0 || defaultParamCount > 0)
+            {
+                var totalDefaults = capturedParams.Count + capturedCells.Count + defaultParamCount;
                 var typeArgs = pts.Concat(new[] { typeof(object) }).ToArray();
                 var delegateType = System.Linq.Expressions.Expression.GetFuncType(typeArgs);
                 var ctor = delegateType.GetConstructors()[0];
                 IL.Emit(OpCodes.Ldnull);
                 IL.Emit(OpCodes.Ldftn, method);
                 IL.Emit(OpCodes.Newobj, ctor);
-                // Build defaults array: captured param values first, then cell references
-                IL.Emit(OpCodes.Ldc_I4, totalCaptures);
+
+                // Build defaults array: captured param values first, then cell references, then default param values
+                IL.Emit(OpCodes.Ldc_I4, totalDefaults);
                 IL.Emit(OpCodes.Newarr, typeof(object));
+
+                // 1. Captured outer params
                 for (int ci = 0; ci < capturedParams.Count; ci++)
                 {
                     IL.Emit(OpCodes.Dup);
@@ -189,12 +201,12 @@ public sealed class NameEmitters : ExpressionEmitterBase
                         IL.Emit(OpCodes.Ldnull);
                     IL.Emit(OpCodes.Stelem_Ref);
                 }
+
+                // 2. Captured cell references
                 for (int ci = 0; ci < capturedCells.Count; ci++)
                 {
                     IL.Emit(OpCodes.Dup);
                     IL.Emit(OpCodes.Ldc_I4, capturedParams.Count + ci);
-                    // Load the cell reference from CellLocals (outer function allocated the cell)
-                    // or from CellParamOf (this function received it as a param and passes it on)
                     if (_ctx.CellLocals.TryGetValue(capturedCells[ci], out var cellLoc))
                         IL.Emit(OpCodes.Ldloc, cellLoc);
                     else if (_ctx.CellParamOf.TryGetValue(capturedCells[ci], out var cParamName)
@@ -204,6 +216,26 @@ public sealed class NameEmitters : ExpressionEmitterBase
                         IL.Emit(OpCodes.Ldnull);
                     IL.Emit(OpCodes.Stelem_Ref);
                 }
+
+                // 3. Function parameter defaults
+                if (functionDef is not null)
+                {
+                    int defIdx = 0;
+                    foreach (var param in functionDef.Params)
+                    {
+                        if (param.Default is not null)
+                        {
+                            IL.Emit(OpCodes.Dup);
+                            IL.Emit(OpCodes.Ldc_I4, capturedParams.Count + capturedCells.Count + defIdx);
+                            // Emit the default expression value
+                            var defaultType = _mainEmitter.Emit(param.Default);
+                            TypeMapper.EmitBox(IL, defaultType);
+                            IL.Emit(OpCodes.Stelem_Ref);
+                            defIdx++;
+                        }
+                    }
+                }
+
                 IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.CreateFunctionWithDefaults_Method);
                 return NajaTypes.Unknown;
             }
@@ -274,6 +306,15 @@ public sealed class NameEmitters : ExpressionEmitterBase
         // 6a. Namespace imports: import System → System is a valid reference
         if (_ctx.NamespaceImports.ContainsKey(e.Name))
         {
+            // Special case: Python 're' module returns a NajaReModule singleton instance
+            if (e.Name == "re")
+            {
+                var reField = typeof(NajaReModule).GetField("Instance",
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)!;
+                IL.Emit(OpCodes.Ldsfld, reField);
+                return NajaTypes.Unknown;
+            }
+
             // Namespace used as a value (e.g., passed to a function) - return null
             // The actual type resolution happens in EmitAttribute when accessing System.DateTime
             IL.Emit(OpCodes.Ldnull);

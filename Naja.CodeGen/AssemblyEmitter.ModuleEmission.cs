@@ -91,6 +91,7 @@ public sealed partial class AssemblyEmitter
         var classTypes = new Dictionary<string, TypeBuilder>();
         var classCtors = new Dictionary<string, ConstructorBuilder>();
 
+        var functionDefs = new Dictionary<string, FunctionDef>();
         foreach (var stmt in module.Body)
         {
             switch (stmt)
@@ -100,6 +101,7 @@ public sealed partial class AssemblyEmitter
                         var (mb, pts) = TypeDeclaration.DeclareMethod(_model, fn, typeBuilder);
                         methods[fn.Name] = mb;
                         paramTypes[fn.Name] = pts;
+                        functionDefs[fn.Name] = fn;
                         break;
                     }
                 case ClassDef cls:
@@ -327,6 +329,7 @@ public sealed partial class AssemblyEmitter
         foreach (var (k, v) in classCtors) mainCtx.ClassConstructors[k] = v;
         foreach (var (k, v) in _classCtorArgCounts) mainCtx.ClassCtorArgCounts[k] = v;
         foreach (var (k, v) in importMap) mainCtx.ImportMap[k] = v;
+        foreach (var (k, v) in functionDefs) mainCtx.FunctionDefs[k] = v;
 
         foreach (var (k, v) in namespaceImports) mainCtx.NamespaceImports[k] = v;
         foreach (var mn in _classMethodNames) mainCtx.ClassMethods.Add(mn);

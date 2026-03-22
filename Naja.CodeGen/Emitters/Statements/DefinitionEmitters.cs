@@ -20,7 +20,10 @@ public class DefinitionEmitters : StatementEmitterBase
 
     public void EmitFunctionDef(FunctionDef s)
     {
-        // Reject duplicate parameter names
+        // Register the FunctionDef so NameEmitters can access it for wrapping with defaults
+        _ctx.FunctionDefs[s.Name] = s;
+
+
         var seen = new HashSet<string>();
         foreach (var p in s.Params)
             if (!seen.Add(p.Name))

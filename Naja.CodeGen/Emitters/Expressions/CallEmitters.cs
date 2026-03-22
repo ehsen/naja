@@ -91,6 +91,9 @@ public sealed class CallEmitters : ExpressionEmitterBase
                 _ctx.MethodParamTypes.TryGetValue(name, out var pts);
                 int totalParams = pts?.Length ?? 0;
 
+                // Get the FunctionDef to access parameter defaults
+                _ctx.FunctionDefs.TryGetValue(name, out var functionDef);
+
                 // *args / variadic call: more positional args than declared params.
                 // Pack the excess args (from index totalParams-1 onward) into an object[]
                 // so the star-param receives a single iterable value — matches Python semantics.
@@ -146,17 +149,29 @@ public sealed class CallEmitters : ExpressionEmitterBase
                         }
                         else
                         {
-                            try
+                            // Check if function has a corresponding parameter with a default
+                            bool foundDefault = false;
+                            if (functionDef is not null && i < functionDef.Params.Count && functionDef.Params[i].Default is not null)
                             {
-                                var mParams = method.GetParameters();
-                                if (i < mParams.Length && mParams[i].HasDefaultValue)
-                                    EmitDefaultValue(mParams[i].DefaultValue);
-                                else
-                                    IL.Emit(OpCodes.Ldnull);
+                                var argType = _mainEmitter.Emit(functionDef.Params[i].Default);
+                                TypeMapper.EmitBox(IL, argType);
+                                foundDefault = true;
                             }
-                            catch
+
+                            if (!foundDefault)
                             {
-                                IL.Emit(OpCodes.Ldnull);
+                                try
+                                {
+                                    var mParams = method.GetParameters();
+                                    if (i < mParams.Length && mParams[i].HasDefaultValue)
+                                        EmitDefaultValue(mParams[i].DefaultValue);
+                                    else
+                                        IL.Emit(OpCodes.Ldnull);
+                                }
+                                catch
+                                {
+                                    IL.Emit(OpCodes.Ldnull);
+                                }
                             }
                         }
                     }

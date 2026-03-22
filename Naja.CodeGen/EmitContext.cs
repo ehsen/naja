@@ -194,6 +194,21 @@ public sealed class EmitContext
     /// </summary>
     public Dictionary<string, List<string>> FunctionCapturedCells { get; } = new();
 
+    /// <summary>
+    /// Maps function name (module-level or nested) → pre-evaluated default argument values
+    /// for missing parameters. Used by NameEmitters to wrap functions in NajaFunction
+    /// when calling them with fewer arguments than the function declares.
+    /// This allows Python-style default parameters to work correctly at call time.
+    /// </summary>
+    public Dictionary<string, object?[]> FunctionDefaults { get; } = new();
+
+    /// <summary>
+    /// Maps function name → the original FunctionDef AST node.
+    /// Used by NameEmitters to access parameter Default expressions when wrapping
+    /// functions in NajaFunction for default parameter handling.
+    /// </summary>
+    public Dictionary<string, Parser.FunctionDef> FunctionDefs { get; } = new();
+
     public EmitContext(
         ILGenerator il,
         SemanticModel model,

@@ -1,0 +1,13 @@
+def make_counter(start=0):
+    n = start
+    def inc():
+        nonlocal n
+        n = n + 1
+        return n
+    return inc
+
+c1 = make_counter()
+result1 = c1()
+print(f"c1() = {result1}")
+result2 = c1()
+print(f"c1() = {result2}")
