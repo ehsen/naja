@@ -112,6 +112,9 @@ public sealed class CpythonSuiteRunner
     // ── HIGH priority tests ───────────────────────────────────────────────────
 
     [Fact, Trait("cpython", "high")]
+    public void CPython_AugAssign() => RunCpythonTest("test_augassign.py");
+
+    [Fact, Trait("cpython", "high")]
     public void CPython_TypeAnnotations() => RunCpythonTest("test_type_annotations.py");
 
     [Fact, Trait("cpython", "high")]

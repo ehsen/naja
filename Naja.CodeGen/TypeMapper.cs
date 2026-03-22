@@ -231,6 +231,22 @@ public static class TypeMapper
         "KeyboardInterrupt" => typeof(Exception),
         "BaseException" => typeof(Exception),
         "ExceptionGroup" or "BaseExceptionGroup" => typeof(NajaBuiltins.NajaExceptionGroup),
+        // Additional exceptions required by CPython test suite
+        "SyntaxError" => typeof(PythonExceptions.SyntaxErrorException),
+        "IndentationError" => typeof(PythonExceptions.IndentationErrorException),
+        "TabError" => typeof(PythonExceptions.SyntaxErrorException),
+        "AssertionError" => typeof(PythonExceptions.AssertionException),
+        "ArithmeticError" => typeof(ArithmeticException),
+        "FloatingPointError" => typeof(ArithmeticException),
+        "EOFError" => typeof(System.IO.EndOfStreamException),
+        "UnicodeError" => typeof(System.Text.DecoderFallbackException),
+        "UnicodeDecodeError" => typeof(System.Text.DecoderFallbackException),
+        "UnicodeEncodeError" => typeof(System.Text.EncoderFallbackException),
+        "BufferError" => typeof(System.IO.IOException),
+        "LookupError" => typeof(IndexOutOfRangeException),
+        "ReferenceError" => typeof(NullReferenceException),
+        "GeneratorExit" => typeof(Exception),
+        "StopAsyncIteration" => typeof(InvalidOperationException),
         _ => null
     };
 }

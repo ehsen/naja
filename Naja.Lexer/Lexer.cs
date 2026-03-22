@@ -317,6 +317,24 @@ public sealed class Lexer
 
             if (c == '\\' && !isRaw)
             {
+                // Check if this is a backslash-newline line continuation
+                if (Peek(1) == '\n')
+                {
+                    // Skip the backslash and newline (line continuation)
+                    Advance(); // skip backslash
+                    Advance(); // skip \n
+                    continue;
+                }
+                else if (Peek(1) == '\r')
+                {
+                    // Handle \r or \r\n
+                    Advance(); // skip backslash
+                    Advance(); // skip \r
+                    if (Current() == '\n')
+                        Advance(); // skip \n if present
+                    continue;
+                }
+                // Regular escape sequence
                 content.Append(Advance()); // backslash
                 if (_pos < _source.Length)
                     content.Append(Advance()); // escaped char
