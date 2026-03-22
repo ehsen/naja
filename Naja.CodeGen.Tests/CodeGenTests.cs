@@ -1897,4 +1897,229 @@ public class CodeGenTests
     // - nint → IntPtr
     // - nuint → UIntPtr
     // The TypeMapper.cs and Types.cs have been updated to support these.
+
+    // ── stdlib: math ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public void StdLib_Math_Constants()
+    {
+        Assert.Equal("3.141592653589793", Run("import math\nprint(math.pi)"));
+        Assert.Equal("2.718281828459045", Run("import math\nprint(math.e)"));
+    }
+
+    [Fact]
+    public void StdLib_Math_Sqrt()
+    {
+        Assert.Equal("4.0", Run("import math\nprint(math.sqrt(16))"));
+    }
+
+    [Fact]
+    public void StdLib_Math_Floor_Ceil()
+    {
+        Assert.Equal("3\n4", Run("""
+            import math
+            print(math.floor(3.7))
+            print(math.ceil(3.2))
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Math_Pow()
+    {
+        Assert.Equal("8.0", Run("import math\nprint(math.pow(2, 3))"));
+    }
+
+    [Fact]
+    public void StdLib_Math_Log()
+    {
+        Assert.Equal("2.0", Run("import math\nprint(math.log(100, 10))"));
+    }
+
+    [Fact]
+    public void StdLib_Math_Factorial()
+    {
+        Assert.Equal("120", Run("import math\nprint(math.factorial(5))"));
+    }
+
+    [Fact]
+    public void StdLib_Math_Gcd()
+    {
+        Assert.Equal("6", Run("import math\nprint(math.gcd(48, 18))"));
+    }
+
+    [Fact]
+    public void StdLib_Math_Isfinite_Isinf_Isnan()
+    {
+        Assert.Equal("True\nTrue\nTrue", Run("""
+            import math
+            print(math.isfinite(1.0))
+            print(math.isinf(math.inf))
+            print(math.isnan(math.nan))
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Math_Abs()
+    {
+        Assert.Equal("3.5", Run("import math\nprint(math.fabs(-3.5))"));
+    }
+
+    // ── stdlib: sys ───────────────────────────────────────────────────────────
+
+    [Fact]
+    public void StdLib_Sys_Version()
+    {
+        var result = Run("import sys\nprint(sys.version)");
+        Assert.Contains("Naja", result);
+    }
+
+    [Fact]
+    public void StdLib_Sys_Platform()
+    {
+        var result = Run("import sys\nprint(sys.platform)");
+        Assert.True(result == "win32" || result == "linux" || result == "darwin");
+    }
+
+    [Fact]
+    public void StdLib_Sys_Maxsize()
+    {
+        var result = Run("import sys\nprint(sys.maxsize)");
+        Assert.False(string.IsNullOrEmpty(result));
+        Assert.True(long.TryParse(result, out _));
+    }
+
+    [Fact]
+    public void StdLib_Sys_Path_Is_List()
+    {
+        var result = Run("import sys\nprint(type(sys.path).__name__)");
+        Assert.Equal("List`1", result);
+    }
+
+    // ── stdlib: os ────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void StdLib_Os_Getcwd()
+    {
+        var result = Run("import os\nprint(os.getcwd())");
+        Assert.False(string.IsNullOrEmpty(result));
+    }
+
+    [Fact]
+    public void StdLib_Os_Sep()
+    {
+        var result = Run("import os\nprint(os.sep)");
+        Assert.True(result == "\\" || result == "/");
+    }
+
+    [Fact]
+    public void StdLib_Os_Path_Join()
+    {
+        var result = Run("""
+            import os
+            p = os.path.join("a", "b")
+            print(len(p) > 0)
+            """);
+        Assert.Equal("True", result);
+    }
+
+    [Fact]
+    public void StdLib_Os_Path_Basename()
+    {
+        Assert.Equal("file.txt", Run("""
+            import os
+            print(os.path.basename("some/dir/file.txt"))
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Os_Path_Dirname()
+    {
+        var result = Run("""
+            import os
+            d = os.path.dirname("some/dir/file.txt")
+            print(len(d) > 0)
+            """);
+        Assert.Equal("True", result);
+    }
+
+    [Fact]
+    public void StdLib_Os_Path_Exists_False_For_Nonexistent()
+    {
+        Assert.Equal("False", Run("""
+            import os
+            print(os.path.exists("/no/such/path/xyz_naja_test_99"))
+            """));
+    }
+
+    // ── stdlib: unittest ──────────────────────────────────────────────────────
+
+    [Fact]
+    public void StdLib_Unittest_TestCase_Base_Class()
+    {
+        // A class inheriting unittest.TestCase should compile and run
+        // its test methods without errors when assertions pass.
+        Assert.Equal("ok", Run("""
+            import unittest
+            class MyTest(unittest.TestCase):
+                def test_add(self):
+                    self.assertEqual(1 + 1, 2)
+            t = MyTest()
+            t.test_add()
+            print("ok")
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Unittest_AssertEqual_Pass()
+    {
+        Assert.Equal("passed", Run("""
+            import unittest
+            class T(unittest.TestCase):
+                def run_check(self):
+                    self.assertEqual(10, 10)
+                    print("passed")
+            T().run_check()
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Unittest_AssertTrue_AssertFalse()
+    {
+        Assert.Equal("ok", Run("""
+            import unittest
+            class T(unittest.TestCase):
+                def check(self):
+                    self.assertTrue(1 == 1)
+                    self.assertFalse(1 == 2)
+            T().check()
+            print("ok")
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Unittest_AssertEqual_Fail_Raises()
+    {
+        Assert.ThrowsAny<Exception>(() => Run("""
+            import unittest
+            class T(unittest.TestCase):
+                def test_fail(self):
+                    self.assertEqual(1, 2)
+            T().test_fail()
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Unittest_AssertIn()
+    {
+        Assert.Equal("ok", Run("""
+            import unittest
+            class T(unittest.TestCase):
+                def check(self):
+                    self.assertIn(2, [1, 2, 3])
+                    self.assertNotIn(5, [1, 2, 3])
+            T().check()
+            print("ok")
+            """));
+    }
 }
+

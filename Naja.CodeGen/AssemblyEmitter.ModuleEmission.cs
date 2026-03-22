@@ -106,7 +106,7 @@ public sealed partial class AssemblyEmitter
                     }
                 case ClassDef cls:
                     {
-                        var ct = DeclareClass(cls, modBuilder, importMap, module.Body, out var ctor);
+                        var ct = DeclareClass(cls, modBuilder, importMap, module.Body, out var ctor, namespaceImports);
                         classTypes[cls.Name] = ct;
                         classCtors[cls.Name] = ctor;
                         _classTypes[cls.Name] = ct;

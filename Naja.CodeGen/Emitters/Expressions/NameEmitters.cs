@@ -2,6 +2,7 @@ using System.Reflection.Emit;
 using Naja.CodeGen.Builtins;
 using Naja.Parser;
 using Naja.Semantics;
+using Naja.StdLib;
 
 namespace Naja.CodeGen.Emitters.Expressions;
 
@@ -306,12 +307,25 @@ public sealed class NameEmitters : ExpressionEmitterBase
         // 6a. Namespace imports: import System → System is a valid reference
         if (_ctx.NamespaceImports.ContainsKey(e.Name))
         {
-            // Special case: Python 're' module returns a NajaReModule singleton instance
-            if (e.Name == "re")
+            // Stdlib singleton modules: emit ldsfld <Module>::Instance
+            var stdlibField = e.Name switch
             {
-                var reField = typeof(NajaReModule).GetField("Instance",
-                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)!;
-                IL.Emit(OpCodes.Ldsfld, reField);
+                "re"       => typeof(NajaReModule).GetField("Instance",
+                                  System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static),
+                "math"     => typeof(NajaMath).GetField("Instance",
+                                  System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static),
+                "sys"      => typeof(NajaSys).GetField("Instance",
+                                  System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static),
+                "os"       => typeof(NajaOs).GetField("Instance",
+                                  System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static),
+                "unittest" => typeof(NajaUnittest).GetField("Instance",
+                                  System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static),
+                _          => null
+            };
+
+            if (stdlibField is not null)
+            {
+                IL.Emit(OpCodes.Ldsfld, stdlibField);
                 return NajaTypes.Unknown;
             }
 

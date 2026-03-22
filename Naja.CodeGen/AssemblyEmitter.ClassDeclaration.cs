@@ -1,5 +1,6 @@
 using Naja.CodeGen;
 using Naja.Parser;
+using Naja.StdLib;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -21,7 +22,8 @@ public sealed partial class AssemblyEmitter
         ModuleBuilder modBuilder,
         Dictionary<string, (string TypeName, string AssemblyName)> importMap,
         IReadOnlyList<Statement> moduleBody,
-        out ConstructorBuilder defaultCtor)
+        out ConstructorBuilder defaultCtor,
+        Dictionary<string, string>? namespaceImports = null)
     {
         // Resolve base class — search loaded assemblies first to handle strong-named
         // WinForms types correctly (Type.GetType with AQN is unreliable for them).
@@ -57,7 +59,27 @@ public sealed partial class AssemblyEmitter
                     _ => typeof(object)
                 };
             }
+        }
+        else if (cls.Bases.Count > 0 && cls.Bases[0] is AttributeExpr attrBase
+            && attrBase.Object is NameExpr attrNsExpr)
+        {
+            // Attribute-qualified base class: e.g. unittest.TestCase
+            // Check if the namespace was imported via `import X`
+            bool nsWasImported = namespaceImports is not null
+                ? namespaceImports.ContainsKey(attrNsExpr.Name)
+                : moduleBody.OfType<ImportStatement>()
+                    .Any(s => s.Names.Any(a => (a.Alias ?? a.Name.Split('.')[0]) == attrNsExpr.Name));
 
+            if (nsWasImported)
+            {
+                baseType = (attrNsExpr.Name, attrBase.Attribute) switch
+                {
+                    ("unittest", "TestCase") => typeof(NajaTestCase),
+                    _ => AppDomain.CurrentDomain.GetAssemblies()
+                             .Select(a => a.GetType(attrNsExpr.Name + "." + attrBase.Attribute, false, true))
+                             .FirstOrDefault(t => t is not null) ?? typeof(object)
+                };
+            }
         }
 
         // Check for @typing.final or @final decorator to make class sealed

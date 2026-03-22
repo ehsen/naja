@@ -16,6 +16,7 @@
     <ProjectReference Include="..\Naja.Parser\Naja.Parser.csproj" />
     <ProjectReference Include="..\Naja.Semantics\Naja.Semantics.csproj" />
     <ProjectReference Include="..\Naja.Inference\Naja.Inference.csproj" />
+    <ProjectReference Include="..\Naja.StdLib\Naja.StdLib.csproj" />
   </ItemGroup>
 
 </Project>
