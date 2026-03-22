@@ -56,9 +56,26 @@ public class ScopeEmitters : StatementEmitterBase
         if (!_ctx.IsInsideFunction)
             throw new CodeGenException("'return' outside function", s.Line, s.Column);
 
-        // In a generator function, 'return' (with or without a value) terminates
-        // iteration early. The collected yields are wrapped in a NajaGeneratorIterator
-        // and returned; the return value itself is discarded in this eager model.
+        // In a coroutine generator body, 'return value' signals the end of iteration
+        // by throwing NajaGeneratorReturn. The NajaGenerator thread catches this,
+        // stores ReturnValue, and sets _done = true on the next MoveNext().
+        if (_ctx.IsGeneratorBody)
+        {
+            if (s.Value is not null)
+            {
+                var vt = _exprEmitter.Emit(s.Value);
+                TypeMapper.EmitBox(IL, vt);
+            }
+            else
+            {
+                IL.Emit(OpCodes.Ldnull);
+            }
+            IL.Emit(OpCodes.Newobj, NajaBuiltinsMethodCache.NajaGeneratorReturn_Ctor);
+            IL.Emit(OpCodes.Throw);
+            return;
+        }
+
+        // Legacy path for old-style generators (GeneratorListLocal set) — kept for safety
         if (_ctx.GeneratorListLocal != null)
         {
             if (s.Value is not null)

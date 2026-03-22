@@ -172,31 +172,92 @@ public sealed class StatementEmitter
 
             case SequencePattern sp:
                 {
-                    var nextSeq = IL.DefineLabel();
                     var seqList = _ctx.Locals.Declare($"__seq_{subject.LocalIndex}", typeof(System.Collections.Generic.List<object?>));
+                    var countProp = typeof(System.Collections.Generic.List<object?>).GetProperty("Count")!.GetGetMethod()!;
+                    var listGetItem = typeof(System.Collections.Generic.List<object?>).GetProperty("Item")!.GetGetMethod()!;
 
                     IL.Emit(OpCodes.Ldloc, subject);
                     IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.UnpackIterable_Method);
                     IL.Emit(OpCodes.Stloc, seqList);
 
-                    var countProp = typeof(System.Collections.Generic.List<object?>).GetProperty("Count")!.GetGetMethod()!;
-                    IL.Emit(OpCodes.Ldloc, seqList);
-                    IL.Emit(OpCodes.Callvirt, countProp);
-                    IL.Emit(OpCodes.Ldc_I4, sp.Patterns.Count);
-                    IL.Emit(OpCodes.Beq_S, nextSeq);
-                    IL.Emit(OpCodes.Br, noMatch);
+                    // Find star pattern position (-1 if none)
+                    int starIdx = -1;
+                    for (int si = 0; si < sp.Patterns.Count; si++)
+                        if (sp.Patterns[si] is StarPattern) { starIdx = si; break; }
 
-                    IL.MarkLabel(nextSeq);
-
-                    for (int i = 0; i < sp.Patterns.Count; i++)
+                    if (starIdx < 0)
                     {
-                        var elemLocal = _ctx.Locals.Declare($"__elem_{i}", typeof(object));
+                        // Exact length match
+                        var nextSeq = IL.DefineLabel();
                         IL.Emit(OpCodes.Ldloc, seqList);
-                        IL.Emit(OpCodes.Ldc_I4, i);
-                        IL.Emit(OpCodes.Box, typeof(int));
-                        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.GetItem_Method);
-                        IL.Emit(OpCodes.Stloc, elemLocal);
-                        EmitPatternCheck(sp.Patterns[i], elemLocal, noMatch);
+                        IL.Emit(OpCodes.Callvirt, countProp);
+                        IL.Emit(OpCodes.Ldc_I4, sp.Patterns.Count);
+                        IL.Emit(OpCodes.Beq_S, nextSeq);
+                        IL.Emit(OpCodes.Br, noMatch);
+                        IL.MarkLabel(nextSeq);
+
+                        for (int i = 0; i < sp.Patterns.Count; i++)
+                        {
+                            var elemLocal = _ctx.Locals.Declare($"__elem_{subject.LocalIndex}_{i}", typeof(object));
+                            IL.Emit(OpCodes.Ldloc, seqList);
+                            IL.Emit(OpCodes.Ldc_I4, i);
+                            IL.Emit(OpCodes.Callvirt, listGetItem);
+                            IL.Emit(OpCodes.Stloc, elemLocal);
+                            EmitPatternCheck(sp.Patterns[i], elemLocal, noMatch);
+                        }
+                    }
+                    else
+                    {
+                        int suffixCount = sp.Patterns.Count - starIdx - 1;
+                        int minLength = sp.Patterns.Count - 1;  // star can match 0 elements
+
+                        // Store count for dynamic suffix indexing and star capture
+                        var seqCountLocal = _ctx.Locals.Declare($"__seqcount_{subject.LocalIndex}", typeof(int));
+                        IL.Emit(OpCodes.Ldloc, seqList);
+                        IL.Emit(OpCodes.Callvirt, countProp);
+                        IL.Emit(OpCodes.Stloc, seqCountLocal);
+
+                        // count < minLength → noMatch
+                        IL.Emit(OpCodes.Ldloc, seqCountLocal);
+                        IL.Emit(OpCodes.Ldc_I4, minLength);
+                        IL.Emit(OpCodes.Blt, noMatch);
+
+                        // Match before-star elements (constant indices)
+                        for (int i = 0; i < starIdx; i++)
+                        {
+                            var elemLocal = _ctx.Locals.Declare($"__elem_{subject.LocalIndex}_{i}", typeof(object));
+                            IL.Emit(OpCodes.Ldloc, seqList);
+                            IL.Emit(OpCodes.Ldc_I4, i);
+                            IL.Emit(OpCodes.Callvirt, listGetItem);
+                            IL.Emit(OpCodes.Stloc, elemLocal);
+                            EmitPatternCheck(sp.Patterns[i], elemLocal, noMatch);
+                        }
+
+                        // Match after-star elements (runtime-computed index: seqCount - (suffixCount - j))
+                        for (int j = 0; j < suffixCount; j++)
+                        {
+                            var elemLocal = _ctx.Locals.Declare($"__elem_{subject.LocalIndex}_{starIdx + 1 + j}", typeof(object));
+                            IL.Emit(OpCodes.Ldloc, seqList);
+                            IL.Emit(OpCodes.Ldloc, seqCountLocal);
+                            IL.Emit(OpCodes.Ldc_I4, suffixCount - j);
+                            IL.Emit(OpCodes.Sub);
+                            IL.Emit(OpCodes.Callvirt, listGetItem);
+                            IL.Emit(OpCodes.Stloc, elemLocal);
+                            EmitPatternCheck(sp.Patterns[starIdx + 1 + j], elemLocal, noMatch);
+                        }
+
+                        // Star capture or discard
+                        var star = (StarPattern)sp.Patterns[starIdx];
+                        if (star.Name is not null && star.Name != "_")
+                        {
+                            if (!_ctx.Locals.Contains(star.Name))
+                                _ctx.Locals.Declare(star.Name, typeof(object));
+                            IL.Emit(OpCodes.Ldloc, seqList);
+                            IL.Emit(OpCodes.Ldc_I4, starIdx);
+                            IL.Emit(OpCodes.Ldc_I4, suffixCount);
+                            IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.GetUnpackSlice_Method);
+                            _ctx.Locals.EmitStore(star.Name);
+                        }
                     }
                     break;
                 }
@@ -236,6 +297,67 @@ public sealed class StatementEmitter
                             _ctx.Locals.Declare(mp.Rest, typeof(object));
                         IL.Emit(OpCodes.Ldloc, subject);
                         _ctx.Locals.EmitStore(mp.Rest);
+                    }
+                    break;
+                }
+
+            case AsPattern ap:
+                {
+                    // Check inner pattern; on success, bind the whole subject to the alias name
+                    EmitPatternCheck(ap.Inner, subject, noMatch);
+                    if (!_ctx.Locals.Contains(ap.Name))
+                        _ctx.Locals.Declare(ap.Name, typeof(object));
+                    IL.Emit(OpCodes.Ldloc, subject);
+                    _ctx.Locals.EmitStore(ap.Name);
+                    break;
+                }
+
+            case ClassPattern cp:
+                {
+                    // isinstance check: IsInstance(subject, classType)
+                    IL.Emit(OpCodes.Ldloc, subject);
+                    _expr.Emit(cp.Cls);
+                    IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.IsInstance_Method);
+                    IL.Emit(OpCodes.Brfalse, noMatch);
+
+                    // Keyword sub-patterns: case Point(x=px, y=py)
+                    foreach (var (attrName, subPattern) in cp.Keyword)
+                    {
+                        var attrLocal = _ctx.Locals.Declare($"__kw_{subject.LocalIndex}_{attrName}", typeof(object));
+                        IL.Emit(OpCodes.Ldloc, subject);
+                        IL.Emit(OpCodes.Ldstr, attrName);
+                        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.GetAttr_Method);
+                        IL.Emit(OpCodes.Stloc, attrLocal);
+                        EmitPatternCheck(subPattern, attrLocal, noMatch);
+                    }
+
+                    // Positional sub-patterns: case Point(1, py) — resolves names via __match_args__
+                    if (cp.Positional.Count > 0)
+                    {
+                        var matchArgsLocal = _ctx.Locals.Declare($"__matchargs_{subject.LocalIndex}", typeof(object));
+                        _expr.Emit(cp.Cls);
+                        IL.Emit(OpCodes.Ldstr, "__match_args__");
+                        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.GetAttr_Method);
+                        IL.Emit(OpCodes.Stloc, matchArgsLocal);
+
+                        for (int i = 0; i < cp.Positional.Count; i++)
+                        {
+                            var attrNameLocal = _ctx.Locals.Declare($"__posname_{subject.LocalIndex}_{i}", typeof(string));
+                            IL.Emit(OpCodes.Ldloc, matchArgsLocal);
+                            IL.Emit(OpCodes.Ldc_I4, i);
+                            IL.Emit(OpCodes.Box, typeof(int));
+                            IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.GetItem_Method);
+                            IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ToStr_Method);
+                            IL.Emit(OpCodes.Stloc, attrNameLocal);
+
+                            var attrValLocal = _ctx.Locals.Declare($"__posval_{subject.LocalIndex}_{i}", typeof(object));
+                            IL.Emit(OpCodes.Ldloc, subject);
+                            IL.Emit(OpCodes.Ldloc, attrNameLocal);
+                            IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.GetAttr_Method);
+                            IL.Emit(OpCodes.Stloc, attrValLocal);
+
+                            EmitPatternCheck(cp.Positional[i], attrValLocal, noMatch);
+                        }
                     }
                     break;
                 }

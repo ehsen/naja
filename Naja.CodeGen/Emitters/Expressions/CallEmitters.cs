@@ -89,27 +89,76 @@ public sealed class CallEmitters : ExpressionEmitterBase
             if (_ctx.Methods.TryGetValue(name, out var method))
             {
                 _ctx.MethodParamTypes.TryGetValue(name, out var pts);
-                for (int i = 0; i < e.Args.Count; i++)
-                {
-                    var argType = _mainEmitter.Emit(e.Args[i].Value);
-                    if (pts is not null && i < pts.Length && pts[i] == typeof(object))
-                        TypeMapper.EmitBox(IL, argType);
-                }
-
                 int totalParams = pts?.Length ?? 0;
-                for (int i = e.Args.Count; i < totalParams; i++)
+
+                // *args / variadic call: more positional args than declared params.
+                // Pack the excess args (from index totalParams-1 onward) into an object[]
+                // so the star-param receives a single iterable value — matches Python semantics.
+                if (pts != null && e.Args.Count > totalParams && totalParams > 0)
                 {
-                    try
+                    int starStart = totalParams - 1;
+                    // Emit leading (non-star) args normally
+                    for (int i = 0; i < starStart; i++)
                     {
-                        var mParams = method.GetParameters();
-                        if (i < mParams.Length && mParams[i].HasDefaultValue)
-                            EmitDefaultValue(mParams[i].DefaultValue);
-                        else
-                            IL.Emit(OpCodes.Ldnull);
+                        var argType = _mainEmitter.Emit(e.Args[i].Value);
+                        if (pts[i] == typeof(object)) TypeMapper.EmitBox(IL, argType);
                     }
-                    catch
+                    // Pack remaining args into object[]
+                    int packCount = e.Args.Count - starStart;
+                    IL.Emit(OpCodes.Ldc_I4, packCount);
+                    IL.Emit(OpCodes.Newarr, typeof(object));
+                    for (int i = starStart; i < e.Args.Count; i++)
                     {
-                        IL.Emit(OpCodes.Ldnull);
+                        IL.Emit(OpCodes.Dup);
+                        IL.Emit(OpCodes.Ldc_I4, i - starStart);
+                        var argType = _mainEmitter.Emit(e.Args[i].Value);
+                        TypeMapper.EmitBox(IL, argType);
+                        IL.Emit(OpCodes.Stelem_Ref);
+                    }
+                    // object[] is the star-param value (iterable for for-loops)
+                }
+                else
+                {
+                    for (int i = 0; i < e.Args.Count; i++)
+                    {
+                        var argType = _mainEmitter.Emit(e.Args[i].Value);
+                        if (pts is not null && i < pts.Length && pts[i] == typeof(object))
+                            TypeMapper.EmitBox(IL, argType);
+                    }
+                    // Determine where captured-cell params begin in the param list
+                    _ctx.FunctionCapturedCells.TryGetValue(name, out var capturedCells);
+                    int cellParamStart = capturedCells is { Count: > 0 }
+                        ? totalParams - capturedCells.Count
+                        : totalParams;
+
+                    for (int i = e.Args.Count; i < totalParams; i++)
+                    {
+                        if (i >= cellParamStart && capturedCells is not null)
+                        {
+                            // Inject the object[] cell reference for this captured variable
+                            var cv = capturedCells[i - cellParamStart];
+                            if (_ctx.CellLocals.TryGetValue(cv, out var cellLoc))
+                                IL.Emit(OpCodes.Ldloc, cellLoc);
+                            else if (_ctx.CellParamOf.TryGetValue(cv, out var cellParamName))
+                                _ctx.TryEmitLoadParam(cellParamName);
+                            else
+                                IL.Emit(OpCodes.Ldnull);
+                        }
+                        else
+                        {
+                            try
+                            {
+                                var mParams = method.GetParameters();
+                                if (i < mParams.Length && mParams[i].HasDefaultValue)
+                                    EmitDefaultValue(mParams[i].DefaultValue);
+                                else
+                                    IL.Emit(OpCodes.Ldnull);
+                            }
+                            catch
+                            {
+                                IL.Emit(OpCodes.Ldnull);
+                            }
+                        }
                     }
                 }
 

@@ -46,8 +46,167 @@ public sealed class ComprehensionEmitters : ExpressionEmitterBase
 
     public NajaType EmitGenerator(GeneratorExpr e)
     {
-        // Compile generators eagerly as List<object> for now
-        return EmitComprehensionHelper(e.Line, e.Column, e.Generators, e.Element, isSet: false, isDict: false, null, null);
+        // Lazy generator expression: create a helper method with generator semantics
+        // (yields one element at a time) instead of collecting everything eagerly.
+        // The helper has signature: void <gencomp>_L_C__gen_body__(NajaGenerator, object[])
+        // and the wrapper builds an object[] from the outer iterable and returns NajaGenerator.
+
+        // Evaluate the outermost iterable in the CALLING context (Python scoping rule)
+        var outerIterType = _mainEmitter.Emit(e.Generators[0].Iter);
+        TypeMapper.EmitBox(IL, outerIterType);
+        var outerIterLocal = _ctx.Locals.Declare($"__gc_iter_{e.Line}_{e.Column}", typeof(object));
+        IL.Emit(OpCodes.Stloc, outerIterLocal);
+
+        // Define the body method (NajaGenerator coroutine)
+        var bodyName = $"<gencomp>_{e.Line}_{e.Column}__gen_body__";
+        var bodyMethod = _ctx.TypeBuilder.DefineMethod(
+            bodyName,
+            MethodAttributes.Private | MethodAttributes.Static,
+            typeof(void),
+            new System.Type[] { typeof(NajaGenerator), typeof(object[]) });
+        bodyMethod.DefineParameter(1, ParameterAttributes.None, "__gen");
+        bodyMethod.DefineParameter(2, ParameterAttributes.None, "__args");
+
+        // Emit wrapper inline: build args[], create delegate, new NajaGenerator
+        IL.Emit(OpCodes.Ldc_I4_1);
+        IL.Emit(OpCodes.Newarr, typeof(object));
+        IL.Emit(OpCodes.Dup);
+        IL.Emit(OpCodes.Ldc_I4_0);
+        IL.Emit(OpCodes.Ldloc, outerIterLocal);
+        IL.Emit(OpCodes.Stelem_Ref);
+        var argsLocal = _ctx.Locals.Declare($"__gc_args_{e.Line}_{e.Column}", typeof(object[]));
+        IL.Emit(OpCodes.Stloc, argsLocal);
+        IL.Emit(OpCodes.Ldnull);
+        IL.Emit(OpCodes.Ldftn, bodyMethod);
+        IL.Emit(OpCodes.Newobj, typeof(Action<NajaGenerator, object[]>).GetConstructors()[0]);
+        IL.Emit(OpCodes.Ldloc, argsLocal);
+        IL.Emit(OpCodes.Newobj, NajaBuiltinsMethodCache.NajaGenerator_Ctor);
+
+        // Build body context
+        var bodyIL = bodyMethod.GetILGenerator();
+        var bodyCtx = new EmitContext(bodyIL, _ctx.Model, _ctx.TypeBuilder, _ctx.Module,
+                                      typeof(void), new[] { "__gen", "__args" });
+        bodyCtx.IsInsideFunction = true;
+        bodyCtx.IsGeneratorBody = true;
+        bodyCtx.IsInstanceMethod = false;
+        foreach (var (k, v) in _ctx.Fields) bodyCtx.Fields[k] = v;
+        foreach (var (k, v) in _ctx.Methods) bodyCtx.Methods[k] = v;
+        foreach (var (k, v) in _ctx.MethodParamTypes) bodyCtx.MethodParamTypes[k] = v;
+        foreach (var (k, v) in _ctx.ClassTypes) bodyCtx.ClassTypes[k] = v;
+        foreach (var (k, v) in _ctx.ClassConstructors) bodyCtx.ClassConstructors[k] = v;
+        foreach (var (k, v) in _ctx.AllClassMethods) bodyCtx.AllClassMethods[k] = v;
+        foreach (var (k, v) in _ctx.AllClassMethodParamTypes) bodyCtx.AllClassMethodParamTypes[k] = v;
+        foreach (var mn in _ctx.ClassMethods) bodyCtx.ClassMethods.Add(mn);
+        foreach (var (k, v) in _ctx.ImportMap) bodyCtx.ImportMap[k] = v;
+        foreach (var (k, v) in _ctx.NamespaceImports) bodyCtx.NamespaceImports[k] = v;
+        bodyCtx.SelfName = _ctx.SelfName;
+
+        // Unpack outer iterable from __args[0]
+        var iterParam = bodyCtx.Locals.Declare("__iter0", typeof(object));
+        bodyIL.Emit(OpCodes.Ldarg_1);
+        bodyIL.Emit(OpCodes.Ldc_I4_0);
+        bodyIL.Emit(OpCodes.Ldelem_Ref);
+        bodyIL.Emit(OpCodes.Stloc, iterParam);
+
+        // Emit the comprehension loop using the body context's ExpressionEmitter.
+        // We delegate to EmitComprehensionHelper but give it the body context
+        // and treat it as a generator (each element calls gen.Yield instead of list.Add).
+        var scopeId = $"comp_{e.Line}_{e.Column}";
+        bodyCtx.ComprehensionScopeId = scopeId;
+        var bodyExpr = new ExpressionEmitter(bodyCtx);
+        EmitGeneratorBodyLoop(bodyIL, bodyCtx, bodyExpr, e.Generators, e.Element, iterParam, scopeId, 0);
+
+        bodyIL.Emit(OpCodes.Ret);
+
+        return NajaTypes.Unknown;  // NajaGenerator on stack
+    }
+
+    /// <summary>
+    /// Recursively emits the nested for/if loops of a generator expression body,
+    /// yielding each matching element via NajaGenerator.Yield.
+    /// </summary>
+    private void EmitGeneratorBodyLoop(
+        ILGenerator bodyIL,
+        EmitContext bodyCtx,
+        ExpressionEmitter bodyExpr,
+        IReadOnlyList<Comprehension> generators,
+        Expression element,
+        LocalBuilder outerEnumOrIter,
+        string scopeId,
+        int depth)
+    {
+        var gen = generators[depth];
+
+        // Get enumerator from the iterable (depth 0 uses the pre-loaded param)
+        LocalBuilder enumLocal;
+        if (depth == 0)
+        {
+            bodyIL.Emit(OpCodes.Ldloc, outerEnumOrIter);
+            bodyIL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.GetForLoopEnumerator_Method);
+            enumLocal = bodyCtx.Locals.Declare($"__gc_e{depth}_{scopeId}", typeof(System.Collections.IEnumerator));
+            bodyIL.Emit(OpCodes.Stloc, enumLocal);
+        }
+        else
+        {
+            var innerIterType = bodyExpr.Emit(gen.Iter);
+            TypeMapper.EmitBox(bodyIL, innerIterType);
+            bodyIL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.GetForLoopEnumerator_Method);
+            enumLocal = bodyCtx.Locals.Declare($"__gc_e{depth}_{scopeId}", typeof(System.Collections.IEnumerator));
+            bodyIL.Emit(OpCodes.Stloc, enumLocal);
+        }
+
+        var loopStart = bodyIL.DefineLabel();
+        var loopEnd   = bodyIL.DefineLabel();
+        var moveNext  = typeof(System.Collections.IEnumerator).GetMethod("MoveNext")!;
+        var getCurrent = typeof(System.Collections.IEnumerator).GetProperty("Current")!.GetGetMethod()!;
+
+        bodyIL.MarkLabel(loopStart);
+        bodyIL.Emit(OpCodes.Ldloc, enumLocal);
+        bodyIL.Emit(OpCodes.Callvirt, moveNext);
+        bodyIL.Emit(OpCodes.Brfalse, loopEnd);
+
+        // Assign loop variable
+        var loopVarName = gen.Target is NameExpr nv ? nv.Name : $"__gcv{depth}";
+        var loopVarLocal = bodyCtx.Locals.Declare($"{loopVarName}_{scopeId}", typeof(object));
+        bodyIL.Emit(OpCodes.Ldloc, enumLocal);
+        bodyIL.Emit(OpCodes.Callvirt, getCurrent);
+        bodyIL.Emit(OpCodes.Stloc, loopVarLocal);
+        // Make accessible by name in body context
+        var hoistedName = $"__hoisted_{loopVarName}_{scopeId}";
+        if (!bodyCtx.Fields.ContainsKey(hoistedName))
+        {
+            var hf = bodyCtx.TypeBuilder.DefineField(hoistedName, typeof(object), FieldAttributes.Private | FieldAttributes.Static);
+            bodyCtx.Fields[hoistedName] = hf;
+        }
+        bodyIL.Emit(OpCodes.Ldloc, loopVarLocal);
+        bodyIL.Emit(OpCodes.Stsfld, bodyCtx.Fields[hoistedName]);
+
+        // Apply filters if present
+        foreach (var cond in gen.Conditions)
+        {
+            var condType = bodyExpr.Emit(cond);
+            TypeMapper.EmitBox(bodyIL, condType);
+            bodyIL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ToBool_Method);
+            bodyIL.Emit(OpCodes.Brfalse, loopStart);
+        }
+
+        if (depth + 1 < generators.Count)
+        {
+            // Recurse into next generator
+            EmitGeneratorBodyLoop(bodyIL, bodyCtx, bodyExpr, generators, element, outerEnumOrIter, scopeId, depth + 1);
+        }
+        else
+        {
+            // Innermost loop: yield the element
+            bodyIL.Emit(OpCodes.Ldarg_0);   // NajaGenerator __gen
+            var elemType = bodyExpr.Emit(element);
+            TypeMapper.EmitBox(bodyIL, elemType);
+            bodyIL.Emit(OpCodes.Callvirt, NajaBuiltinsMethodCache.NajaGenerator_Yield_Method);
+            bodyIL.Emit(OpCodes.Pop);        // discard send value
+        }
+
+        bodyIL.Emit(OpCodes.Br, loopStart);
+        bodyIL.MarkLabel(loopEnd);
     }
 
     /// <summary>
@@ -162,6 +321,14 @@ public sealed class ComprehensionEmitters : ExpressionEmitterBase
 
         hIL.Emit(OpCodes.Ldloc, resultLocal);
         hIL.Emit(OpCodes.Ret);
+
+        // Propagate fields newly defined inside the helper (e.g. walrus := targets) back
+        // to the calling context so the enclosing scope can read them (PEP 572 semantics).
+        // Only plain Python-identifier names are propagated; __hoisted_* loop-var fields
+        // and other internal __ names must stay scoped to the helper to avoid leaking.
+        foreach (var (k, v) in hCtx.Fields)
+            if (!k.StartsWith("__") && !_ctx.Fields.ContainsKey(k))
+                _ctx.Fields[k] = v;
 
         // --- Call helper from the original context (outer iterable already on stack) ---
         IL.Emit(OpCodes.Call, helperMb);

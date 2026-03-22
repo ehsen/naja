@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using Naja.CodeGen;
 
 namespace Naja.CodeGen.Builtins;
 
@@ -105,7 +106,8 @@ public static class Iterators
         var e = (System.Collections.IEnumerator)iterator;
         if (e.MoveNext()) return e.Current;
         if (args.Length > 1) return args[1];
-        throw new InvalidOperationException("StopIteration");
+        var returnVal = iterator is NajaGenerator ng ? ng.ReturnValue : null;
+        throw new NajaStopIteration(returnVal);
     }
 
     /// <summary>Helper for implementing IEnumerator.MoveNext() using Python __next__ method.</summary>

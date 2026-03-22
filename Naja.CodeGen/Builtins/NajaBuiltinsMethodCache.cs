@@ -415,4 +415,18 @@ internal static class NajaBuiltinsMethodCache
     // ── Type & Reflection operations ──────────────────────────────────────────
     public static readonly MethodInfo ResolveTypeByName_Method = 
         typeof(TypeSystem).GetMethod(nameof(TypeSystem.ResolveTypeByName))!;
+
+    // ── Generator operations ──────────────────────────────────────────────────
+    public static readonly ConstructorInfo NajaGenerator_Ctor =
+        typeof(NajaGenerator).GetConstructor(
+            new Type[] { typeof(Action<NajaGenerator, object[]>), typeof(object[]) })!;
+
+    public static readonly MethodInfo NajaGenerator_Yield_Method =
+        typeof(NajaGenerator).GetMethod(nameof(NajaGenerator.Yield))!;
+
+    public static readonly MethodInfo NajaGenerator_Send_Method =
+        typeof(NajaGenerator).GetMethod(nameof(NajaGenerator.Send))!;
+
+    public static readonly ConstructorInfo NajaGeneratorReturn_Ctor =
+        typeof(NajaGeneratorReturn).GetConstructor(new Type[] { typeof(object) })!;
 }

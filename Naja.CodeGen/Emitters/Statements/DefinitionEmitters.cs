@@ -27,19 +27,64 @@ public class DefinitionEmitters : StatementEmitterBase
                 throw new CodeGenException(
                     $"duplicate argument '{p.Name}' in function definition", s.Line, s.Column);
 
-        // Nested function — declare as a static method on the host type
-        // and store a reference in a local (closures deferred to Phase 7)
-        var pts = s.Params.Select(_ => typeof(object)).ToArray();
+        // Detect outer-scope parameters captured by this nested function.
+        // For non-generators, use the NajaFunction snapshot pattern: compile them as
+        // extra trailing params so each call to the outer function gets its own copy.
+        bool isGenerator = ContainsYield(s.Body);
+        var capturedOuterParamNames = new List<string>();
+        if (!isGenerator && _ctx.HoistedParams.Count > 0)
+        {
+            var innerBodyRefs = CollectReferencedNames(s.Body);
+            var innerOwnParams = new HashSet<string>(s.Params.Select(p => p.Name));
+            var innerAssigned = CollectAssignedNames(s.Body);
+            var innerNonlocals = CollectNonlocalNames(s.Body);
+            foreach (var nl in innerNonlocals) innerAssigned.Remove(nl);
+            foreach (var hp in _ctx.HoistedParams)
+            {
+                if (innerOwnParams.Contains(hp)) continue;
+                if (innerAssigned.Contains(hp)) continue;
+                if (innerNonlocals.Contains(hp)) continue;
+                if (innerBodyRefs.Contains(hp))
+                    capturedOuterParamNames.Add(hp);
+            }
+        }
+
+        // Detect outer-scope locals stored in per-call cells that this nested function references.
+        // Each captured cell variable gets an extra object[] param (__cell_varname) so the inner
+        // function can read/write the same cell as the outer call that created it.
+        var capturedCellNames = new List<string>();
+        if (!isGenerator && (_ctx.CellLocals.Count > 0 || _ctx.CellParamOf.Count > 0))
+        {
+            var innerBodyRefs2 = CollectReferencedNames(s.Body);
+            var innerOwnParams2 = new HashSet<string>(s.Params.Select(p => p.Name));
+            var innerNonlocals2 = CollectNonlocalNames(s.Body);
+            foreach (var cv in _ctx.CellLocals.Keys.Concat(_ctx.CellParamOf.Keys))
+            {
+                if (innerOwnParams2.Contains(cv)) continue;
+                if (!innerBodyRefs2.Contains(cv) && !innerNonlocals2.Contains(cv)) continue;
+                if (!capturedCellNames.Contains(cv))
+                    capturedCellNames.Add(cv);
+            }
+        }
+
+        var pts = s.Params.Select(_ => typeof(object))
+            .Concat(capturedOuterParamNames.Select(_ => typeof(object)))
+            .Concat(capturedCellNames.Select(_ => typeof(object[])))
+            .ToArray();
+        var allParamNames = s.Params.Select(p => p.Name)
+            .Concat(capturedOuterParamNames)
+            .Concat(capturedCellNames.Select(cv => $"__cell_{cv}"))
+            .ToList();
         var mb = _ctx.TypeBuilder.DefineMethod(
             $"{s.Name}_{s.Line}",
             MethodAttributes.Private | MethodAttributes.Static,
             typeof(object),
             pts);
 
-        for (int i = 0; i < s.Params.Count; i++)
-            mb.DefineParameter(i + 1, ParameterAttributes.None, s.Params[i].Name);
+        for (int i = 0; i < allParamNames.Count; i++)
+            mb.DefineParameter(i + 1, ParameterAttributes.None, allParamNames[i]);
 
-        var paramNames = s.Params.Select(p => p.Name).ToList();
+        var paramNames = allParamNames;
         var fnCtx = new EmitContext(mb.GetILGenerator(), _ctx.Model,
                                     _ctx.TypeBuilder, _ctx.Module,
                                     typeof(object), paramNames);
@@ -47,6 +92,13 @@ public class DefinitionEmitters : StatementEmitterBase
 
         // Propagate all outer-scope lookups into the nested function context
         foreach (var (k, v) in _ctx.Fields) fnCtx.Fields[k] = v;
+        // Remove captured outer params from fnCtx.Fields — they are now explicit params
+        // of this function, so NameEmitters resolves them via ldarg instead of ldsfld.
+        foreach (var cap in capturedOuterParamNames)
+            fnCtx.Fields.Remove(cap);
+        // Remove captured cell vars from fnCtx.Fields — they are accessed via CellParamOf.
+        foreach (var cv in capturedCellNames)
+            fnCtx.Fields.Remove(cv);
         foreach (var (k, v) in _ctx.Methods) fnCtx.Methods[k] = v;
         foreach (var (k, v) in _ctx.MethodParamTypes) fnCtx.MethodParamTypes[k] = v;
         foreach (var (k, v) in _ctx.ClassTypes) fnCtx.ClassTypes[k] = v;
@@ -58,7 +110,20 @@ public class DefinitionEmitters : StatementEmitterBase
         foreach (var (k, v) in _ctx.ImportMap) fnCtx.ImportMap[k] = v;
         foreach (var (k, v) in _ctx.NamespaceImports) fnCtx.NamespaceImports[k] = v;
         fnCtx.SelfName = _ctx.SelfName;
-        fnCtx.IsInstanceMethod = _ctx.IsInstanceMethod;
+        // Nested functions are always compiled as Private Static methods — never instance methods.
+        // Propagating IsInstanceMethod=true from a class method context would cause
+        // TryEmitLoadParam to offset arg indices by +1, emitting ldarg_1 for the first
+        // parameter on a method that only has ldarg_0.
+        fnCtx.IsInstanceMethod = false;
+
+        // Register cell params so NameEmitters/AssignmentEmitters use the cell-param pattern
+        // (read/write through the object[] reference passed as __cell_varname).
+        foreach (var cv in capturedCellNames)
+            fnCtx.CellParamOf[cv] = $"__cell_{cv}";
+        // Register which cells this inner function captures so NajaFunction wrapping
+        // in NameEmitters can pass cell references as trailing defaults.
+        if (capturedCellNames.Count > 0)
+            _ctx.FunctionCapturedCells[s.Name] = capturedCellNames.ToList();
 
         // Pre-scan for nonlocal declarations in this function body and promote those
         // variables to static fields NOW (before emitting the body) so any inner
@@ -66,6 +131,8 @@ public class DefinitionEmitters : StatementEmitterBase
         var nonlocalNames = CollectNonlocalNames(s.Body);
         foreach (var nlName in nonlocalNames)
         {
+            // If the var is already accessible via a cell param, no static field needed.
+            if (fnCtx.CellParamOf.ContainsKey(nlName)) continue;
             if (!fnCtx.Fields.ContainsKey(nlName))
             {
                 var nlField = _ctx.TypeBuilder.DefineField($"__nl_{nlName}", typeof(object), FieldAttributes.Private | FieldAttributes.Static);
@@ -74,109 +141,157 @@ public class DefinitionEmitters : StatementEmitterBase
             }
         }
 
-        // Hoist variables referenced by nested functions: if an inner function
-        // references a name that is assigned in this function, promote that name
-        // to a module-level static field so the inner function sees the enclosing
-        // binding (Python LEGB semantics).
+        // Hoist variables referenced by nested functions, including parameters:
+        // if an inner function references a name that is assigned *or passed as a
+        // parameter* in this function, promote it to a static field.
+        // Skip vars already handled as cell params (per-call cells).
         var nestedRefs = CollectNamesReferencedByNestedFunctions(s.Body);
         var assigned = CollectAssignedNames(s.Body);
-        foreach (var r in nestedRefs.Intersect(assigned))
+        var paramNamesSet = new HashSet<string>(s.Params.Select(p => p.Name));
+        foreach (var r in nestedRefs.Intersect(assigned.Union(paramNamesSet)))
         {
+            if (fnCtx.CellParamOf.ContainsKey(r)) continue;  // cell param handles this
             if (!fnCtx.Fields.ContainsKey(r))
             {
                 var hoisted = _ctx.TypeBuilder.DefineField($"__nl_{r}", typeof(object), FieldAttributes.Private | FieldAttributes.Static);
                 fnCtx.Fields[r] = hoisted;
                 _ctx.Fields[r] = hoisted;
             }
+            if (paramNamesSet.Contains(r))
+                fnCtx.HoistedParams.Add(r);
+        }
+        // Copy hoisted parameter values into their static fields at function entry
+        for (int hi = 0; hi < s.Params.Count; hi++)
+        {
+            if (!fnCtx.HoistedParams.Contains(s.Params[hi].Name)) continue;
+            switch (hi) { case 0: fnCtx.IL.Emit(OpCodes.Ldarg_0); break; case 1: fnCtx.IL.Emit(OpCodes.Ldarg_1); break; case 2: fnCtx.IL.Emit(OpCodes.Ldarg_2); break; case 3: fnCtx.IL.Emit(OpCodes.Ldarg_3); break; default: fnCtx.IL.Emit(OpCodes.Ldarg_S, (byte)hi); break; }
+            fnCtx.IL.Emit(OpCodes.Stsfld, fnCtx.Fields[s.Params[hi].Name]);
         }
 
         // (Closure hoisting moved to AssemblyEmitter.EmitFunctionBody so promotion
         // happens before the outer function body is emitted.)
 
         // Check if this function contains yield statements (is a generator)
-        bool isGenerator = ContainsYield(s.Body);
+        // (isGenerator already computed during captured-param detection above)
         if (isGenerator)
         {
-            // Initialize the generator list at function entry — MUST use fnCtx.IL (the new method's ILGenerator)
-            var listType = typeof(System.Collections.Generic.List<object>);
-            var ctor = listType.GetConstructor(Type.EmptyTypes)!;
-            fnCtx.GeneratorListLocal = fnCtx.Locals.Declare($"__generator_{s.Name}_{s.Line}", listType);
-            fnCtx.IL.Emit(OpCodes.Newobj, ctor);
-            fnCtx.IL.Emit(OpCodes.Stloc, fnCtx.GeneratorListLocal);
+            // ── Generator: two-method compilation ─────────────────────────────────
+            // Wrapper (mb): packs original args into object[] and returns NajaGenerator.
+            // Body (__gen_body__): void (NajaGenerator, object[]) coroutine.
+
+            var bodyMethod = _ctx.TypeBuilder.DefineMethod(
+                $"{s.Name}_{s.Line}__gen_body__",
+                MethodAttributes.Private | MethodAttributes.Static,
+                typeof(void),
+                new System.Type[] { typeof(NajaGenerator), typeof(object[]) });
+            bodyMethod.DefineParameter(1, ParameterAttributes.None, "__gen");
+            bodyMethod.DefineParameter(2, ParameterAttributes.None, "__args");
+
+            // Emit wrapper into mb: build args[], create delegate, new NajaGenerator, ret
+            fnCtx.IL.Emit(OpCodes.Ldc_I4, s.Params.Count);
+            fnCtx.IL.Emit(OpCodes.Newarr, typeof(object));
+            for (int wi = 0; wi < s.Params.Count; wi++)
+            {
+                fnCtx.IL.Emit(OpCodes.Dup);
+                fnCtx.IL.Emit(OpCodes.Ldc_I4, wi);
+                switch (wi) { case 0: fnCtx.IL.Emit(OpCodes.Ldarg_0); break; case 1: fnCtx.IL.Emit(OpCodes.Ldarg_1); break; case 2: fnCtx.IL.Emit(OpCodes.Ldarg_2); break; case 3: fnCtx.IL.Emit(OpCodes.Ldarg_3); break; default: fnCtx.IL.Emit(OpCodes.Ldarg_S, (byte)wi); break; }
+                fnCtx.IL.Emit(OpCodes.Stelem_Ref);
+            }
+            var wrapperArgsLocal = fnCtx.Locals.Declare("__gen_args", typeof(object[]));
+            fnCtx.IL.Emit(OpCodes.Stloc, wrapperArgsLocal);
+            fnCtx.IL.Emit(OpCodes.Ldnull);
+            fnCtx.IL.Emit(OpCodes.Ldftn, bodyMethod);
+            fnCtx.IL.Emit(OpCodes.Newobj, typeof(Action<NajaGenerator, object[]>).GetConstructors()[0]);
+            fnCtx.IL.Emit(OpCodes.Ldloc, wrapperArgsLocal);
+            fnCtx.IL.Emit(OpCodes.Newobj, NajaBuiltinsMethodCache.NajaGenerator_Ctor);
+            fnCtx.IL.Emit(OpCodes.Ret);
+
+            // Build body method context
+            var bodyIL = bodyMethod.GetILGenerator();
+            var bodyCtx = new EmitContext(bodyIL, _ctx.Model, _ctx.TypeBuilder, _ctx.Module,
+                                          typeof(void), System.Array.Empty<string>());
+            bodyCtx.IsInsideFunction = true;
+            bodyCtx.IsGeneratorBody = true;
+
+            foreach (var (k, v) in fnCtx.Fields) bodyCtx.Fields[k] = v;
+            foreach (var (k, v) in fnCtx.Methods) bodyCtx.Methods[k] = v;
+            foreach (var (k, v) in fnCtx.MethodParamTypes) bodyCtx.MethodParamTypes[k] = v;
+            foreach (var (k, v) in fnCtx.ClassTypes) bodyCtx.ClassTypes[k] = v;
+            foreach (var (k, v) in fnCtx.ClassConstructors) bodyCtx.ClassConstructors[k] = v;
+            foreach (var (k, v) in fnCtx.InstanceFields) bodyCtx.InstanceFields[k] = v;
+            foreach (var (k, v) in fnCtx.AllClassMethods) bodyCtx.AllClassMethods[k] = v;
+            foreach (var (k, v) in fnCtx.AllClassMethodParamTypes) bodyCtx.AllClassMethodParamTypes[k] = v;
+            foreach (var mn in fnCtx.ClassMethods) bodyCtx.ClassMethods.Add(mn);
+            foreach (var (k, v) in fnCtx.ImportMap) bodyCtx.ImportMap[k] = v;
+            foreach (var (k, v) in fnCtx.NamespaceImports) bodyCtx.NamespaceImports[k] = v;
+            bodyCtx.SelfName = fnCtx.SelfName;
+            bodyCtx.IsInstanceMethod = false;
+
+            // Unpack original params from __args[i] into locals; also init hoisted fields
+            for (int bi = 0; bi < s.Params.Count; bi++)
+            {
+                var pname = s.Params[bi].Name;
+                var plocal = bodyCtx.Locals.Declare(pname, typeof(object));
+                bodyIL.Emit(OpCodes.Ldarg_1);
+                bodyIL.Emit(OpCodes.Ldc_I4, bi);
+                bodyIL.Emit(OpCodes.Ldelem_Ref);
+                bodyIL.Emit(OpCodes.Stloc, plocal);
+                if (bodyCtx.Fields.TryGetValue(pname, out var hField))
+                {
+                    bodyIL.Emit(OpCodes.Ldloc, plocal);
+                    bodyIL.Emit(OpCodes.Stsfld, hField);
+                }
+            }
+
+            var bodyEmitter = new StatementEmitter(bodyCtx);
+            bodyEmitter.EmitAll(s.Body);
+
+            if (bodyCtx.MethodReturnLabel.HasValue)
+                bodyIL.MarkLabel(bodyCtx.MethodReturnLabel.Value);
+            bodyIL.Emit(OpCodes.Ret);
+
+            // Register wrapper in current context
+            _ctx.Methods[s.Name] = mb;
+            _ctx.MethodParamTypes[s.Name] = pts;
+            return;
         }
 
-        var fnIL = fnCtx.IL;  // always use the nested function's ILGenerator for its body
+        var fnIL = fnCtx.IL;
 
-        var bodyEmitter = new StatementEmitter(fnCtx);
-        bodyEmitter.EmitAll(s.Body);
+        var bodyEmitter2 = new StatementEmitter(fnCtx);
+        bodyEmitter2.EmitAll(s.Body);
 
-        if (isGenerator)
+        // Non-generator epilog
+        if (fnCtx.MethodReturnLabel.HasValue)
         {
-            if (fnCtx.MethodReturnLabel.HasValue)
+            if (fnCtx.ReturnValueLocal != null)
             {
-                if (fnCtx.ReturnValueLocal != null)
-                {
-                    fnIL.Emit(OpCodes.Ldnull);
-                    fnIL.Emit(OpCodes.Stloc, fnCtx.ReturnValueLocal);
-                }
-                fnIL.Emit(OpCodes.Br, fnCtx.MethodReturnLabel.Value);
-                fnIL.MarkLabel(fnCtx.MethodReturnLabel.Value);
-                if (fnCtx.ReturnValueLocal != null)
-                    fnIL.Emit(OpCodes.Ldloc, fnCtx.ReturnValueLocal);
-                else
-                {
-                    fnIL.Emit(OpCodes.Ldloc, fnCtx.GeneratorListLocal!);
-                    var iterCtor2 = typeof(NajaGeneratorIterator)
-                        .GetConstructor(new[] { typeof(System.Collections.Generic.List<object>) })!;
-                    fnIL.Emit(OpCodes.Newobj, iterCtor2);
-                }
-                fnIL.Emit(OpCodes.Ret);
+                fnIL.Emit(OpCodes.Ldnull);
+                fnIL.Emit(OpCodes.Stloc, fnCtx.ReturnValueLocal);
             }
+            fnIL.Emit(OpCodes.Br, fnCtx.MethodReturnLabel.Value);
+            fnIL.MarkLabel(fnCtx.MethodReturnLabel.Value);
+            if (fnCtx.ReturnValueLocal != null)
+                fnIL.Emit(OpCodes.Ldloc, fnCtx.ReturnValueLocal);
             else
-            {
-                bool endsWithReturn = s.Body.Count > 0 && s.Body[^1] is ReturnStatement;
-                if (!endsWithReturn)
-                {
-                    fnIL.Emit(OpCodes.Ldloc, fnCtx.GeneratorListLocal!);
-                    var iterCtor = typeof(NajaGeneratorIterator)
-                        .GetConstructor(new[] { typeof(System.Collections.Generic.List<object>) })!;
-                    fnIL.Emit(OpCodes.Newobj, iterCtor);
-                    fnIL.Emit(OpCodes.Ret);
-                }
-            }
+                fnIL.Emit(OpCodes.Ldnull);
+            fnIL.Emit(OpCodes.Ret);
         }
         else
         {
-            // Non-generator: use the shared epilog helper pattern inline
-            if (fnCtx.MethodReturnLabel.HasValue)
+            bool endsWithReturn = s.Body.Count > 0 && s.Body[^1] is ReturnStatement;
+            if (!endsWithReturn)
             {
-                if (fnCtx.ReturnValueLocal != null)
-                {
-                    fnIL.Emit(OpCodes.Ldnull);
-                    fnIL.Emit(OpCodes.Stloc, fnCtx.ReturnValueLocal);
-                }
-                fnIL.Emit(OpCodes.Br, fnCtx.MethodReturnLabel.Value);
-                fnIL.MarkLabel(fnCtx.MethodReturnLabel.Value);
-                if (fnCtx.ReturnValueLocal != null)
-                    fnIL.Emit(OpCodes.Ldloc, fnCtx.ReturnValueLocal);
-                else
-                    fnIL.Emit(OpCodes.Ldnull);
+                fnIL.Emit(OpCodes.Ldnull);
                 fnIL.Emit(OpCodes.Ret);
-            }
-            else
-            {
-                bool endsWithReturn = s.Body.Count > 0 && s.Body[^1] is ReturnStatement;
-                if (!endsWithReturn)
-                {
-                    fnIL.Emit(OpCodes.Ldnull);
-                    fnIL.Emit(OpCodes.Ret);
-                }
             }
         }
 
         // Register in current context so calls within scope find it
         _ctx.Methods[s.Name] = mb;
         _ctx.MethodParamTypes[s.Name] = pts;
+        if (capturedOuterParamNames.Count > 0)
+            _ctx.FunctionCapturedParams[s.Name] = capturedOuterParamNames;
 
         // Push null as the "function object" value — local variable holds method ref
         // Full delegate creation in Phase 7

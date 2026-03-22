@@ -129,6 +129,31 @@ public sealed partial class AssemblyEmitter
         foreach (var (k, v) in namespaceImports) ctx.NamespaceImports[k] = v;
         foreach (var mn in _classMethodNames) ctx.ClassMethods.Add(mn);
 
+        // Hoist variables referenced by nested functions into static fields,
+        // mirroring the same pass that EmitFunctionBody does for module-level functions.
+        // Without this, inner defs inside class methods cannot reach enclosing locals.
+        var nestedRefsM    = Naja.CodeGen.Emitters.Statements.StatementAnalyzer.CollectNamesReferencedByNestedFunctions(fn.Body);
+        var assignedM      = Naja.CodeGen.Emitters.Statements.StatementAnalyzer.CollectAssignedNames(fn.Body);
+        var paramNamesSetM = new HashSet<string>(fn.Params.Select(p => p.Name));
+        foreach (var r in nestedRefsM.Intersect(assignedM.Union(paramNamesSetM)))
+        {
+            if (!ctx.Fields.ContainsKey(r))
+            {
+                var fb = ct.DefineField($"__nl_{fn.Name}_{r}", typeof(object),
+                                        FieldAttributes.Private | FieldAttributes.Static);
+                ctx.Fields[r] = fb;
+            }
+            if (paramNamesSetM.Contains(r))
+                ctx.HoistedParams.Add(r);
+        }
+        // Copy hoisted parameter values into their static fields at method entry.
+        // Arg indices mirror fn.Params: for instance methods arg 0 = self, arg 1 = first real param.
+        for (int hi = 0; hi < fn.Params.Count; hi++)
+        {
+            if (!ctx.HoistedParams.Contains(fn.Params[hi].Name)) continue;
+            switch (hi) { case 0: il.Emit(OpCodes.Ldarg_0); break; case 1: il.Emit(OpCodes.Ldarg_1); break; case 2: il.Emit(OpCodes.Ldarg_2); break; case 3: il.Emit(OpCodes.Ldarg_3); break; default: il.Emit(OpCodes.Ldarg_S, (byte)hi); break; }
+            il.Emit(OpCodes.Stsfld, ctx.Fields[fn.Params[hi].Name]);
+        }
 
         var emitter = new StatementEmitter(ctx);
         emitter.EmitAll(fn.Body);
@@ -214,75 +239,151 @@ public sealed partial class AssemblyEmitter
             if (!fnGlobals.Contains(name))
                 ctx.Fields.Remove(name);
 
-        // Hoist variables referenced by nested functions:
-        // references a name that is assigned in this function, promote that name
-        // to a module-level static field so the inner function sees the enclosing
-        // binding (Python LEGB semantics).
+        // Hoist variables referenced by nested functions, including parameters:
+        // if an inner function references a name that is assigned *or passed as a
+        // parameter* in this function, promote it to a static field so the inner
+        // function can reach the enclosing binding (Python LEGB / closure semantics).
         var nestedRefs = Naja.CodeGen.Emitters.Statements.StatementAnalyzer.CollectNamesReferencedByNestedFunctions(fn.Body);
         var assigned = Naja.CodeGen.Emitters.Statements.StatementAnalyzer.CollectAssignedNames(fn.Body);
-        foreach (var r in nestedRefs.Intersect(assigned))
+        var paramNamesSet = new HashSet<string>(fn.Params.Select(p => p.Name));
+        var cellVarNames = new List<string>();
+        foreach (var r in nestedRefs.Intersect(assigned.Union(paramNamesSet)))
         {
-            // Create hoisted field EVEN IF a module-level field exists with this name
-            // because we need to shadow it in this function's scope for proper closure semantics
-            var fb = tb.DefineField($"__nl_{r}", typeof(object), FieldAttributes.Private | FieldAttributes.Static);
-            ctx.Fields[r] = fb;  // Override any existing field in context
+            if (paramNamesSet.Contains(r))
+            {
+                // Parameter captured by inner function → static field (value snapshot via NajaFunction)
+                var fb = tb.DefineField($"__nl_{r}", typeof(object), FieldAttributes.Private | FieldAttributes.Static);
+                ctx.Fields[r] = fb;
+                ctx.HoistedParams.Add(r);
+            }
+            else
+            {
+                // Local var captured by inner function → per-call object[1] cell
+                cellVarNames.Add(r);
+            }
+        }
+        // Copy hoisted parameter values into their static fields at function entry
+        for (int hi = 0; hi < fn.Params.Count; hi++)
+        {
+            if (!ctx.HoistedParams.Contains(fn.Params[hi].Name)) continue;
+            switch (hi) { case 0: il.Emit(OpCodes.Ldarg_0); break; case 1: il.Emit(OpCodes.Ldarg_1); break; case 2: il.Emit(OpCodes.Ldarg_2); break; case 3: il.Emit(OpCodes.Ldarg_3); break; default: il.Emit(OpCodes.Ldarg_S, (byte)hi); break; }
+            il.Emit(OpCodes.Stsfld, ctx.Fields[fn.Params[hi].Name]);
+        }
+        // Allocate per-call cells for local vars captured by nested functions
+        foreach (var cv in cellVarNames)
+        {
+            var cellLocal = ctx.Locals.Declare($"__cell_{cv}", typeof(object[]));
+            il.Emit(OpCodes.Ldc_I4_1);
+            il.Emit(OpCodes.Newarr, typeof(object));
+            il.Emit(OpCodes.Stloc, cellLocal);
+            ctx.CellLocals[cv] = cellLocal;
         }
 
         // Check if this function contains yield statements (is a generator)
         bool isGenerator = Naja.CodeGen.Emitters.Statements.StatementAnalyzer.ContainsYield(fn.Body);
         if (isGenerator)
         {
-            // Initialize the generator list at function entry
-            var listType = typeof(System.Collections.Generic.List<object>);
-            var ctor = listType.GetConstructor(Type.EmptyTypes)!;
-            ctx.GeneratorListLocal = ctx.Locals.Declare($"__generator_{fn.Name}_{fn.Line}", listType);
-            il.Emit(OpCodes.Newobj, ctor);
-            il.Emit(OpCodes.Stloc, ctx.GeneratorListLocal);
+            // ── Generator: two-method compilation ─────────────────────────────────
+            // Wrapper (mb): packs original args into object[] and returns a NajaGenerator.
+            // Body (__gen_body__): void (NajaGenerator, object[]) — runs on a background
+            // thread managed by NajaGenerator; yield → gen.Yield(v); return v → throw NajaGeneratorReturn(v).
 
-            // For generators, override returnType to be object since we'll return the list
-            returnType = typeof(object);
+            var bodyMethod = tb.DefineMethod(
+                fn.Name + "__gen_body__",
+                MethodAttributes.Private | MethodAttributes.Static,
+                typeof(void),
+                new Type[] { typeof(NajaGenerator), typeof(object[]) });
+            bodyMethod.DefineParameter(1, ParameterAttributes.None, "__gen");
+            bodyMethod.DefineParameter(2, ParameterAttributes.None, "__args");
+
+            // Emit wrapper: build args[], create delegate, new NajaGenerator, ret
+            // Compute param CLR types so value types (long, double, bool) can be
+            // boxed to object before storing into the object[] args array.
+            var wrapperPts = fn.Params.Select((p, i) =>
+            {
+                var pType = fnType?.ParamTypes.ElementAtOrDefault(i);
+                var clr = pType is not null ? TypeMapper.ToClrType(pType) : typeof(object);
+                return clr == typeof(void) ? typeof(object) : clr;
+            }).ToArray();
+            il.Emit(OpCodes.Ldc_I4, fn.Params.Count);
+            il.Emit(OpCodes.Newarr, typeof(object));
+            for (int wi = 0; wi < fn.Params.Count; wi++)
+            {
+                il.Emit(OpCodes.Dup);
+                il.Emit(OpCodes.Ldc_I4, wi);
+                switch (wi) { case 0: il.Emit(OpCodes.Ldarg_0); break; case 1: il.Emit(OpCodes.Ldarg_1); break; case 2: il.Emit(OpCodes.Ldarg_2); break; case 3: il.Emit(OpCodes.Ldarg_3); break; default: il.Emit(OpCodes.Ldarg_S, (byte)wi); break; }
+                if (wrapperPts[wi].IsValueType)
+                    il.Emit(OpCodes.Box, wrapperPts[wi]);
+                il.Emit(OpCodes.Stelem_Ref);
+            }
+            var wrapperArgsLocal = ctx.Locals.Declare("__gen_args", typeof(object[]));
+            il.Emit(OpCodes.Stloc, wrapperArgsLocal);
+            il.Emit(OpCodes.Ldnull);
+            il.Emit(OpCodes.Ldftn, bodyMethod);
+            il.Emit(OpCodes.Newobj, typeof(Action<NajaGenerator, object[]>).GetConstructors()[0]);
+            il.Emit(OpCodes.Ldloc, wrapperArgsLocal);
+            il.Emit(OpCodes.Newobj, NajaBuiltinsMethodCache.NajaGenerator_Ctor);
+            il.Emit(OpCodes.Ret);
+
+            // Build body method context
+            var bodyIL = bodyMethod.GetILGenerator();
+            var bodyCtx = new EmitContext(bodyIL, _model, tb, modBuilder, typeof(void),
+                                          Array.Empty<string>());
+            bodyCtx.IsInsideFunction = true;
+            bodyCtx.IsGeneratorBody = true;
+
+            foreach (var (k, v) in fields) bodyCtx.Fields[k] = v;
+            foreach (var (k, v) in methods) bodyCtx.Methods[k] = v;
+            foreach (var (k, v) in paramTypes) bodyCtx.MethodParamTypes[k] = v;
+            foreach (var (k, v) in _classTypes) bodyCtx.ClassTypes[k] = v;
+            foreach (var (k, v) in _classConstructors) bodyCtx.ClassConstructors[k] = v;
+            foreach (var (k, v) in _classCtorArgCounts) bodyCtx.ClassCtorArgCounts[k] = v;
+            foreach (var (k, v) in _classMethods) bodyCtx.AllClassMethods[k] = v;
+            foreach (var (k, v) in _classMethodParamTypes) bodyCtx.AllClassMethodParamTypes[k] = v;
+            foreach (var mn in _classMethodNames) bodyCtx.ClassMethods.Add(mn);
+            foreach (var (k, v) in importMap) bodyCtx.ImportMap[k] = v;
+
+            // LEGB: remove locally-assigned non-global names
+            foreach (var name in fnAssigned)
+                if (!fnGlobals.Contains(name))
+                    bodyCtx.Fields.Remove(name);
+
+            // Re-apply hoisted fields so nested closures inside the body can see them
+            foreach (var r in nestedRefs.Intersect(assigned.Union(paramNamesSet)))
+            {
+                if (ctx.Fields.TryGetValue(r, out var hf))
+                    bodyCtx.Fields[r] = hf;
+            }
+
+            // Unpack original params from __args[i] into locals; also init hoisted fields
+            for (int bi = 0; bi < fn.Params.Count; bi++)
+            {
+                var pname = fn.Params[bi].Name;
+                var plocal = bodyCtx.Locals.Declare(pname, typeof(object));
+                bodyIL.Emit(OpCodes.Ldarg_1);
+                bodyIL.Emit(OpCodes.Ldc_I4, bi);
+                bodyIL.Emit(OpCodes.Ldelem_Ref);
+                bodyIL.Emit(OpCodes.Stloc, plocal);
+                if (bodyCtx.Fields.TryGetValue(pname, out var hField))
+                {
+                    bodyIL.Emit(OpCodes.Ldloc, plocal);
+                    bodyIL.Emit(OpCodes.Stsfld, hField);
+                }
+            }
+
+            var bodyEmitter = new StatementEmitter(bodyCtx);
+            bodyEmitter.EmitAll(fn.Body);
+
+            if (bodyCtx.MethodReturnLabel.HasValue)
+                bodyIL.MarkLabel(bodyCtx.MethodReturnLabel.Value);
+            bodyIL.Emit(OpCodes.Ret);
+
+            return;  // wrapper already emitted `ret`
         }
 
         var emitter = new StatementEmitter(ctx);
         emitter.EmitAll(fn.Body);
-
-        if (isGenerator)
-        {
-            // Generator: emit fall-through epilog (no return-inside-exception epilog needed
-            // because generator functions always fall through to here; the Leave epilog
-            // for generator return is handled by the normal EmitMethodEpilog path when
-            // ctx.MethodReturnLabel is set).
-            if (ctx.MethodReturnLabel.HasValue)
-            {
-                il.MarkLabel(ctx.MethodReturnLabel.Value);
-                if (ctx.ReturnValueLocal != null)
-                    il.Emit(OpCodes.Ldloc, ctx.ReturnValueLocal);
-                else
-                {
-                    il.Emit(OpCodes.Ldloc, ctx.GeneratorListLocal!);
-                    var iterCtor2 = typeof(NajaGeneratorIterator)
-                        .GetConstructor(new[] { typeof(System.Collections.Generic.List<object>) })!;
-                    il.Emit(OpCodes.Newobj, iterCtor2);
-                }
-                il.Emit(OpCodes.Ret);
-            }
-            else
-            {
-                bool endsWithReturn = fn.Body.Count > 0 && fn.Body[^1] is ReturnStatement;
-                if (!endsWithReturn)
-                {
-                    il.Emit(OpCodes.Ldloc, ctx.GeneratorListLocal!);
-                    var iterCtor = typeof(NajaGeneratorIterator)
-                        .GetConstructor(new[] { typeof(System.Collections.Generic.List<object>) })!;
-                    il.Emit(OpCodes.Newobj, iterCtor);
-                    il.Emit(OpCodes.Ret);
-                }
-            }
-        }
-        else
-        {
-            EmitMethodEpilog(il, ctx, returnType);
-        }
+        EmitMethodEpilog(il, ctx, returnType);
     }
 
     /// <summary>

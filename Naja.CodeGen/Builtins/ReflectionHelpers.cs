@@ -362,7 +362,7 @@ public static class ReflectionHelpers
             if (handlerMethod is null)
                 throw new Exception($"EventError: method '{handlerMethodName}' not found on handler object");
 
-            del = Delegate.CreateDelegate(handlerType, handlerTarget, handlerMethod);
+            del = CreateEventDelegate(handlerType, invoke, handlerTarget, handlerMethod);
         }
 
         evt.AddEventHandler(target, del);
@@ -394,13 +394,82 @@ public static class ReflectionHelpers
             if (handlerMethod is null)
                 throw new Exception($"EventError: method '{handlerMethodName}' not found on handler object");
 
-            del = Delegate.CreateDelegate(handlerType, handlerTarget, handlerMethod);
+            var handlerType2 = evt.EventHandlerType!;
+            var invoke2 = handlerType2.GetMethod("Invoke")!;
+            del = CreateEventDelegate(handlerType2, invoke2, handlerTarget, handlerMethod);
         }
 
         evt.RemoveEventHandler(target, del);
     }
 
     // ── Helper methods ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Create a delegate of <paramref name="handlerType"/> that calls <paramref name="handlerMethod"/>
+    /// on <paramref name="handlerTarget"/>.  Falls back to a DynamicMethod adapter when
+    /// <c>Delegate.CreateDelegate</c> fails (e.g. Naja methods return <c>object</c> but
+    /// the event expects <c>void</c>).
+    /// </summary>
+    private static Delegate CreateEventDelegate(
+        Type handlerType, MethodInfo invoke,
+        object handlerTarget, MethodInfo handlerMethod)
+    {
+        try
+        {
+            return Delegate.CreateDelegate(handlerType, handlerTarget, handlerMethod);
+        }
+        catch (ArgumentException)
+        {
+            // Signature mismatch (e.g. event is void but Naja method returns object).
+            // Build a DynamicMethod that boxes/unboxes and ignores return value as needed.
+            var invokeParams = invoke.GetParameters();
+            var dmParamTypes = new[] { typeof(object[]) }
+                .Concat(invokeParams.Select(p => p.ParameterType))
+                .ToArray();
+            var dm = new System.Reflection.Emit.DynamicMethod(
+                "_naja_ev_", invoke.ReturnType, dmParamTypes,
+                typeof(ReflectionHelpers).Module, skipVisibility: true);
+            var dil = dm.GetILGenerator();
+
+            // Load target (capture[0]) and method (capture[1]), then call Invoke
+            var miInvoke = typeof(MethodInfo).GetMethod("Invoke",
+                new[] { typeof(object), typeof(object[]) })!;
+
+            dil.Emit(System.Reflection.Emit.OpCodes.Ldarg_0);
+            dil.Emit(System.Reflection.Emit.OpCodes.Ldc_I4_1);
+            dil.Emit(System.Reflection.Emit.OpCodes.Ldelem_Ref);
+            dil.Emit(System.Reflection.Emit.OpCodes.Castclass, typeof(MethodInfo));
+
+            dil.Emit(System.Reflection.Emit.OpCodes.Ldarg_0);
+            dil.Emit(System.Reflection.Emit.OpCodes.Ldc_I4_0);
+            dil.Emit(System.Reflection.Emit.OpCodes.Ldelem_Ref);
+
+            dil.Emit(System.Reflection.Emit.OpCodes.Ldc_I4, invokeParams.Length);
+            dil.Emit(System.Reflection.Emit.OpCodes.Newarr, typeof(object));
+            for (int i = 0; i < invokeParams.Length; i++)
+            {
+                dil.Emit(System.Reflection.Emit.OpCodes.Dup);
+                dil.Emit(System.Reflection.Emit.OpCodes.Ldc_I4, i);
+                switch (i + 1)
+                {
+                    case 1: dil.Emit(System.Reflection.Emit.OpCodes.Ldarg_1); break;
+                    case 2: dil.Emit(System.Reflection.Emit.OpCodes.Ldarg_2); break;
+                    case 3: dil.Emit(System.Reflection.Emit.OpCodes.Ldarg_3); break;
+                    default: dil.Emit(System.Reflection.Emit.OpCodes.Ldarg_S, (byte)(i + 1)); break;
+                }
+                if (invokeParams[i].ParameterType.IsValueType)
+                    dil.Emit(System.Reflection.Emit.OpCodes.Box, invokeParams[i].ParameterType);
+                dil.Emit(System.Reflection.Emit.OpCodes.Stelem_Ref);
+            }
+            dil.Emit(System.Reflection.Emit.OpCodes.Callvirt, miInvoke);
+            if (invoke.ReturnType == typeof(void))
+                dil.Emit(System.Reflection.Emit.OpCodes.Pop);
+            dil.Emit(System.Reflection.Emit.OpCodes.Ret);
+
+            var capture = new object[] { handlerTarget, handlerMethod };
+            return dm.CreateDelegate(handlerType, capture);
+        }
+    }
 
     private static int SafeToInt32(object key)
     {

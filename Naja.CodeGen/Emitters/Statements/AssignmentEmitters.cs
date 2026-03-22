@@ -325,9 +325,37 @@ public class AssignmentEmitters : StatementEmitterBase
         {
             case NameExpr n:
                 // Priority for ASSIGNMENT target location (LEGB):
+                // 0. Cell param (inner function: var stored in object[] passed as param)
+                // 0b. Cell local (outer function: var stored in per-call object[] cell)
                 // 1. If a hoisted/nonlocal field exists → store there (closure variable)
                 // 2. If semantic says it's a local (non-global/non-nonlocal) → store locally
                 // 3. Otherwise → create/store to local (Python default)
+
+                if (_ctx.CellParamOf.TryGetValue(n.Name, out var cellPName))
+                {
+                    // Write through cell param: cell_param[0] = value
+                    var cpTmp = _ctx.Locals.Declare($"__cpv_{n.Name}_{n.Line}", typeof(object));
+                    TypeMapper.EmitBox(IL, valueType);
+                    IL.Emit(OpCodes.Stloc, cpTmp);
+                    _ctx.TryEmitLoadParam(cellPName);   // load cell array
+                    IL.Emit(OpCodes.Ldc_I4_0);
+                    IL.Emit(OpCodes.Ldloc, cpTmp);
+                    IL.Emit(OpCodes.Stelem_Ref);
+                    break;
+                }
+
+                if (_ctx.CellLocals.TryGetValue(n.Name, out var cellLoc))
+                {
+                    // Write through cell local: cell_local[0] = value
+                    var clTmp = _ctx.Locals.Declare($"__clv_{n.Name}_{n.Line}", typeof(object));
+                    TypeMapper.EmitBox(IL, valueType);
+                    IL.Emit(OpCodes.Stloc, clTmp);
+                    IL.Emit(OpCodes.Ldloc, cellLoc);    // load cell array
+                    IL.Emit(OpCodes.Ldc_I4_0);
+                    IL.Emit(OpCodes.Ldloc, clTmp);
+                    IL.Emit(OpCodes.Stelem_Ref);
+                    break;
+                }
 
                 if (_ctx.Fields.TryGetValue(n.Name, out var staticField))
                 {
@@ -362,6 +390,7 @@ public class AssignmentEmitters : StatementEmitterBase
                     if (clrType == typeof(void)) clrType = typeof(object);
                     if (!_ctx.Locals.Contains(n.Name))
                         _ctx.Locals.Declare(n.Name, clrType);
+                    EmitCoerceForTypedLocal(_ctx.Locals.TryGet(n.Name), valueType);
                     _ctx.Locals.EmitStore(n.Name);
                     break;
                 }
@@ -371,6 +400,7 @@ public class AssignmentEmitters : StatementEmitterBase
                 if (defaultClr == typeof(void)) defaultClr = typeof(object);
                 if (!_ctx.Locals.Contains(n.Name))
                     _ctx.Locals.Declare(n.Name, defaultClr);
+                EmitCoerceForTypedLocal(_ctx.Locals.TryGet(n.Name), valueType);
                 _ctx.Locals.EmitStore(n.Name);
                 break;
 
@@ -388,6 +418,10 @@ public class AssignmentEmitters : StatementEmitterBase
                     Type? currentBase = _ctx.TypeBuilder.BaseType;
                     while (currentBase != null && currentBase != typeof(object))
                     {
+                        // TypeBuilder instances cannot have their members queried before
+                        // CreateType() — skip Naja user-defined bases (they have no CLR properties).
+                        if (currentBase is TypeBuilder)
+                            break;
                         var flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly;
                         if (currentBase.GetProperty(a.Attribute, flags) != null ||
                             currentBase.GetEvent(a.Attribute, flags) != null)
@@ -517,5 +551,25 @@ public class AssignmentEmitters : StatementEmitterBase
                 EmitStore(elems[starIdx + 1 + i], NajaTypes.Unknown);
             }
         }
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// When an already-declared typed local (long, double, bool) would receive an
+    /// <see cref="UnknownType"/> (object) value — e.g. from a dynamic operator —
+    /// emit a runtime conversion so the stack type matches the local slot type.
+    /// Called immediately before every <see cref="LocalsManager.EmitStore"/> call
+    /// on a NameExpr target.
+    /// </summary>
+    private void EmitCoerceForTypedLocal(LocalBuilder? local, NajaType valueType)
+    {
+        if (local is null || valueType is not UnknownType) return;
+        if (local.LocalType == typeof(long))
+            IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ToInt_Method);
+        else if (local.LocalType == typeof(double))
+            IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ToFloat_Method);
+        else if (local.LocalType == typeof(bool))
+            IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ToBool_Method);
     }
 }

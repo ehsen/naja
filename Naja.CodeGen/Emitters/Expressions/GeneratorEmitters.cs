@@ -25,7 +25,7 @@ public sealed class GeneratorEmitters : ExpressionEmitterBase
             "Use EmitYield directly from ExpressionEmitter dispatcher.",
             expr.Line, expr.Column);
 
-    // ── Yield  (Basic generator support) ──────────────────────────────────────
+    // ── Yield  (coroutine-based generator support) ────────────────────────────
 
     public NajaType EmitYield(YieldExpr e)
     {
@@ -35,23 +35,21 @@ public sealed class GeneratorEmitters : ExpressionEmitterBase
         if (e.IsFrom)
             return EmitYieldFrom(e);
 
-        // Add yielded value to the generator list that was initialized at function entry
-        if (_ctx.GeneratorListLocal != null)
+        if (_ctx.IsGeneratorBody)
         {
-            IL.Emit(OpCodes.Ldloc, _ctx.GeneratorListLocal);
+            // Thread-based coroutine: ldarg.0 = NajaGenerator __gen; call gen.Yield(value)
+            // Returns the sent value (from generator.send(v)), which becomes the result
+            // of the yield expression in the body.
+            IL.Emit(OpCodes.Ldarg_0);   // load NajaGenerator __gen
             var valueType = _mainEmitter.Emit(e.Value);
             TypeMapper.EmitBox(IL, valueType);
-            var addMethod = typeof(System.Collections.Generic.List<object>).GetMethod("Add")!;
-            IL.Emit(OpCodes.Callvirt, addMethod);
-        }
-        else
-        {
-            // Fallback: generator list not initialized, just discard the value
-            var valueType = _mainEmitter.Emit(e.Value);
-            IL.Emit(OpCodes.Pop);
+            IL.Emit(OpCodes.Callvirt, NajaBuiltinsMethodCache.NajaGenerator_Yield_Method);
+            return NajaTypes.Unknown;   // send value (or None)
         }
 
-        // Yield expressions leave None on the stack (the send() value — not yet supported)
+        // Fallback for contexts where IsGeneratorBody wasn't set (should not happen in normal use)
+        var vt = _mainEmitter.Emit(e.Value);
+        IL.Emit(OpCodes.Pop);
         IL.Emit(OpCodes.Ldnull);
         return NajaTypes.None;
     }
@@ -60,38 +58,64 @@ public sealed class GeneratorEmitters : ExpressionEmitterBase
 
     private NajaType EmitYieldFrom(YieldExpr e)
     {
-        if (_ctx.GeneratorListLocal is null)
+        if (!_ctx.IsGeneratorBody)
             throw new CodeGenException("'yield from' used in non-generator function", e.Line, e.Column);
 
-        // Iterate the sub-iterable and add every value to the generator list.
-        // Use GetForLoopEnumerator so strings yield single-char strings, not chars.
+        // Iterate the sub-iterable and forward every value to our caller via gen.Yield().
+        // If the sub-iterable is a NajaGenerator, capture its ReturnValue after exhaustion
+        // and return it as the result of the yield-from expression (PEP 380).
+
+        // Evaluate the sub-iterable
         var iterType = _mainEmitter.Emit(e.Value);
         TypeMapper.EmitBox(IL, iterType);
-        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.GetForLoopEnumerator_Method);
+        // Keep a reference so we can read ReturnValue after the loop
+        var subIterLocal = _ctx.Locals.Declare($"__yf_sub_{e.Line}_{e.Column}", typeof(object));
+        IL.Emit(OpCodes.Stloc, subIterLocal);
 
+        // Get enumerator
+        IL.Emit(OpCodes.Ldloc, subIterLocal);
+        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.GetForLoopEnumerator_Method);
         var enumLocal = _ctx.Locals.Declare($"__yf_enum_{e.Line}_{e.Column}", typeof(System.Collections.IEnumerator));
         IL.Emit(OpCodes.Stloc, enumLocal);
 
         var loopStart = IL.DefineLabel();
-        var loopEnd = IL.DefineLabel();
-        var moveNext = typeof(System.Collections.IEnumerator).GetMethod("MoveNext")!;
-        var current = typeof(System.Collections.IEnumerator).GetProperty("Current")!.GetGetMethod()!;
-        var addMethod = typeof(System.Collections.Generic.List<object>).GetMethod("Add")!;
+        var loopEnd   = IL.DefineLabel();
+        var moveNext  = typeof(System.Collections.IEnumerator).GetMethod("MoveNext")!;
+        var getCurrent = typeof(System.Collections.IEnumerator).GetProperty("Current")!.GetGetMethod()!;
 
         IL.MarkLabel(loopStart);
         IL.Emit(OpCodes.Ldloc, enumLocal);
         IL.Emit(OpCodes.Callvirt, moveNext);
         IL.Emit(OpCodes.Brfalse, loopEnd);
 
-        IL.Emit(OpCodes.Ldloc, _ctx.GeneratorListLocal);
+        // Forward current element: __gen.Yield(current) — discard send value
+        IL.Emit(OpCodes.Ldarg_0);   // NajaGenerator __gen
         IL.Emit(OpCodes.Ldloc, enumLocal);
-        IL.Emit(OpCodes.Callvirt, current);
-        IL.Emit(OpCodes.Callvirt, addMethod);
+        IL.Emit(OpCodes.Callvirt, getCurrent);
+        IL.Emit(OpCodes.Callvirt, NajaBuiltinsMethodCache.NajaGenerator_Yield_Method);
+        IL.Emit(OpCodes.Pop);       // discard send value for now
 
         IL.Emit(OpCodes.Br, loopStart);
         IL.MarkLabel(loopEnd);
 
+        // Return sub-generator's ReturnValue (PEP 380), or null for plain iterables
+        var retValProp = typeof(NajaGenerator).GetProperty(nameof(NajaGenerator.ReturnValue))!.GetGetMethod()!;
+        var afterCheck = IL.DefineLabel();
+        IL.Emit(OpCodes.Ldloc, subIterLocal);
+        IL.Emit(OpCodes.Isinst, typeof(NajaGenerator));
+        IL.Emit(OpCodes.Brfalse, afterCheck);
+        IL.Emit(OpCodes.Ldloc, subIterLocal);
+        IL.Emit(OpCodes.Castclass, typeof(NajaGenerator));
+        IL.Emit(OpCodes.Callvirt, retValProp);
+        var retLocal = _ctx.Locals.Declare($"__yf_ret_{e.Line}_{e.Column}", typeof(object));
+        IL.Emit(OpCodes.Stloc, retLocal);
+        var doneLabel = IL.DefineLabel();
+        IL.Emit(OpCodes.Br, doneLabel);
+        IL.MarkLabel(afterCheck);
         IL.Emit(OpCodes.Ldnull);
-        return NajaTypes.None;
+        IL.Emit(OpCodes.Stloc, retLocal);
+        IL.MarkLabel(doneLabel);
+        IL.Emit(OpCodes.Ldloc, retLocal);
+        return NajaTypes.Unknown;
     }
 }

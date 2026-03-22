@@ -98,7 +98,9 @@ public sealed partial class AssemblyEmitter
             && !instanceFields.ContainsKey(attr.Attribute))
         {
             // 1. PREVENT SHADOWING BASE CLASS PROPERTIES (e.g. Form.Text, Form.Size)
-            if (ct.BaseType != null)
+            // Skip this check for uncreated TypeBuilders — GetMember() throws
+            // NotSupportedException before CreateType() is called.
+            if (ct.BaseType != null && ct.BaseType is not TypeBuilder)
             {
                 var existingMembers = ct.BaseType.GetMember(
                     attr.Attribute,

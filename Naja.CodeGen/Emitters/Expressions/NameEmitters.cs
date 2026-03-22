@@ -57,6 +57,28 @@ public sealed class NameEmitters : ExpressionEmitterBase
             return sym?.Type ?? NajaTypes.Unknown;
         }
 
+        // 1b. Cell param: variable is stored in an object[] cell accessible via a named param
+        // (inner function case: outer nonlocal var is passed as __cell_varname of type object[])
+        if (_ctx.CellParamOf.TryGetValue(e.Name, out var cellParamName))
+        {
+            if (_ctx.TryEmitLoadParam(cellParamName))
+            {
+                IL.Emit(OpCodes.Ldc_I4_0);
+                IL.Emit(OpCodes.Ldelem_Ref);
+                return NajaTypes.Unknown;
+            }
+        }
+
+        // 1c. Cell local: variable is stored in an object[] cell in this function's locals
+        // (outer function case: per-call mutable cell allocated at method entry)
+        if (_ctx.CellLocals.TryGetValue(e.Name, out var cellLocalLB))
+        {
+            IL.Emit(OpCodes.Ldloc, cellLocalLB);
+            IL.Emit(OpCodes.Ldc_I4_0);
+            IL.Emit(OpCodes.Ldelem_Ref);
+            return NajaTypes.Unknown;
+        }
+
         // 2. PRIORITY: Check static fields BEFORE locals (module-level variables and hoisted closure variables)
         // MUST be checked BEFORE locals so that nonlocal/hoisted variables take precedence.
         // This ensures that when a variable is promoted to a static field for closure semantics,
@@ -126,19 +148,72 @@ public sealed class NameEmitters : ExpressionEmitterBase
             // incorrect boxing (e.g. for-loop variables stored as object).
             if (local.LocalType == typeof(object))
                 return NajaTypes.Unknown;
-            return _ctx.Model.GetSymbol(e)?.Type ?? NajaTypes.Unknown;
+            // Use the local's CLR type as ground truth. The semantic model may report
+            // Unknown for variables reassigned from dynamic operations (e.g. total = total + value),
+            // which would suppress EmitBox and leave a raw long/double/bool on the IL stack
+            // where object is expected — causing InvalidProgramException at JIT time.
+            return TypeMapper.FromClrType(local.LocalType);
         }
 
         // 4. Check Methods (first-class function references -- H5)
         if (_ctx.Methods.TryGetValue(e.Name, out var method))
         {
             var pts = _ctx.MethodParamTypes.TryGetValue(e.Name, out var t) ? t : System.Array.Empty<Type>();
-            var typeArgs = pts.Concat(new[] { method.ReturnType == typeof(void) ? typeof(object) : method.ReturnType }).ToArray();
-            var delegateType = System.Linq.Expressions.Expression.GetFuncType(typeArgs);
-            var ctor = delegateType.GetConstructors()[0];
+
+            // If this function captures outer-scope params or cell vars, wrap in NajaFunction
+            // so each call to the outer function gets its own snapshot.
+            _ctx.FunctionCapturedParams.TryGetValue(e.Name, out var capturedParams);
+            _ctx.FunctionCapturedCells.TryGetValue(e.Name, out var capturedCells);
+            capturedParams ??= new List<string>();
+            capturedCells ??= new List<string>();
+
+            if (capturedParams.Count > 0 || capturedCells.Count > 0)
+            {
+                var totalCaptures = capturedParams.Count + capturedCells.Count;
+                var typeArgs = pts.Concat(new[] { typeof(object) }).ToArray();
+                var delegateType = System.Linq.Expressions.Expression.GetFuncType(typeArgs);
+                var ctor = delegateType.GetConstructors()[0];
+                IL.Emit(OpCodes.Ldnull);
+                IL.Emit(OpCodes.Ldftn, method);
+                IL.Emit(OpCodes.Newobj, ctor);
+                // Build defaults array: captured param values first, then cell references
+                IL.Emit(OpCodes.Ldc_I4, totalCaptures);
+                IL.Emit(OpCodes.Newarr, typeof(object));
+                for (int ci = 0; ci < capturedParams.Count; ci++)
+                {
+                    IL.Emit(OpCodes.Dup);
+                    IL.Emit(OpCodes.Ldc_I4, ci);
+                    if (_ctx.Fields.TryGetValue(capturedParams[ci], out var capField))
+                        IL.Emit(OpCodes.Ldsfld, capField);
+                    else
+                        IL.Emit(OpCodes.Ldnull);
+                    IL.Emit(OpCodes.Stelem_Ref);
+                }
+                for (int ci = 0; ci < capturedCells.Count; ci++)
+                {
+                    IL.Emit(OpCodes.Dup);
+                    IL.Emit(OpCodes.Ldc_I4, capturedParams.Count + ci);
+                    // Load the cell reference from CellLocals (outer function allocated the cell)
+                    // or from CellParamOf (this function received it as a param and passes it on)
+                    if (_ctx.CellLocals.TryGetValue(capturedCells[ci], out var cellLoc))
+                        IL.Emit(OpCodes.Ldloc, cellLoc);
+                    else if (_ctx.CellParamOf.TryGetValue(capturedCells[ci], out var cParamName)
+                             && _ctx.TryEmitLoadParam(cParamName))
+                    { /* param already emitted by TryEmitLoadParam */ }
+                    else
+                        IL.Emit(OpCodes.Ldnull);
+                    IL.Emit(OpCodes.Stelem_Ref);
+                }
+                IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.CreateFunctionWithDefaults_Method);
+                return NajaTypes.Unknown;
+            }
+
+            var typeArgs2 = pts.Concat(new[] { method.ReturnType == typeof(void) ? typeof(object) : method.ReturnType }).ToArray();
+            var delegateType2 = System.Linq.Expressions.Expression.GetFuncType(typeArgs2);
+            var ctor2 = delegateType2.GetConstructors()[0];
             IL.Emit(OpCodes.Ldnull);        // static method target
             IL.Emit(OpCodes.Ldftn, method);
-            IL.Emit(OpCodes.Newobj, ctor);
+            IL.Emit(OpCodes.Newobj, ctor2);
             return NajaTypes.Unknown;
         }
 

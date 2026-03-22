@@ -192,11 +192,11 @@ public static class ExceptionHelpers
         // Step 1: Produce the raw formatted string based on type code
         string raw = parsed.Type switch
         {
-            'b' => Convert.ToString(Convert.ToInt64(value), 2),   // binary
-            'o' => Convert.ToString(Convert.ToInt64(value), 8),   // octal
-            'x' => Convert.ToInt64(value).ToString("x"),          // hex lowercase
-            'X' => Convert.ToInt64(value).ToString("X"),          // hex uppercase
-            'd' => Convert.ToInt64(value).ToString(),             // decimal
+            'b' => Convert.ToString(Convert.ToInt64(value), 2),
+            'o' => Convert.ToString(Convert.ToInt64(value), 8),
+            'x' => Convert.ToInt64(value).ToString("x"),
+            'X' => Convert.ToInt64(value).ToString("X"),
+            'd' => Convert.ToInt64(value).ToString(),
             'f' => FormatFloatFixed(value, parsed.Precision ?? 6),
             'e' => FormatFloatSci(value, parsed.Precision ?? 6),
             'g' => FormatFloatGeneral(value, parsed.Precision ?? 6),
@@ -205,7 +205,7 @@ public static class ExceptionHelpers
             _ => TypeConversion.ToStr(value)
         };
 
-        // Step 2: Apply alternate form prefix (# flag)
+        // Step 2: Apply alternate form prefix (#)
         if (parsed.AltForm && !raw.StartsWith("-"))
         {
             raw = parsed.Type switch
@@ -218,16 +218,48 @@ public static class ExceptionHelpers
             };
         }
 
-        // Step 3: Apply padding
+        // Step 3: Sign handling
+        bool isNumeric = parsed.Type is 'd' or 'b' or 'o' or 'x' or 'X' or 'f' or 'e' or 'g' or '%';
+        if (isNumeric && !raw.StartsWith("-"))
+        {
+            if (parsed.Sign == '+') raw = "+" + raw;
+            else if (parsed.Sign == ' ') raw = " " + raw;
+        }
+
+        // Step 4: Zero-padding (after sign/prefix, before fill/align)
+        if (parsed.ZeroPad && parsed.Width.HasValue && raw.Length < parsed.Width.Value)
+        {
+            int totalWidth = parsed.Width.Value;
+            if (raw.StartsWith("-") || raw.StartsWith("+") || raw.StartsWith(" "))
+            {
+                raw = raw[0] + raw[1..].PadLeft(totalWidth - 1, '0');
+            }
+            else if (raw.Length >= 2 && raw[0] == '0' &&
+                     (raw[1] == 'b' || raw[1] == 'o' || raw[1] == 'x' || raw[1] == 'X'))
+            {
+                raw = raw[..2] + raw[2..].PadLeft(totalWidth - 2, '0');
+            }
+            else
+            {
+                raw = raw.PadLeft(totalWidth, '0');
+            }
+        }
+
+        // Step 5: Fill/align padding
         if (parsed.Width.HasValue && raw.Length < parsed.Width.Value)
         {
-            var fillChar = parsed.FillChar;
-            var padding = new string(fillChar, parsed.Width.Value - raw.Length);
-            raw = parsed.Align switch
+            char fillChar = parsed.FillChar;
+            int totalPad = parsed.Width.Value - raw.Length;
+            char effectiveAlign = parsed.Align;
+            if (effectiveAlign == '\0')
+                effectiveAlign = value is string ? '<' : '>';
+            int leftPad = totalPad / 2;
+            int rightPad = totalPad - leftPad;
+            raw = effectiveAlign switch
             {
-                '<' => raw + padding,              // left align
-                '^' => padding.Substring(0, padding.Length / 2) + raw + padding.Substring((padding.Length + 1) / 2), // center
-                _ => padding + raw                 // right align (default)
+                '<' => raw + new string(fillChar, totalPad),
+                '^' => new string(fillChar, leftPad) + raw + new string(fillChar, rightPad),
+                _ => new string(fillChar, totalPad) + raw
             };
         }
 
@@ -284,7 +316,7 @@ public static class ExceptionHelpers
         }
 
         // [0]
-        if (i < spec.Length && spec[i] == '0' && (i + 1 >= spec.Length || !char.IsDigit(spec[i + 1])))
+        if (i < spec.Length && spec[i] == '0' && result.Align == '\0')
         {
             result.ZeroPad = true;
             i++;
@@ -321,24 +353,37 @@ public static class ExceptionHelpers
     private static string FormatFloatFixed(object value, int precision)
     {
         var d = Convert.ToDouble(value);
-        return d.ToString($"F{precision}");
+        return d.ToString($"F{precision}", System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private static string FormatFloatSci(object value, int precision)
     {
         var d = Convert.ToDouble(value);
-        return d.ToString($"E{precision}");
+        // .NET 'e' format gives lowercase 'e'; normalize exponent to 2-digit minimum (Python style)
+        string result = d.ToString($"e{precision}", System.Globalization.CultureInfo.InvariantCulture);
+        int eIdx = result.IndexOf('e');
+        if (eIdx >= 0)
+        {
+            string mantissa = result[..eIdx];
+            string expPart = result[(eIdx + 1)..];
+            char expSign = expPart[0];
+            string digits = expPart[1..].TrimStart('0');
+            if (digits.Length == 0) digits = "0";
+            if (digits.Length < 2) digits = "0" + digits;
+            result = mantissa + "e" + expSign + digits;
+        }
+        return result;
     }
 
     private static string FormatFloatGeneral(object value, int precision)
     {
         var d = Convert.ToDouble(value);
-        return d.ToString($"G{precision}");
+        return d.ToString($"G{precision}", System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private static string FormatPercent(object value, int precision)
     {
         var d = Convert.ToDouble(value) * 100;
-        return d.ToString($"F{precision}") + "%";
+        return d.ToString($"F{precision}", System.Globalization.CultureInfo.InvariantCulture) + "%";
     }
 }

@@ -106,6 +106,20 @@ public sealed class EmitContext
     public LocalBuilder? GeneratorListLocal { get; set; }
 
     /// <summary>
+    /// True when emitting the body of a generator function (the __gen_body__ method).
+    /// When true, yield expressions call NajaGenerator.Yield(v) via ldarg.0,
+    /// and return statements throw NajaGeneratorReturn instead of returning normally.
+    /// </summary>
+    public bool IsGeneratorBody { get; set; }
+
+    /// <summary>
+    /// Names of function parameters that have been hoisted to static fields (for closure capture).
+    /// When a name is in this set, <see cref="TryEmitLoadParam"/> returns false so the
+    /// hoisted field takes priority in name resolution.
+    /// </summary>
+    public HashSet<string> HoistedParams { get; } = new();
+
+    /// <summary>
     /// Tracks nesting depth of open exception blocks (BeginExceptionBlock increments,
     /// EndExceptionBlock decrements). Used to determine when `ret`/`br` must be
     /// replaced with `leave` to legally exit a protected region.
@@ -149,6 +163,37 @@ public sealed class EmitContext
     /// </summary>
     public string? ComprehensionScopeId { get; set; }
 
+    /// <summary>
+    /// For nested functions that capture outer-scope parameters (NajaFunction closure pattern):
+    /// maps inner function name → ordered list of captured outer parameter names.
+    /// When NameEmitters resolves such a function name as a value, it wraps the delegate
+    /// in a NajaFunction with the current captured values snapshotted as defaults.
+    /// </summary>
+    public Dictionary<string, List<string>> FunctionCapturedParams { get; } = new();
+
+    /// <summary>
+    /// For module-level and nested functions: maps variable name → a local variable of type
+    /// <c>object[]</c> (length 1) that acts as a mutable per-call cell for that variable.
+    /// Variables hoisted to cells are NOT added to <see cref="Fields"/>; reads/writes go
+    /// through index [0] of the array so each outer-function call gets its own cell.
+    /// </summary>
+    public Dictionary<string, LocalBuilder> CellLocals { get; } = new();
+
+    /// <summary>
+    /// For inner functions that capture outer-scope cell variables: maps the Python variable
+    /// name to the name of the <c>object[]</c> parameter that holds the cell reference.
+    /// E.g. "n" → "__cell_n" means load param "__cell_n" then index [0] to read/write n.
+    /// </summary>
+    public Dictionary<string, string> CellParamOf { get; } = new();
+
+    /// <summary>
+    /// Maps nested function name → list of outer-scope cell-variable names whose cell
+    /// references are passed as trailing defaults when wrapping the inner function in a
+    /// <see cref="NajaFunction"/> (analogous to <see cref="FunctionCapturedParams"/> but
+    /// for mutable per-call cells rather than value snapshots).
+    /// </summary>
+    public Dictionary<string, List<string>> FunctionCapturedCells { get; } = new();
+
     public EmitContext(
         ILGenerator il,
         SemanticModel model,
@@ -182,6 +227,7 @@ public sealed class EmitContext
     /// </summary>
     public bool TryEmitLoadParam(string name)
     {
+        if (HoistedParams.Contains(name)) return false;
         int idx = GetParamIndex(name);
         if (idx < 0) return false;
         

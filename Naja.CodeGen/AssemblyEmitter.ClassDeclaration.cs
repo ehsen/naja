@@ -195,9 +195,11 @@ public sealed partial class AssemblyEmitter
             else if (baseParamCount == 1 && baseCtor != null)
             {
                 ctorIL.Emit(OpCodes.Ldarg_1);
-                // Convert object → string when base ctor expects a string parameter
+                // Convert object → string when base ctor expects a string parameter.
+                // Use Convert.ToString() instead of callvirt ToString() so that null
+                // arguments (passed by sub-class constructor stubs) don't throw NRE.
                 if (baseCtor.GetParameters()[0].ParameterType == typeof(string))
-                    ctorIL.Emit(OpCodes.Callvirt, typeof(object).GetMethod("ToString")!);
+                    ctorIL.Emit(OpCodes.Call, typeof(Convert).GetMethod("ToString", new[] { typeof(object) })!);
                 ctorIL.Emit(OpCodes.Call, baseCtor);
             }
             else

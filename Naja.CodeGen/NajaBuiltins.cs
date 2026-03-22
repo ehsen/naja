@@ -2531,3 +2531,120 @@ public sealed class NajaGeneratorIterator
     // IEnumerable — returns this so for-loops and list() share the same position
     public System.Collections.IEnumerator GetEnumerator() => this;
 }
+
+/// <summary>
+/// Thread-based coroutine generator implementing full Python generator semantics:
+/// lazy evaluation, send(), return value via StopIteration.value.
+///
+/// The generator body runs on a background thread. MoveNext() / Send() rendezvous
+/// with the body via a pair of SemaphoreSlim(0,1) signals, giving true coroutine
+/// stepping without a state-machine transformation.
+/// </summary>
+public sealed class NajaGenerator
+    : System.Collections.IEnumerator,
+      System.Collections.IEnumerable
+{
+    private readonly System.Threading.SemaphoreSlim _generatorReady = new(0, 1);
+    private readonly System.Threading.SemaphoreSlim _consumerReady  = new(0, 1);
+    private object?    _current;
+    private bool       _done;
+    private System.Exception? _error;
+    private object?    _sendValue;
+
+    /// <summary>Value supplied by <c>return expr</c> inside the generator body.</summary>
+    public object? ReturnValue { get; private set; }
+
+    public NajaGenerator(System.Action<NajaGenerator, object?[]> body, object?[] args)
+    {
+        var thread = new System.Threading.Thread(() =>
+        {
+            try
+            {
+                _consumerReady.Wait();          // Wait for first MoveNext / Send
+                if (!_done) body(this, args);
+            }
+            catch (NajaGeneratorReturn ex)
+            {
+                ReturnValue = ex.Value;
+            }
+            catch (System.Exception ex)
+            {
+                _error = ex;
+            }
+            finally
+            {
+                _done = true;
+                _generatorReady.Release();
+            }
+        });
+        thread.IsBackground = true;
+        thread.Start();
+    }
+
+    /// <summary>Called by <c>yield value</c> inside the generator body.
+    /// Blocks until the consumer calls MoveNext/Send, then returns the sent value.</summary>
+    public object? Yield(object? value)
+    {
+        _current = value;
+        _generatorReady.Release();   // Signal: a value is ready
+        _consumerReady.Wait();       // Wait for next consumer call
+        if (_done) throw new NajaGeneratorReturn(null);   // generator was closed
+        return _sendValue;
+    }
+
+    // ── IEnumerator ───────────────────────────────────────────────────────────
+
+    public object? Current => _current;
+
+    public bool MoveNext()
+    {
+        if (_done) return false;
+        _sendValue = null;
+        _consumerReady.Release();
+        _generatorReady.Wait();
+        if (_error is not null)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(_error).Throw();
+        return !_done;
+    }
+
+    /// <summary>Python <c>generator.send(value)</c> — resume with a sent value.</summary>
+    public object? Send(object? value)
+    {
+        if (_done) throw new NajaStopIteration(ReturnValue);
+        _sendValue = value;
+        _consumerReady.Release();
+        _generatorReady.Wait();
+        if (_error is not null)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(_error).Throw();
+        if (_done) throw new NajaStopIteration(ReturnValue);
+        return _current;
+    }
+
+    public void Reset() => throw new System.NotSupportedException("Generators cannot be reset");
+
+    // IEnumerable — returns self so for-loops and list() share position
+    public System.Collections.IEnumerator GetEnumerator() => this;
+}
+
+/// <summary>
+/// Thrown by <c>next()</c> when a generator is exhausted.
+/// Inherits <see cref="InvalidOperationException"/> so existing
+/// <c>except StopIteration:</c> handlers (which match InvalidOperationException) still work.
+/// The <see cref="value"/> property holds the generator's return value per Python semantics.
+/// </summary>
+public sealed class NajaStopIteration : InvalidOperationException
+{
+    /// <summary>Python-style lowercase attribute — e.g. <c>except StopIteration as e: e.value</c>.</summary>
+    public object? value { get; }
+    public NajaStopIteration(object? val) : base("StopIteration") => value = val;
+}
+
+/// <summary>
+/// Internal signal exception thrown by <c>return value</c> inside a generator body.
+/// Caught by <see cref="NajaGenerator"/>'s thread to set <see cref="NajaGenerator.ReturnValue"/>.
+/// </summary>
+public sealed class NajaGeneratorReturn : System.Exception
+{
+    public object? Value { get; }
+    public NajaGeneratorReturn(object? v) : base("generator return") => Value = v;
+}

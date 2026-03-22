@@ -42,10 +42,31 @@ public sealed class ControlFlowEmitters : ExpressionEmitterBase
     /// Emits IL for walrus operator expressions: (target := value)
     /// Evaluates value, stores in local, leaves value on stack.
     /// Used for assignment-as-expression semantics in comprehensions and conditions.
+    /// When inside a comprehension helper, the variable is stored to a static field
+    /// so it is visible in the enclosing module scope (PEP 572 semantics).
     /// </summary>
     public NajaType EmitWalrus(WalrusExpr e)
     {
         var type = _mainEmitter.Emit(e.Value);
+
+        // PEP 572: walrus target binds in the ENCLOSING scope, not the comprehension scope.
+        // When ComprehensionScopeId is set, we are inside a comprehension helper method;
+        // store to a static field so the enclosing scope can read the last value.
+        if (_ctx.ComprehensionScopeId != null)
+        {
+            IL.Emit(OpCodes.Dup);
+            if (!_ctx.Fields.TryGetValue(e.Target, out var walrusField))
+            {
+                walrusField = _ctx.TypeBuilder.DefineField(
+                    e.Target, typeof(object),
+                    System.Reflection.FieldAttributes.Public | System.Reflection.FieldAttributes.Static);
+                _ctx.Fields[e.Target] = walrusField;
+            }
+            TypeMapper.EmitBox(IL, type);
+            IL.Emit(OpCodes.Stsfld, walrusField);
+            return type;
+        }
+
         // Declare local and store a copy, then leave value on stack
         var clrType = TypeMapper.ToClrType(type);
         if (clrType == typeof(void)) clrType = typeof(object);
