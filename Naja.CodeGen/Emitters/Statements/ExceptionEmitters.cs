@@ -193,22 +193,34 @@ public class ExceptionEmitters : StatementEmitterBase
             }
         }
 
-        if (hasFinally)
+        // Python semantics: else runs BEFORE finally, only if try succeeded (no exception).
+        // Emit else clause HERE, before the finally block, while still inside exception block.
+        if (hasElse && noExFlag is not null && !hasFinally)
         {
-            IL.BeginFinallyBlock();
-            EmitAll(s.Finally);
-            IL.EndExceptionBlock();
-            _ctx.ExceptionBlockDepth--;
-        }
-
-        // Emit else clause AFTER the entire exception handling structure
-        if (hasElse && noExFlag is not null)
-        {
+            // If no finally, emit else after all handlers/body complete
             IL.Emit(OpCodes.Ldloc, noExFlag);
             var skipElse = IL.DefineLabel();
             IL.Emit(OpCodes.Brfalse, skipElse);
             EmitAll(s.Else);
             IL.MarkLabel(skipElse);
+        }
+
+        if (hasFinally)
+        {
+            // Emit else BEFORE finally, still within the exception block
+            if (hasElse && noExFlag is not null)
+            {
+                IL.Emit(OpCodes.Ldloc, noExFlag);
+                var skipElse = IL.DefineLabel();
+                IL.Emit(OpCodes.Brfalse, skipElse);
+                EmitAll(s.Else);
+                IL.MarkLabel(skipElse);
+            }
+
+            IL.BeginFinallyBlock();
+            EmitAll(s.Finally);
+            IL.EndExceptionBlock();
+            _ctx.ExceptionBlockDepth--;
         }
     }
 

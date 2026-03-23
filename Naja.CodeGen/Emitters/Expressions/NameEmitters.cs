@@ -374,6 +374,23 @@ public sealed class NameEmitters : ExpressionEmitterBase
             return NajaTypes.Unknown;
         }
 
+        // 6c. Builtins used as first-class values (e.g. assertRaises(SyntaxError, compile, ...)).
+        // Only applies to vararg (object[]) builtins — they can be wrapped as Func<object[], object>.
+        {
+            var builtinMethod = TypeMapper.ResolveBuiltin(e.Name);
+            if (builtinMethod is not null
+                && builtinMethod.GetParameters().Length == 1
+                && builtinMethod.GetParameters()[0].ParameterType == typeof(object[]))
+            {
+                var delegateType = typeof(Func<object[], object?>);
+                var ctor = delegateType.GetConstructors()[0];
+                IL.Emit(OpCodes.Ldnull);
+                IL.Emit(OpCodes.Ldftn, builtinMethod);
+                IL.Emit(OpCodes.Newobj, ctor);
+                return NajaTypes.Unknown;
+            }
+        }
+
         throw new CodeGenException($"Undefined name '{e.Name}'", e.Line, e.Column);
     }
 }

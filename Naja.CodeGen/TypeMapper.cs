@@ -203,6 +203,10 @@ public static class TypeMapper
         // NextVararg handles both next(g) and next(g, default) via variadic object[] args.
         "next" => NajaBuiltinsMethodCache.NextVararg_Method,
         "assert" => NajaBuiltinsMethodCache.Assert_Method,
+        // Scripting builtins — all accept object[] vararg
+        "compile" => NajaBuiltinsMethodCache.Compile_Method,
+        "eval"    => NajaBuiltinsMethodCache.Eval_Method,
+        "exec"    => NajaBuiltinsMethodCache.Exec_Method,
         _ => null
     };
 
@@ -235,7 +239,9 @@ public static class TypeMapper
         "SyntaxError" => typeof(PythonExceptions.SyntaxErrorException),
         "IndentationError" => typeof(PythonExceptions.IndentationErrorException),
         "TabError" => typeof(PythonExceptions.SyntaxErrorException),
-        "AssertionError" => typeof(PythonExceptions.AssertionException),
+        // Map to the StdLib base type so 'except AssertionError:' catches both
+        // NajaTestCase.Fail()-thrown AssertionException AND raise AssertionError() instances.
+        "AssertionError" => typeof(Naja.StdLib.AssertionException),
         "ArithmeticError" => typeof(ArithmeticException),
         "FloatingPointError" => typeof(ArithmeticException),
         "EOFError" => typeof(System.IO.EndOfStreamException),

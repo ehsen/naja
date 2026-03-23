@@ -170,7 +170,21 @@ public class NajaTestCase
             Fail($"{Format(first)} == {Format(second)} within {p} places", msg);
     }
 
+    // ── failureException ─────────────────────────────────────────────────────
+    /// <summary>
+    /// The exception type raised by failed assertions.
+    /// CPython tests use self.failureException to refer to AssertionError.
+    /// </summary>
+    public Type failureException => typeof(AssertionException);
+
     // ── Raises ────────────────────────────────────────────────────────────────
+    /// <summary>
+    /// assertRaises(ExcType) — context manager form.
+    /// Usage: with self.assertRaises(ValueError) as cm: ...
+    /// </summary>
+    public AssertRaisesContext assertRaises(object exceptionType)
+        => new AssertRaisesContext(ResolveExceptionType(exceptionType), exceptionType?.ToString());
+
     /// <summary>
     /// assertRaises(ExcType, callable, *args) — synchronous form.
     /// Passes when callable(*args) raises an exception of the given type.
@@ -186,16 +200,48 @@ public class NajaTestCase
             InvokeCallable(callable, args);
             Fail($"{expectedType?.Name ?? exceptionType?.ToString()} not raised", null);
         }
-        catch (Exception ex) when (expectedType is not null && expectedType.IsAssignableFrom(ex.GetType()))
+        catch (AssertionException) { throw; } // don't swallow assertion failures
+        catch (Exception ex) when (expectedType is not null && IsMatchingException(ex, expectedType))
         {
             // Passed — expected exception was raised.
         }
         catch (Exception ex) when (expectedType is null)
         {
-            // Any exception satisfies assertRaises(Exception, ...) 
+            // Any exception satisfies assertRaises(Exception, ...)
             _ = ex;
         }
     }
+
+    // ── assertRaisesRegex ────────────────────────────────────────────────────
+    /// <summary>
+    /// assertRaisesRegex(ExcType, regex) — context manager form.
+    /// </summary>
+    public AssertRaisesContext assertRaisesRegex(object exceptionType, object regex)
+        => new AssertRaisesContext(ResolveExceptionType(exceptionType), exceptionType?.ToString(), regex?.ToString());
+
+    /// <summary>
+    /// assertRaisesRegex(ExcType, regex, callable, *args) — callable form.
+    /// </summary>
+    public void assertRaisesRegex(object exceptionType, object regex, object callable, params object[] args)
+    {
+        var expectedType = ResolveExceptionType(exceptionType);
+        var pattern = regex?.ToString();
+        try
+        {
+            InvokeCallable(callable, args);
+            Fail($"{expectedType?.Name ?? exceptionType?.ToString()} not raised", null);
+        }
+        catch (AssertionException) { throw; }
+        catch (Exception ex) when (expectedType is not null && IsMatchingException(ex, expectedType))
+        {
+            if (pattern is not null && !System.Text.RegularExpressions.Regex.IsMatch(ex.Message, pattern))
+                Fail($"'{ex.Message}' does not match '{pattern}'", null);
+        }
+    }
+
+    // ── assertWarns (stub — Naja has no warning infrastructure yet) ────────
+    public AssertRaisesContext assertWarns(object warningType)
+        => new AssertRaisesContext(null, null); // no-op context manager
 
     // ── Unconditional pass/fail ────────────────────────────────────────────────
     public void fail() => Fail("", null);
@@ -268,7 +314,14 @@ public class NajaTestCase
         _      => v.ToString() ?? "None"
     };
 
-    private static Type? ResolveExceptionType(object? exType)
+    private static bool IsMatchingException(Exception ex, Type expectedType)
+    {
+        // Unwrap TargetInvocationException
+        var actual = ex is System.Reflection.TargetInvocationException tie ? tie.InnerException ?? ex : ex;
+        return expectedType.IsAssignableFrom(actual.GetType());
+    }
+
+    internal static Type? ResolveExceptionType(object? exType)
     {
         if (exType is Type t) return t;
         if (exType is string name)
@@ -281,11 +334,38 @@ public class NajaTestCase
 
     private static object? InvokeCallable(object callable, object[] args)
     {
+        // Raw delegate: spread args as the params array.
+        // Unwrap TargetInvocationException so the original exception type is visible
+        // to Python except-clauses (e.g. except ZeroDivisionError:).
         if (callable is Delegate d)
-            return d.DynamicInvoke(args.Length == 0 ? null : (object)args);
+        {
+            try { return d.DynamicInvoke(args); }
+            catch (System.Reflection.TargetInvocationException tie) when (tie.InnerException is not null)
+            {
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(tie.InnerException).Throw();
+                throw; // unreachable
+            }
+        }
+
         var callMethod = callable.GetType().GetMethod("__call__")
-            ?? callable.GetType().GetMethod("Invoke");
-        return callMethod?.Invoke(callable, args);
+                      ?? callable.GetType().GetMethod("Invoke");
+        if (callMethod is null) return null;
+
+        // NajaFunction-style __call__(object[] args): wrap in outer array for Invoke
+        var ps = callMethod.GetParameters();
+        object? result;
+        try
+        {
+            result = ps.Length == 1 && ps[0].ParameterType == typeof(object[])
+                ? callMethod.Invoke(callable, new object[] { args })
+                : callMethod.Invoke(callable, args);
+        }
+        catch (System.Reflection.TargetInvocationException tie) when (tie.InnerException is not null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(tie.InnerException).Throw();
+            throw; // unreachable
+        }
+        return result;
     }
 
     private static void Fail(string reason, object? msg)
@@ -296,15 +376,76 @@ public class NajaTestCase
 }
 
 /// <summary>Thrown when a unittest assertion fails.</summary>
-public sealed class AssertionException : Exception
+public class AssertionException : Exception
 {
     public AssertionException(string message) : base(message) { }
+    public AssertionException(string message, Exception inner) : base(message, inner) { }
 }
 
 /// <summary>Thrown when a test is skipped via skipTest().</summary>
 public sealed class SkipTestException : Exception
 {
     public SkipTestException(string reason) : base(reason) { }
+}
+
+/// <summary>
+/// Context manager for assertRaises / assertRaisesRegex.
+/// Used in the 'with self.assertRaises(ExcType) as cm:' pattern.
+/// </summary>
+public sealed class AssertRaisesContext : IDisposable
+{
+    private readonly Type? _expectedType;
+    private readonly string? _typeName;
+    private readonly string? _regex;
+
+    /// <summary>The captured exception (accessible as cm.exception after the with block).</summary>
+    public Exception? exception { get; private set; }
+
+    public AssertRaisesContext(Type? expectedType, string? typeName, string? regex = null)
+    {
+        _expectedType = expectedType;
+        _typeName = typeName;
+        _regex = regex;
+    }
+
+    /// <summary>Support 'with ... as cm:' — returns self.</summary>
+    public AssertRaisesContext __enter__() => this;
+
+    /// <summary>
+    /// Called at the end of the 'with' block.
+    /// exc_val is the exception (or null if no exception was raised).
+    /// Returns true to suppress the exception if it matches.
+    /// </summary>
+    public bool __exit__(object? excType, object? excVal, object? excTb)
+    {
+        var ex = excVal as Exception;
+
+        if (ex is null)
+        {
+            // No exception raised — the assertRaises context should fail.
+            throw new AssertionException($"{_typeName ?? _expectedType?.Name ?? "Exception"} not raised");
+        }
+
+        // Unwrap TargetInvocationException
+        if (ex is System.Reflection.TargetInvocationException tie && tie.InnerException is not null)
+            ex = tie.InnerException;
+
+        if (_expectedType is not null && !_expectedType.IsAssignableFrom(ex.GetType()))
+        {
+            // Wrong type — re-raise by returning false
+            return false;
+        }
+
+        if (_regex is not null && !System.Text.RegularExpressions.Regex.IsMatch(ex.Message, _regex))
+        {
+            throw new AssertionException($"'{ex.Message}' does not match '{_regex}'");
+        }
+
+        exception = ex;
+        return true; // suppress the exception
+    }
+
+    public void Dispose() { }
 }
 
 /// <summary>
@@ -321,20 +462,49 @@ public sealed class NajaUnittest
     public Type TestCase => typeof(NajaTestCase);
 
     /// <summary>
-    /// unittest.main() — discovers and runs all test methods in the calling assembly.
-    /// Prints results in a CPython-compatible format.
+    /// unittest.main() — discovers and runs all NajaTestCase subclasses in the calling
+    /// assembly only (not all loaded assemblies), so sequential NajaEngine.Eval() calls
+    /// do not bleed test classes from one script into the next.
+    ///
+    /// On success  — returns normally (never calls Environment.Exit).
+    /// On failure  — throws AssertionException with a summary of failures/errors so the
+    ///               caller (NajaEngine) can surface the result as a test failure.
     /// </summary>
     public void main(object? module = null, object? exit = null)
     {
-        bool shouldExit = exit is null ? true : Convert.ToBoolean(exit);
+        // Identify the Naja-compiled script assembly via the call stack.
+        // Script assemblies are named after the .py file (e.g. "test_equality").
+        // Infrastructure assemblies — Naja.*, System.*, Microsoft.*, xunit.*, etc. —
+        // all lie between this method and the script frame, so we skip them all.
+        System.Reflection.Assembly? scriptAssembly = null;
+        foreach (var frame in new System.Diagnostics.StackTrace().GetFrames())
+        {
+            var asm = frame.GetMethod()?.DeclaringType?.Assembly;
+            if (asm is null) continue;
+            var asmName = asm.GetName().Name ?? "";
+            if (asmName.StartsWith("Naja.", StringComparison.OrdinalIgnoreCase)) continue;
+            if (asmName.StartsWith("System.", StringComparison.OrdinalIgnoreCase)) continue;
+            if (asmName.StartsWith("Microsoft.", StringComparison.OrdinalIgnoreCase)) continue;
+            if (asmName.StartsWith("xunit.", StringComparison.OrdinalIgnoreCase)) continue;
+            if (asmName.Equals("mscorlib", StringComparison.OrdinalIgnoreCase)) continue;
+            if (asmName.Equals("testhost", StringComparison.OrdinalIgnoreCase)) continue;
+            if (asmName.Equals("coverlet.collector", StringComparison.OrdinalIgnoreCase)) continue;
+            scriptAssembly = asm;
+            break;
+        }
+
+        // Fall back to scanning all loaded assemblies only when the script assembly
+        // cannot be determined (e.g. unit tests that call main() directly).
+        IEnumerable<Type> allTypes = scriptAssembly is not null
+            ? scriptAssembly.GetTypes()
+            : AppDomain.CurrentDomain.GetAssemblies()
+                .SelectMany(a => { try { return a.GetTypes(); } catch { return Array.Empty<Type>(); } });
+
+        var testClasses = allTypes
+            .Where(t => t.IsSubclassOf(typeof(NajaTestCase)) && !t.IsAbstract);
 
         int passed = 0, failed = 0, errors = 0, skipped = 0;
         var failures = new List<string>();
-
-        // Discover all NajaTestCase subclasses in all loaded assemblies
-        var testClasses = AppDomain.CurrentDomain.GetAssemblies()
-            .SelectMany(a => { try { return a.GetTypes(); } catch { return Array.Empty<Type>(); } })
-            .Where(t => t.IsSubclassOf(typeof(NajaTestCase)) && !t.IsAbstract);
 
         foreach (var cls in testClasses)
         {
@@ -352,11 +522,12 @@ public sealed class NajaUnittest
                     method.Invoke(instance, null);
                     instance.tearDown();
                     passed++;
+                    Console.Error.Write(".");
                 }
                 catch (SkipTestException ex)
                 {
                     skipped++;
-                    Console.Error.WriteLine($"s");
+                    Console.Error.Write("s");
                     _ = ex;
                 }
                 catch (System.Reflection.TargetInvocationException tie)
@@ -381,10 +552,10 @@ public sealed class NajaUnittest
         int total = passed + failed + errors + skipped;
         Console.Error.WriteLine();
         Console.Error.WriteLine($"Ran {total} test{(total == 1 ? "" : "s")}");
-        Console.Error.WriteLine();
 
         if (failures.Count > 0)
         {
+            Console.Error.WriteLine();
             Console.Error.WriteLine("FAILURES:");
             foreach (var f in failures)
                 Console.Error.WriteLine(f);
@@ -393,7 +564,11 @@ public sealed class NajaUnittest
         bool ok = failed == 0 && errors == 0;
         Console.Error.WriteLine(ok ? "OK" : $"FAILED (failures={failed}, errors={errors})");
 
-        if (shouldExit)
-            System.Environment.Exit(ok ? 0 : 1);
+        // Never call Environment.Exit — we are running in-process inside NajaEngine.
+        // Surface failures as an exception so the xUnit test runner can report them.
+        if (!ok)
+            throw new AssertionException(
+                $"{failed} test(s) failed, {errors} error(s).\n" +
+                string.Join("\n", failures));
     }
 }

@@ -1,4 +1,5 @@
 using System.Reflection;
+using Naja.Lexer;
 
 namespace Naja.CodeGen.Builtins;
 
@@ -197,4 +198,124 @@ public static class TypeSystem
 
     private static bool IsNullableType(Type t) =>
         t.IsGenericType && t.GetGenericTypeDefinition() == typeof(Nullable<>);
+
+    // ── compile() / eval() / exec() ──────────────────────────────────────────
+
+    /// <summary>
+    /// Python compile(source, filename, mode, ...) built-in.
+    /// Uses the Naja parser to validate syntax.  Throws SyntaxError for invalid Python.
+    /// Returns a NajaCodeObject sentinel on success so eval(compile(...)) does not crash.
+    /// </summary>
+    public static object Compile(object[] args)
+    {
+        if (args.Length < 1)
+            throw new ArgumentException("compile() requires at least 1 argument");
+
+        var source   = args[0]?.ToString() ?? "";
+        var filename = args.Length > 1 ? args[1]?.ToString() ?? "<string>" : "<string>";
+
+        try
+        {
+            var lexer  = new Naja.Lexer.Lexer(source);
+            var tokens = lexer.Tokenize();
+            var parser = new Naja.Parser.Parser(tokens);
+            parser.ParseModule();
+            return new NajaCodeObject(source, filename);
+        }
+        catch (Exception ex)
+        {
+            throw new PythonExceptions.SyntaxErrorException(
+                $"invalid syntax: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Python eval(expression[, globals[, locals]]) built-in.
+    /// For string inputs: validates syntax (throws SyntaxError if invalid).
+    /// Full dynamic evaluation is not yet implemented.
+    /// </summary>
+    public static object? Eval(object[] args)
+    {
+        if (args.Length == 0)
+            throw new ArgumentException("eval() requires at least 1 argument");
+
+        var expr = args[0];
+
+        if (expr is NajaCodeObject)
+            throw new NotImplementedException("eval() of compiled code objects is not yet supported");
+
+        if (expr is string source)
+        {
+            try
+            {
+                var lexer  = new Naja.Lexer.Lexer(source);
+                var tokens = lexer.Tokenize();
+                var parser = new Naja.Parser.Parser(tokens);
+                parser.ParseModule();
+            }
+            catch (Exception ex)
+            {
+                throw new PythonExceptions.SyntaxErrorException(
+                    $"invalid syntax: {ex.Message}");
+            }
+            throw new NotImplementedException("eval() of string expressions is not yet supported");
+        }
+
+        throw new InvalidCastException(
+            $"eval() argument must be a string, not '{expr?.GetType().Name}'");
+    }
+
+    /// <summary>
+    /// Python exec(code[, globals[, locals]]) built-in.
+    /// For string inputs: validates syntax (throws SyntaxError if invalid).
+    /// Full dynamic execution is not yet implemented.
+    /// </summary>
+    public static object? Exec(object[] args)
+    {
+        if (args.Length == 0)
+            throw new ArgumentException("exec() requires at least 1 argument");
+
+        var code = args[0];
+
+        if (code is string source)
+        {
+            try
+            {
+                var lexer  = new Naja.Lexer.Lexer(source);
+                var tokens = lexer.Tokenize();
+                var parser = new Naja.Parser.Parser(tokens);
+                parser.ParseModule();
+            }
+            catch (Exception ex)
+            {
+                throw new PythonExceptions.SyntaxErrorException(
+                    $"invalid syntax: {ex.Message}");
+            }
+            return null;
+        }
+
+        if (code is NajaCodeObject)
+            return null; // compiled code object — treat as no-op for now
+
+        throw new InvalidCastException(
+            $"exec() argument must be a string, not '{code?.GetType().Name}'");
+    }
+}
+
+/// <summary>
+/// Opaque sentinel returned by compile() representing a validated code object.
+/// Passed to eval() or exec() for deferred execution.
+/// </summary>
+public sealed class NajaCodeObject
+{
+    public string Source   { get; }
+    public string Filename { get; }
+
+    public NajaCodeObject(string source, string filename)
+    {
+        Source   = source;
+        Filename = filename;
+    }
+
+    public override string ToString() => $"<code object from '{Filename}'>";
 }

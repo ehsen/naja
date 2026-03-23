@@ -720,6 +720,36 @@ public static class ReflectionHelpers
             }
         }
 
+        // Try optional-parameter overloads (e.g., main(module=None, exit=None) called with 0 args).
+        foreach (var mb in candidates)
+        {
+            var ps = mb.GetParameters();
+            // Must supply at least as many args as required (non-optional) params,
+            // and no more than the total number of params.
+            int requiredCount = ps.Count(p => !p.IsOptional && !p.HasDefaultValue);
+            if (args.Length < requiredCount || args.Length > ps.Length) continue;
+
+            var bound = new object?[ps.Length];
+            bool ok = true;
+            for (int i = 0; i < ps.Length; i++)
+            {
+                if (i < args.Length)
+                {
+                    try { bound[i] = TypeSystem.CoerceValue(args[i], ps[i].ParameterType); }
+                    catch { ok = false; break; }
+                }
+                else
+                {
+                    // Fill missing optional params with their declared defaults.
+                    bound[i] = ps[i].HasDefaultValue ? ps[i].DefaultValue : Type.Missing;
+                }
+            }
+            if (!ok) continue;
+            method = mb;
+            boundArgs = bound!;
+            return true;
+        }
+
         // Try params-array overloads (e.g., Path.Combine(string, string, string, string, string))
         foreach (var mb in candidates)
         {

@@ -429,4 +429,14 @@ internal static class NajaBuiltinsMethodCache
 
     public static readonly ConstructorInfo NajaGeneratorReturn_Ctor =
         typeof(NajaGeneratorReturn).GetConstructor(new Type[] { typeof(object) })!;
+
+    // ── Scripting builtins (compile / eval / exec) ───────────────────────────
+    public static readonly MethodInfo Compile_Method =
+        typeof(TypeSystem).GetMethod(nameof(TypeSystem.Compile))!;
+
+    public static readonly MethodInfo Eval_Method =
+        typeof(TypeSystem).GetMethod(nameof(TypeSystem.Eval))!;
+
+    public static readonly MethodInfo Exec_Method =
+        typeof(TypeSystem).GetMethod(nameof(TypeSystem.Exec))!;
 }

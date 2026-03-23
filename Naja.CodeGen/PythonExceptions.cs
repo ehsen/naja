@@ -19,8 +19,12 @@ public static class PythonExceptions
         public IndentationErrorException(string message) : base(message) { }
     }
 
-    /// <summary>Raised when an assertion fails.</summary>
-    public class AssertionException : Exception
+    /// <summary>
+    /// Raised when an assertion fails (Python AssertionError).
+    /// Extends Naja.StdLib.AssertionException so that 'except AssertionError:'
+    /// also catches AssertionException thrown by NajaTestCase assertion methods.
+    /// </summary>
+    public class AssertionException : Naja.StdLib.AssertionException
     {
         public AssertionException(string message) : base(message) { }
         public AssertionException(string message, Exception inner) : base(message, inner) { }

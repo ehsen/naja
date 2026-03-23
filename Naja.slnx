@@ -14,5 +14,6 @@
   <Project Path="Naja.SDK/Naja.Sdk.csproj" Id="6c0a3ba4-a9cb-42e2-9e51-1d794ae32509" />
   <Project Path="Naja.Semantics.Tests/Naja.Semantics.Tests.csproj" />
   <Project Path="Naja.Semantics/Naja.Semantics.csproj" />
+  <Project Path="Naja.StdLib/Naja.StdLib.csproj" Id="1084eb3b-7b2d-4d34-9685-c08b869188a4" />
   <Project Path="Naja.WinForms.Tests/Naja.WinForms.Tests.csproj" Id="b36505ff-e90f-4f4b-8d99-23fef4270e01" />
 </Solution>
