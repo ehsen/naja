@@ -2567,6 +2567,11 @@ public sealed class NajaGenerator
             {
                 ReturnValue = ex.Value;
             }
+            catch (NajaStopIteration stopEx)
+            {
+                // PEP 479: StopIteration propagating out of a generator body is wrapped as RuntimeError.
+                _error = Naja.CodeGen.Builtins.ExceptionHelpers.WrapGeneratorStopIteration(stopEx);
+            }
             catch (System.Exception ex)
             {
                 _error = ex;
@@ -2636,6 +2641,7 @@ public sealed class NajaStopIteration : InvalidOperationException
 {
     /// <summary>Python-style lowercase attribute — e.g. <c>except StopIteration as e: e.value</c>.</summary>
     public object? value { get; }
+    public NajaStopIteration() : base("StopIteration") { }
     public NajaStopIteration(object? val) : base("StopIteration") => value = val;
 }
 

@@ -224,7 +224,7 @@ public static class TypeMapper
         "NotImplementedError" => typeof(NotImplementedException),
         "OSError" or "IOError" or "FileNotFoundError" => typeof(System.IO.IOException),
         "PermissionError" => typeof(UnauthorizedAccessException),
-        "StopIteration" => typeof(InvalidOperationException),
+        "StopIteration" => typeof(NajaStopIteration),
         "OverflowError" => typeof(OverflowException),
         "ZeroDivisionError" => typeof(DivideByZeroException),
         "MemoryError" => typeof(OutOfMemoryException),

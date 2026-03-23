@@ -38,6 +38,41 @@ public sealed partial class Parser
         return long.Parse(raw);
     }
 
+    private static Expression ParseIntExpr(string raw, int line, int col)
+    {
+        raw = raw.Replace("_", "");
+        // Always compute the unsigned value via BigInteger first.
+        // Convert.ToInt64 for hex interprets the high bit as sign (two's complement)
+        // which gives wrong results for Python literals like 0x8000000000000000.
+        System.Numerics.BigInteger big;
+        if (raw.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            // Prepend "0" so BigInteger.Parse treats the value as positive
+            big = System.Numerics.BigInteger.Parse("0" + raw[2..],
+                System.Globalization.NumberStyles.HexNumber);
+        }
+        else if (raw.StartsWith("0o", StringComparison.OrdinalIgnoreCase))
+        {
+            big = System.Numerics.BigInteger.Zero;
+            foreach (char c in raw[2..])
+                big = big * 8 + (c - '0');
+        }
+        else if (raw.StartsWith("0b", StringComparison.OrdinalIgnoreCase))
+        {
+            big = System.Numerics.BigInteger.Zero;
+            foreach (char c in raw[2..])
+                big = big * 2 + (c - '0');
+        }
+        else
+        {
+            big = System.Numerics.BigInteger.Parse(raw);
+        }
+
+        if (big <= long.MaxValue)
+            return new IntLiteral((long)big, line, col);
+        return new BigIntLiteral(big, line, col);
+    }
+
     private Token Current() =>
         _pos < _tokens.Count ? _tokens[_pos] : Token.Eof;
 

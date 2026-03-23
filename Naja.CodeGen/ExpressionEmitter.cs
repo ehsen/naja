@@ -53,6 +53,7 @@ public sealed class ExpressionEmitter
         var type = expr switch
         {
             IntLiteral e => _literalEmitters.EmitLiteral(e),
+            BigIntLiteral e => _literalEmitters.EmitLiteral(e),
             FloatLiteral e => _literalEmitters.EmitLiteral(e),
             StringLiteral e => _literalEmitters.EmitLiteral(e),
             FStringExpr e => _fstringEmitters.EmitFString(e),

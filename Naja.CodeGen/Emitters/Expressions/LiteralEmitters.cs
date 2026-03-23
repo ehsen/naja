@@ -19,6 +19,7 @@ public sealed class LiteralEmitters : ExpressionEmitterBase
         return expr switch
         {
             IntLiteral e => EmitInt(e),
+            BigIntLiteral e => EmitBigInt(e),
             FloatLiteral e => EmitFloat(e),
             StringLiteral e => EmitString(e),
             BoolLiteral e => EmitBool(e),
@@ -55,6 +56,13 @@ public sealed class LiteralEmitters : ExpressionEmitterBase
         }
 
         return NajaTypes.Int;
+    }
+
+    private NajaType EmitBigInt(BigIntLiteral e)
+    {
+        IL.Emit(OpCodes.Ldstr, e.Value.ToString());
+        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ParseBigInt_Method);
+        return NajaTypes.Unknown;
     }
 
     private NajaType EmitFloat(FloatLiteral e)

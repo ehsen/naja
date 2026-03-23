@@ -5,14 +5,20 @@ using Naja.CodeGen;
 namespace Naja.CodeGen.Tests.LanguageCompliance;
 
 /// <summary>
-/// CPython Blocker Tests — Features Blocked by Missing Compiler Support.
+/// CPython Blocker Tests — Features that cannot even be attempted yet.
 ///
-/// These tests are INTENTIONALLY SKIPPED (not xfail) to avoid false pass reporting.
-/// Each represents a known blocker that prevents a test file from passing.
+/// These tests are INTENTIONALLY SKIPPED (not xfail) because they require
+/// language-level features the compiler cannot parse or emit at all:
+/// async/await, pattern-matching, except*, complex f-strings, metaclasses, etc.
 ///
 /// NOT COUNTED TOWARD COMPLIANCE METRICS.
-/// 
-/// When a blocker is fixed, move the test to the appropriate Phase class.
+///
+/// Tracking policy:
+///   • Pure-unittest tests with known run-time blockers → CpythonSuiteRunner.cs Phase 2/3 (xfail).
+///   • Tests whose very syntax cannot be parsed/emitted   → here (Skip).
+///
+/// When a blocker is fixed, move the test to CpythonSuiteRunner.cs as xfail,
+/// then promote to Phase 1 once it passes.
 /// </summary>
 [Collection("SerialConsole")]
 public sealed class CpythonBlockerTests
@@ -22,6 +28,7 @@ public sealed class CpythonBlockerTests
 
     private static readonly string? CpythonRoot =
         Environment.GetEnvironmentVariable("CPYTHON_REPO")
+        ?? TryDefault("F:/Sources/cpython")
         ?? TryDefault("C:/dev/cpython")
         ?? TryDefault("~/dev/cpython");
 
@@ -50,83 +57,47 @@ public sealed class CpythonBlockerTests
 
         _out.WriteLine($"SKIPPED: {reason}");
         _out.WriteLine($"File: {testPath}");
-        _out.WriteLine("This test is blocked by a known limitation and intentionally skipped.");
-        _out.WriteLine("It will be promoted to Phase 1/2 when the blocker is fixed.");
+        _out.WriteLine("This test requires a language feature the compiler cannot yet parse or emit.");
+        _out.WriteLine("It will be promoted to CpythonSuiteRunner Phase 2 when the blocker is fixed.");
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // BLOCKERS — INTENTIONALLY SKIPPED (NOT XFAIL)
+    // SYNTAX / EMIT BLOCKERS — parser or emitter cannot handle these at all
     // ═════════════════════════════════════════════════════════════════════════
 
-    [Fact(Skip = "BLOCKER: Nested classes not implemented. EmitClassDef is no-op for nested classes.")]
-    public void Blocked_AugAssign_NestedClasses()
-        => RunCpythonTest("test_augassign.py", "Nested classes (class definition inside functions)");
-
-    [Fact(Skip = "BLOCKER: Parser doesn't support implicit string concatenation (f'text' 'more').")]
-    public void Blocked_KeywordOnlyArg_ImplicitStringConcat()
-        => RunCpythonTest("test_keywordonlyarg.py", "Implicit string concatenation across lines");
-
-    [Fact(Skip = "BLOCKER: BigInteger support needed for 0xffffffffffffffff and similar literals.")]
-    public void Blocked_IntLiteral_BigInteger()
-        => RunCpythonTest("test_int_literal.py", "Integer overflow (BigInteger needed)");
-
-    [Fact(Skip = "BLOCKER: exec() full evaluation not yet implemented for syntax validation.")]
-    public void Blocked_NamedExpressions_ExecEval()
-        => RunCpythonTest("test_named_expressions.py", "Full exec() evaluation for walrus operator tests");
-
-    [Fact(Skip = "BLOCKER: eval() string expression evaluation not yet implemented.")]
-    public void Blocked_Unary_EvalStringExpressions()
-        => RunCpythonTest("test_unary.py", "eval() for boundary check expressions");
-
-    [Fact(Skip = "BLOCKER: Very deeply nested expressions may hit stack depth or IL limits.")]
-    public void Blocked_LongExp_StackDepth()
-        => RunCpythonTest("test_longexp.py", "Stack depth / IL size limits on deeply nested expressions");
-
-    [Fact(Skip = "BLOCKER: Complex decorator attribute chains not yet fully supported.")]
-    public void Blocked_Decorators_ComplexChains()
-        => RunCpythonTest("test_decorators.py", "Complex stacked decorator attribute resolution");
-
-    [Fact(Skip = "BLOCKER: Metaclass support not yet implemented.")]
-    public void Blocked_TypeChecks_Metaclass()
-        => RunCpythonTest("test_typechecks.py", "Metaclass support for isinstance/issubclass");
-
-    [Fact(Skip = "BLOCKER: getattr() / dir() reflection not yet wired up.")]
-    public void Blocked_UnicodeIdentifiers_Reflection()
-        => RunCpythonTest("test_unicode_identifiers.py", "getattr/dir reflection for non-ASCII identifiers");
-
-    [Fact(Skip = "BLOCKER: Generator support (yield expression tracking) incomplete.")]
-    public void Blocked_Generators_YieldTracking()
-        => RunCpythonTest("test_generators.py", "Generator yield expression tracking");
-
-    [Fact(Skip = "BLOCKER: Coroutine async/await not yet implemented.")]
+    [Fact(Skip = "BLOCKER: Coroutine async/await syntax not yet parsed or emitted.")]
     public void Blocked_Coroutines_AsyncAwait()
-        => RunCpythonTest("test_coroutines.py", "Async/await coroutine support");
+        => RunCpythonTest("test_coroutines.py", "async/await coroutine syntax (PEP 492)");
 
-    [Fact(Skip = "BLOCKER: F-string expressions not yet fully supported.")]
-    public void Blocked_FString_Expressions()
-        => RunCpythonTest("test_fstring.py", "F-string complex expression evaluation");
+    [Fact(Skip = "BLOCKER: Complex f-string expressions (nested braces, format specs, conversions) not fully supported.")]
+    public void Blocked_FString_ComplexExpressions()
+        => RunCpythonTest("test_fstring.py", "F-string nested expressions, format specs, !r/!s/!a conversions");
 
-    [Fact(Skip = "BLOCKER: Pattern matching (match/case) not yet implemented.")]
+    [Fact(Skip = "BLOCKER: match/case pattern-matching syntax not yet parsed (PEP 634).")]
     public void Blocked_PatternMatching_MatchCase()
-        => RunCpythonTest("test_patternmatching.py", "Pattern matching (PEP 634)");
+        => RunCpythonTest("test_patternmatching.py", "Structural pattern matching (PEP 634)");
 
-    [Fact(Skip = "BLOCKER: Exception groups (except*) not yet implemented.")]
+    [Fact(Skip = "BLOCKER: except* exception-group syntax not yet emitted (PEP 654).")]
     public void Blocked_ExceptionGroup_ExceptStar()
-        => RunCpythonTest("test_exceptiongroup.py", "Exception groups (PEP 654) - except*");
+        => RunCpythonTest("test_exceptiongroup.py", "Exception groups (PEP 654) — except* emit");
 
-    [Fact(Skip = "BLOCKER: Type annotations not yet processed.")]
+    [Fact(Skip = "BLOCKER: PEP 563/649 type annotation lazy evaluation not processed; annotations emitter is no-op.")]
     public void Blocked_TypeAnnotations_Processing()
-        => RunCpythonTest("test_typeannotations.py", "Type annotation processing");
+        => RunCpythonTest("test_typeannotations.py", "Type annotation evaluation (PEP 563 / PEP 649)");
 
-    [Fact(Skip = "BLOCKER: Grammar (eval mode) not yet fully supported.")]
-    public void Blocked_Grammar_EvalMode()
-        => RunCpythonTest("test_grammar.py", "Grammar in eval/single modes");
+    [Fact(Skip = "BLOCKER: Grammar test uses compile()/eval()/exec() in exec/single/eval modes heavily; full multi-mode compile not implemented.")]
+    public void Blocked_Grammar_MultiMode()
+        => RunCpythonTest("test_grammar.py", "Grammar in exec/single/eval compile modes");
 
-    [Fact(Skip = "BLOCKER: Context manager (with statement) edge cases incomplete.")]
+    [Fact(Skip = "BLOCKER: contextlib imports (contextmanager, suppress, redirect_stdout …) not in NajaStdLib; 'with' edge cases around __exit__ return value.")]
     public void Blocked_Contextlib_WithEdgeCases()
-        => RunCpythonTest("test_contextlib.py", "Context manager edge cases");
+        => RunCpythonTest("test_contextlib.py", "contextlib module — context manager edge cases");
 
-    [Fact(Skip = "BLOCKER: Iterator protocol incomplete.")]
+    [Fact(Skip = "BLOCKER: itertools module not in NajaStdLib; iterator protocol (send/throw/close) incomplete.")]
     public void Blocked_Itertools_Protocol()
-        => RunCpythonTest("test_itertools.py", "Iterator protocol completeness");
+        => RunCpythonTest("test_itertools.py", "itertools module + full iterator protocol");
+
+    [Fact(Skip = "BLOCKER: Generator expression tracking (yield, send, throw, close, StopIteration) incomplete.")]
+    public void Blocked_Generators_Full()
+        => RunCpythonTest("test_generators.py", "Full generator protocol (yield / send / throw / close)");
 }

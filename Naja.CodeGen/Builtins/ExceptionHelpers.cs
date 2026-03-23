@@ -101,6 +101,24 @@ public static class ExceptionHelpers
         return ex;
     }
 
+    /// <summary>
+    /// PEP 479: Wrap a StopIteration that escaped a generator body as RuntimeError.
+    /// Creates <c>RuntimeError("generator raised StopIteration")</c> with
+    /// <c>__cause__</c>, <c>__context__</c> set to a StopIteration instance and
+    /// <c>__suppress_context__ = True</c>.
+    /// </summary>
+    public static InvalidOperationException WrapGeneratorStopIteration(Exception stopEx)
+    {
+        // __cause__ / __context__ must have type() == StopIteration == NajaStopIteration
+        var cause = new NajaStopIteration(null);
+        var rte   = new InvalidOperationException("RuntimeError: generator raised StopIteration");
+        var chain = GetOrCreateChain(rte);
+        chain.Cause           = cause;
+        chain.Context         = cause;
+        chain.SuppressContext = true;
+        return rte;
+    }
+
     /// <summary>Ensure the object is an Exception instance or exception type, creating if needed.</summary>
     public static Exception EnsureException(object? ex)
     {

@@ -56,6 +56,12 @@ internal static class NajaBuiltinsMethodCache
     public static readonly MethodInfo Abs_Method = 
         typeof(MathFunctions).GetMethod(nameof(MathFunctions.Abs))!;
 
+    public static readonly MethodInfo ParseBigInt_Method =
+        typeof(MathFunctions).GetMethod(nameof(MathFunctions.ParseBigInt))!;
+
+    public static readonly MethodInfo NegateBigInt_Method =
+        typeof(MathFunctions).GetMethod(nameof(MathFunctions.NegateBigInt))!;
+
     public static readonly MethodInfo Max_Method = 
         typeof(MathFunctions).GetMethod(nameof(MathFunctions.Max))!;
 

@@ -17,6 +17,7 @@ public abstract record Expression(int Line, int Column) : AstNode(Line, Column);
 
 // Literals
 public sealed record IntLiteral   (long Value,    int Line, int Column) : Expression(Line, Column);
+public sealed record BigIntLiteral(System.Numerics.BigInteger Value, int Line, int Column) : Expression(Line, Column);
 public sealed record FloatLiteral (double Value,  int Line, int Column) : Expression(Line, Column);
 public sealed record StringLiteral(string Value,  int Line, int Column) : Expression(Line, Column);
 public sealed record BoolLiteral  (bool Value,    int Line, int Column) : Expression(Line, Column);

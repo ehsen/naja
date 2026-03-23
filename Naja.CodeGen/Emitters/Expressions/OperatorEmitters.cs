@@ -306,7 +306,13 @@ public sealed class OperatorEmitters : ExpressionEmitterBase
         switch (e.Op)
         {
             case UnaryOp.Neg:
-                IL.Emit(OpCodes.Neg);
+                if (operandType is IntType or FloatType)
+                    IL.Emit(OpCodes.Neg);
+                else
+                {
+                    TypeMapper.EmitBox(IL, operandType);
+                    IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.NegateBigInt_Method);
+                }
                 return operandType;
             case UnaryOp.Pos:
                 return operandType;

@@ -372,7 +372,7 @@ public sealed partial class Parser
         {
             case TokenType.Integer:
                 Advance();
-                return new IntLiteral(ParseInt(t.Value), t.Line, t.Column);
+                return ParseIntExpr(t.Value, t.Line, t.Column);
 
             case TokenType.Float:
                 Advance();

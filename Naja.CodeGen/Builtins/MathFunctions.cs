@@ -108,5 +108,11 @@ public static class MathFunctions
         if (r != 0.0 && ((r < 0) != (b < 0))) r += b;
         return r;
     }
+
+    /// <summary>Parse a decimal string into a BigInteger (for literals that overflow long).</summary>
+    public static object ParseBigInt(string s) => System.Numerics.BigInteger.Parse(s);
+
+    /// <summary>Negate a BigInteger value (for unary minus on big integer literals).</summary>
+    public static object NegateBigInt(object n) => -(System.Numerics.BigInteger)n;
 }
 

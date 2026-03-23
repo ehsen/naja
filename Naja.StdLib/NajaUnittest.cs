@@ -239,6 +239,35 @@ public class NajaTestCase
         }
     }
 
+    // ── assertRegex ───────────────────────────────────────────────────────────
+    /// <summary>
+    /// assertRegex(text, expected_regex) — asserts that a regexp search matches text.
+    /// </summary>
+    public void assertRegex(object? text, object? expectedRegex) =>
+        assertRegex(text, expectedRegex, null);
+
+    public void assertRegex(object? text, object? expectedRegex, object? msg)
+    {
+        var pattern = expectedRegex?.ToString() ?? "";
+        var s = text?.ToString() ?? "";
+        if (!System.Text.RegularExpressions.Regex.IsMatch(s, pattern))
+            Fail($"Regex '{pattern}' not found in '{s}'", msg);
+    }
+
+    /// <summary>
+    /// assertNotRegex(text, unexpected_regex) — asserts that a regexp search does NOT match text.
+    /// </summary>
+    public void assertNotRegex(object? text, object? unexpectedRegex) =>
+        assertNotRegex(text, unexpectedRegex, null);
+
+    public void assertNotRegex(object? text, object? unexpectedRegex, object? msg)
+    {
+        var pattern = unexpectedRegex?.ToString() ?? "";
+        var s = text?.ToString() ?? "";
+        if (System.Text.RegularExpressions.Regex.IsMatch(s, pattern))
+            Fail($"Regex '{pattern}' unexpectedly found in '{s}'", msg);
+    }
+
     // ── assertWarns (stub — Naja has no warning infrastructure yet) ────────
     public AssertRaisesContext assertWarns(object warningType)
         => new AssertRaisesContext(null, null); // no-op context manager
