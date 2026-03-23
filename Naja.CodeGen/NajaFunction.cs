@@ -11,6 +11,9 @@ public sealed class NajaFunction
     private readonly Delegate _target;
     private readonly object?[] _defaults; // pre-evaluated defaults for trailing parameters
 
+    public string? __name__ { get; set; }
+    public string? __qualname__ { get; set; }
+
     public NajaFunction(Delegate target, object?[] defaults)
     {
         _target = target;

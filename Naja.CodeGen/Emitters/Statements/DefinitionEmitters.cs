@@ -304,8 +304,33 @@ public class DefinitionEmitters : StatementEmitterBase
 
     public void EmitClassDef(ClassDef s)
     {
-        // Inline class definitions (nested in functions) — no-op for now
-        // Top-level classes are handled by AssemblyEmitter
+        // Nested class definitions (inside function bodies) are pre-declared in Pass 1
+        // using the unique IL name "{s.Name}_L{s.Line}". Here we register them under
+        // the original Python name so runtime calls like `MyClass()` resolve correctly.
+        var uniqueName = $"{s.Name}_L{s.Line}";
+        if (_ctx.ClassTypes.TryGetValue(uniqueName, out var tb)
+            && _ctx.ClassConstructors.TryGetValue(uniqueName, out var ctor))
+        {
+            _ctx.ClassTypes[s.Name] = tb;
+            _ctx.ClassConstructors[s.Name] = ctor;
+
+            if (_ctx.ClassCtorArgCounts.TryGetValue(uniqueName, out var argCount))
+                _ctx.ClassCtorArgCounts[s.Name] = argCount;
+
+            // Alias method stubs from unique-name prefix to original-name prefix
+            foreach (var key in _ctx.AllClassMethods.Keys
+                .Where(k => k.StartsWith(uniqueName + ".")).ToList())
+            {
+                var suffix = key[(uniqueName.Length + 1)..];
+                var aliasKey = $"{s.Name}.{suffix}";
+                if (!_ctx.AllClassMethods.ContainsKey(aliasKey))
+                {
+                    _ctx.AllClassMethods[aliasKey] = _ctx.AllClassMethods[key];
+                    _ctx.AllClassMethodParamTypes[aliasKey] = _ctx.AllClassMethodParamTypes[key];
+                    _ctx.ClassMethods.Add(aliasKey);
+                }
+            }
+        }
     }
 
     // ── Yield detection ───────────────────────────────────────────────────────

@@ -80,6 +80,11 @@ public sealed partial class AssemblyEmitter
     private readonly Dictionary<string, Type[]> _classMethodParamTypes = new();
     private readonly HashSet<string> _classMethodNames = new();
 
+    // Nested class support: maps unique internal name → ClassDef AST node.
+    // Unique name format: "{cls.Name}_L{cls.Line}" to avoid collisions when the same
+    // class name appears in multiple function bodies.  Populated by Pass 1 scanning.
+    private readonly Dictionary<string, ClassDef> _nestedClassDefs = new();
+
     // Deferred constructor completion.
     // DeclareClass (Pass 1) emits only the base ctor call and leaves the
     // ILGenerator open. EmitClassBody (Pass 3) completes it with the
@@ -155,6 +160,7 @@ public sealed partial class AssemblyEmitter
         _classConstructors.Clear();
         _classMethodNames.Clear();
         _pendingCtorIL.Clear();
+        _nestedClassDefs.Clear();
         
 
         // ── 4. Emit all IL ────────────────────────────────────────────────────

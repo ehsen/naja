@@ -224,6 +224,12 @@ public sealed partial class AssemblyEmitter
             }
         }
 
+        // ── Pass 1 (nested): declare TypeBuilders for ClassDefs inside function bodies ──
+        // Top-level classes were handled above; this covers classes defined inside functions
+        // or class methods (e.g. `def test(self): class Foo: ...`).
+        // Each gets a unique IL type name: "{cls.Name}_L{cls.Line}" to avoid clashes.
+        DeclareNestedClassesInBody(module.Body, modBuilder, importMap, module.Body, namespaceImports, classTypes, classCtors);
+
         // ── Pass 1.5: declare ALL class methods ───────────────────────────────
         foreach (var stmt in module.Body)
         {
@@ -235,6 +241,24 @@ public sealed partial class AssemblyEmitter
 
                     var (mb, pts, uniqueName) = TypeDeclaration.DeclareInstanceMethod(fnd, ct);
                     string key = $"{cls.Name}.{uniqueName}";
+                    _classMethods[key] = mb;
+                    _classMethodParamTypes[key] = pts;
+                    _classMethodNames.Add(key);
+                }
+            }
+        }
+
+        // ── Pass 1.5 (nested): declare method stubs for classes inside functions ──
+        foreach (var (nestedUniqueName, cls) in _nestedClassDefs)
+        {
+            if (classTypes.TryGetValue(nestedUniqueName, out var ct))
+            {
+                foreach (var member in cls.Body)
+                {
+                    if (member is not FunctionDef fnd) continue;
+
+                    var (mb, pts, uname) = TypeDeclaration.DeclareInstanceMethod(fnd, ct);
+                    string key = $"{nestedUniqueName}.{uname}";
                     _classMethods[key] = mb;
                     _classMethodParamTypes[key] = pts;
                     _classMethodNames.Add(key);
@@ -357,6 +381,14 @@ public sealed partial class AssemblyEmitter
                 EmitClassBody(cls, ct, modBuilder, fields, methods, paramTypes, classTypes, classCtors, importMap);
         }
 
+        // ── Pass 3 (nested): emit class bodies for classes defined inside functions ──
+        foreach (var (uniqueName, cls) in _nestedClassDefs)
+        {
+            if (classTypes.TryGetValue(uniqueName, out var ct))
+                EmitClassBody(cls, ct, modBuilder, fields, methods, paramTypes,
+                              classTypes, classCtors, importMap, classKeyOverride: uniqueName);
+        }
+
         // Finalise class TypeBuilders created in this module
         foreach (var ct in classTypes.Values)
         {
@@ -364,5 +396,111 @@ public sealed partial class AssemblyEmitter
         }
 
         return typeBuilder;
+    }
+
+    // ── Nested class scanner ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// Recursively walks all statements looking for ClassDef nodes nested inside
+    /// FunctionDef bodies (and control-flow blocks). Declares each as a TypeBuilder
+    /// using a unique IL name "{cls.Name}_L{cls.Line}" to avoid clashes.
+    /// </summary>
+    private void DeclareNestedClassesInBody(
+        IReadOnlyList<Statement> body,
+        ModuleBuilder modBuilder,
+        Dictionary<string, (string TypeName, string AssemblyName)> importMap,
+        IReadOnlyList<Statement> moduleBody,
+        Dictionary<string, string> namespaceImports,
+        Dictionary<string, TypeBuilder> classTypes,
+        Dictionary<string, ConstructorBuilder> classCtors)
+    {
+        foreach (var stmt in body)
+        {
+            switch (stmt)
+            {
+                case ClassDef cls when classTypes.ContainsKey(cls.Name):
+                    // Top-level class already declared — just recurse into method bodies
+                    foreach (var m in cls.Body.OfType<FunctionDef>())
+                        DeclareNestedClassesInBody(m.Body, modBuilder, importMap, moduleBody,
+                                                   namespaceImports, classTypes, classCtors);
+                    break;
+
+                case ClassDef cls:
+                {
+                    var uniqueName = $"{cls.Name}_L{cls.Line}";
+                    if (!_nestedClassDefs.ContainsKey(uniqueName))
+                    {
+                        var ct = DeclareClass(cls, modBuilder, importMap, moduleBody, out var ctor,
+                                              namespaceImports, overrideName: uniqueName);
+                        _nestedClassDefs[uniqueName] = cls;
+                        classTypes[uniqueName] = ct;
+                        classCtors[uniqueName] = ctor;
+                        _classTypes[uniqueName] = ct;
+                        _classConstructors[uniqueName] = ctor;
+
+                        // Inherit ctor arg count for nested class
+                        var initFn = cls.Body.OfType<FunctionDef>().FirstOrDefault(f => f.Name == "__init__");
+                        if (initFn != null)
+                        {
+                            bool hasSelf = initFn.Params.Count > 0 && initFn.Params[0].Name is "self" or "cls";
+                            int ac = hasSelf ? initFn.Params.Count - 1 : initFn.Params.Count;
+                            _classCtorArgCounts[uniqueName] = ac;
+                        }
+
+                        // Recurse into class method bodies for further nesting
+                        foreach (var m in cls.Body.OfType<FunctionDef>())
+                            DeclareNestedClassesInBody(m.Body, modBuilder, importMap, moduleBody,
+                                                       namespaceImports, classTypes, classCtors);
+                    }
+                    break;
+                }
+
+                case FunctionDef fn:
+                    DeclareNestedClassesInBody(fn.Body, modBuilder, importMap, moduleBody,
+                                               namespaceImports, classTypes, classCtors);
+                    break;
+
+                case IfStatement ifs:
+                    DeclareNestedClassesInBody(ifs.Then, modBuilder, importMap, moduleBody,
+                                               namespaceImports, classTypes, classCtors);
+                    foreach (var (_, elifBody) in ifs.Elifs)
+                        DeclareNestedClassesInBody(elifBody, modBuilder, importMap, moduleBody,
+                                                   namespaceImports, classTypes, classCtors);
+                    DeclareNestedClassesInBody(ifs.Else, modBuilder, importMap, moduleBody,
+                                               namespaceImports, classTypes, classCtors);
+                    break;
+
+                case ForStatement forS:
+                    DeclareNestedClassesInBody(forS.Body, modBuilder, importMap, moduleBody,
+                                               namespaceImports, classTypes, classCtors);
+                    DeclareNestedClassesInBody(forS.Else, modBuilder, importMap, moduleBody,
+                                               namespaceImports, classTypes, classCtors);
+                    break;
+
+                case WhileStatement whileS:
+                    DeclareNestedClassesInBody(whileS.Body, modBuilder, importMap, moduleBody,
+                                               namespaceImports, classTypes, classCtors);
+                    DeclareNestedClassesInBody(whileS.Else, modBuilder, importMap, moduleBody,
+                                               namespaceImports, classTypes, classCtors);
+                    break;
+
+                case TryStatement tryS:
+                    DeclareNestedClassesInBody(tryS.Body, modBuilder, importMap, moduleBody,
+                                               namespaceImports, classTypes, classCtors);
+                    foreach (var h in tryS.Handlers)
+                        DeclareNestedClassesInBody(h.Body, modBuilder, importMap, moduleBody,
+                                                   namespaceImports, classTypes, classCtors);
+                    DeclareNestedClassesInBody(tryS.Else, modBuilder, importMap, moduleBody,
+                                               namespaceImports, classTypes, classCtors);
+                    DeclareNestedClassesInBody(tryS.Finally, modBuilder, importMap, moduleBody,
+                                               namespaceImports, classTypes, classCtors);
+                    break;
+
+                case WithStatement withS:
+                    DeclareNestedClassesInBody(withS.Body, modBuilder, importMap, moduleBody,
+                                               namespaceImports, classTypes, classCtors);
+                    break;
+            }
+        }
     }
 }

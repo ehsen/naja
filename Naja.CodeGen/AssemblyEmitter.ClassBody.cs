@@ -136,8 +136,10 @@ public sealed partial class AssemblyEmitter
         Dictionary<string, Type[]> moduleParamTypes,
         Dictionary<string, TypeBuilder> moduleClassTypes,
         Dictionary<string, ConstructorBuilder> moduleClassCtors,
-        Dictionary<string, (string TypeName, string AssemblyName)> importMap)
+        Dictionary<string, (string TypeName, string AssemblyName)> importMap,
+        string? classKeyOverride = null)
     {
+        var classKey = classKeyOverride ?? cls.Name;
         var instanceFields = new Dictionary<string, FieldBuilder>();
         var classMethods = new Dictionary<string, MethodBuilder>();
         var classParamTs = new Dictionary<string, Type[]>();
@@ -183,7 +185,7 @@ public sealed partial class AssemblyEmitter
             bool isSetterStub = fn.Decorators.Any(d => d is AttributeExpr a && a.Attribute == "setter");
             string uname = isPropStub ? "get_" + fn.Name : isSetterStub ? "set_" + fn.Name : fn.Name;
 
-            string key = $"{cls.Name}.{uname}";
+            string key = $"{classKey}.{uname}";
             if (_classMethods.TryGetValue(key, out var mb))
             {
                 classMethods[uname] = mb;
@@ -195,7 +197,7 @@ public sealed partial class AssemblyEmitter
         // DeclareClass (Pass 1) left the constructor ILGenerator open after the
         // base ctor call. Now that _classMethods has the __init__ MethodBuilder
         // from Pass 1.5, we can emit the __init__ call and Ret.
-        CompleteConstructor(cls.Name);
+        CompleteConstructor(classKey);
 
 
         // ── Dispose / IDisposable wiring ──────────────────────────────────────
@@ -253,7 +255,7 @@ public sealed partial class AssemblyEmitter
         }
 
         // ── Emit static constructor for class-level variable initialization ──────
-        if (_classStaticFieldBuilders.TryGetValue(cls.Name, out var staticFBs) && staticFBs.Count > 0)
+        if (_classStaticFieldBuilders.TryGetValue(classKey, out var staticFBs) && staticFBs.Count > 0)
         {
             var cctorMb = ct.DefineTypeInitializer();
             var cctorIL = cctorMb.GetILGenerator();

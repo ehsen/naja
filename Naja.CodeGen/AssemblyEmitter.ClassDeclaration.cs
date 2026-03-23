@@ -23,7 +23,8 @@ public sealed partial class AssemblyEmitter
         Dictionary<string, (string TypeName, string AssemblyName)> importMap,
         IReadOnlyList<Statement> moduleBody,
         out ConstructorBuilder defaultCtor,
-        Dictionary<string, string>? namespaceImports = null)
+        Dictionary<string, string>? namespaceImports = null,
+        string? overrideName = null)
     {
         // Resolve base class — search loaded assemblies first to handle strong-named
         // WinForms types correctly (Type.GetType with AQN is unreliable for them).
@@ -91,7 +92,7 @@ public sealed partial class AssemblyEmitter
         if (isFinal) typeAttrs |= TypeAttributes.Sealed;
 
         var tb = modBuilder.DefineType(
-            cls.Name,
+            overrideName ?? cls.Name,
             typeAttrs,
             baseType);
 
@@ -136,7 +137,7 @@ public sealed partial class AssemblyEmitter
             {
                 argCount = 1;
                 autoExceptionCtor = true;
-                _classCtorArgCounts[cls.Name] = 1;
+                _classCtorArgCounts[overrideName ?? cls.Name] = 1;
             }
         }
 
@@ -266,7 +267,7 @@ public sealed partial class AssemblyEmitter
                 // Solution: leave the ILGenerator open (no Ret here) and store it
                 // so EmitClassBody (Pass 3) can complete the constructor after
                 // __init__ is available. EmitClassBody calls CompleteConstructor().
-                _pendingCtorIL[cls.Name] = (ctorIL, argCount);
+                _pendingCtorIL[overrideName ?? cls.Name] = (ctorIL, argCount);
                 // Ret is emitted by CompleteConstructor — NOT here.
             }
         }
