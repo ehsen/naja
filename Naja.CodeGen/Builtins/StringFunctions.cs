@@ -106,4 +106,18 @@ public static class StringFunctions
     public static string StrTitle(object s) =>
         System.Globalization.CultureInfo.CurrentCulture.TextInfo
             .ToTitleCase(TypeConversion.ToStr(s).ToLower());
+
+    /// <summary>Encode string to bytes with specified encoding (default: utf-8).</summary>
+    public static byte[] StrEncode(object s, object encoding = null!)
+    {
+        var str = TypeConversion.ToStr(s);
+        var enc = encoding is null ? "utf-8" : TypeConversion.ToStr(encoding).ToLower();
+        return enc switch
+        {
+            "utf-8" or "utf8" => System.Text.Encoding.UTF8.GetBytes(str),
+            "latin-1" or "latin1" or "iso-8859-1" => System.Text.Encoding.GetEncoding("iso-8859-1").GetBytes(str),
+            "ascii" => System.Text.Encoding.ASCII.GetBytes(str),
+            _ => throw new Exception($"LookupError: unknown encoding: {enc}")
+        };
+    }
 }

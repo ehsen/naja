@@ -1,14 +1,21 @@
 using System.Reflection.Emit;
+using System.Numerics;
+using System.Text;
 using Naja.Parser;
 using Naja.Semantics;
 
 namespace Naja.CodeGen.Emitters.Expressions;
 
 /// <summary>
-/// Emits IL for literal expressions: integers, floats, strings, bools, None, Ellipsis.
+/// Emits IL for literal expressions: integers, floats, strings, bools, None, Ellipsis, complex.
 /// </summary>
 public sealed class LiteralEmitters : ExpressionEmitterBase
 {
+    private static readonly System.Reflection.ConstructorInfo ComplexCtor =
+        typeof(Complex).GetConstructor([typeof(double), typeof(double)])!;
+    private static readonly System.Reflection.MethodInfo Latin1GetBytes =
+        typeof(Encoding).GetMethod(nameof(Encoding.GetBytes), [typeof(string)])!;
+
     public LiteralEmitters(EmitContext ctx) : base(ctx) { }
 
     /// <summary>
@@ -21,7 +28,9 @@ public sealed class LiteralEmitters : ExpressionEmitterBase
             IntLiteral e => EmitInt(e),
             BigIntLiteral e => EmitBigInt(e),
             FloatLiteral e => EmitFloat(e),
+            ComplexLiteral e => EmitComplex(e),
             StringLiteral e => EmitString(e),
+            BytesLiteral e => EmitBytes(e),
             BoolLiteral e => EmitBool(e),
             NoneLiteral e => EmitNone(e),
             EllipsisLiteral e => EmitEllipsis(e),
@@ -71,10 +80,29 @@ public sealed class LiteralEmitters : ExpressionEmitterBase
         return NajaTypes.Float;
     }
 
+    private NajaType EmitComplex(ComplexLiteral e)
+    {
+        // new Complex(0.0, imaginary) — boxes to object via newobj
+        IL.Emit(OpCodes.Ldc_R8, 0.0);
+        IL.Emit(OpCodes.Ldc_R8, e.Imaginary);
+        IL.Emit(OpCodes.Newobj, ComplexCtor);
+        IL.Emit(OpCodes.Box, typeof(Complex));
+        return NajaTypes.Unknown;
+    }
+
     private NajaType EmitString(StringLiteral e)
     {
         IL.Emit(OpCodes.Ldstr, e.Value);
         return NajaTypes.Str;
+    }
+
+    private NajaType EmitBytes(BytesLiteral e)
+    {
+        // Emit as byte[] using Latin-1 encoding (1:1 byte mapping)
+        IL.Emit(OpCodes.Call, typeof(Encoding).GetProperty(nameof(Encoding.Latin1))!.GetMethod!);
+        IL.Emit(OpCodes.Ldstr, e.Value);
+        IL.Emit(OpCodes.Callvirt, Latin1GetBytes);
+        return NajaTypes.Unknown;
     }
 
     private NajaType EmitBool(BoolLiteral e)

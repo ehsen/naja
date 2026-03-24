@@ -180,6 +180,46 @@ public static class DynamicOperators
             r += b;
         return r;
     }
+
+    /// <summary>
+    /// Dynamic matrix multiply (@): delegates to __matmul__ / __rmatmul__ on operands.
+    /// </summary>
+    public static object DynamicMatMul(object a, object b)
+    {
+        // Try __matmul__ on left operand
+        var matmulM = a?.GetType().GetMethod("__matmul__", BindingFlags.Public | BindingFlags.Instance);
+        if (matmulM is not null)
+        {
+            try
+            {
+                var result = matmulM.Invoke(a, new[] { b });
+                if (result == null) throw new Exception("TypeError: __matmul__ returned None");
+                return result;
+            }
+            catch (TargetInvocationException tie) when (tie.InnerException != null)
+            {
+                throw tie.InnerException;
+            }
+        }
+
+        // Try __rmatmul__ on right operand
+        var rmatmulM = b?.GetType().GetMethod("__rmatmul__", BindingFlags.Public | BindingFlags.Instance);
+        if (rmatmulM is not null)
+        {
+            try
+            {
+                var result = rmatmulM.Invoke(b, new[] { a });
+                if (result == null) throw new Exception("TypeError: __rmatmul__ returned None");
+                return result;
+            }
+            catch (TargetInvocationException tie) when (tie.InnerException != null)
+            {
+                throw tie.InnerException;
+            }
+        }
+
+        throw new TypeError($"unsupported operand type(s) for @: '{a?.GetType().Name}' and '{b?.GetType().Name}'");
+    }
 }
 
 /// <summary>

@@ -31,6 +31,65 @@ namespace Naja.CodeGen;
 public sealed class NajaEngine
 {
     /// <summary>
+    /// Compile a Python/Naja script to an in-memory assembly without executing it.
+    /// Returns the compiled <see cref="Assembly"/> on success, or null on failure.
+    /// <paramref name="errors"/> is populated with human-readable error messages on failure.
+    /// </summary>
+    public Assembly? TryCompile(string scriptPath, out List<string> errors,
+        CompilationProfile profile = CompilationProfile.Console)
+    {
+        errors = new List<string>();
+
+        if (!File.Exists(scriptPath))
+        {
+            errors.Add($"File not found: {scriptPath}");
+            return null;
+        }
+
+        var source = File.ReadAllText(scriptPath);
+
+        NajaParserModule ast;
+        try
+        {
+            var lexer  = new Naja.Lexer.Lexer(source);
+            var tokens = lexer.Tokenize();
+            var parser = new Naja.Parser.Parser(tokens);
+            ast = parser.ParseModule();
+        }
+        catch (Exception ex) when (ex is not CodeGenException)
+        {
+            errors.Add($"Syntax error in '{Path.GetFileName(scriptPath)}': {ex.Message}");
+            return null;
+        }
+
+        var model = new SemanticAnalyzer().Analyze(ast);
+
+        try
+        {
+            var ie = new TypeInferenceEngine(model);
+            ie.Infer(ast);
+        }
+        catch { /* best-effort; continue without inference hints */ }
+
+        var assemblyName = Path.GetFileNameWithoutExtension(scriptPath);
+        var emitter      = new AssemblyEmitter(model, assemblyName);
+        try
+        {
+            return emitter.EmitToMemory(ast, profile);
+        }
+        catch (CodeGenException ex)
+        {
+            errors.Add(ex.Message);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            errors.Add($"IL emission failed in '{Path.GetFileName(scriptPath)}': {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Compile and execute a .naja script file in-memory.
     /// </summary>
     /// <param name="scriptPath">
@@ -99,7 +158,7 @@ public sealed class NajaEngine
         try
         {
             // EmitToMemory uses AssemblyBuilderAccess.Run — no files written.
-            
+
             assembly = emitter.EmitToMemory(ast,profile);
         }
         catch (CodeGenException)

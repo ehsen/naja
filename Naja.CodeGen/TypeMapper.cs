@@ -198,6 +198,8 @@ public static class TypeMapper
         "callable" => NajaBuiltinsMethodCache.Callable_Method,
         "vars" => NajaBuiltinsMethodCache.Vars_Method,
         "dir" => NajaBuiltinsMethodCache.Dir_Method,
+        "globals" => NajaBuiltinsMethodCache.Globals_Method,
+        "locals" => NajaBuiltinsMethodCache.Locals_Method,
         "format" => NajaBuiltinsMethodCache.Format_Method,
         "iter" => NajaBuiltinsMethodCache.Iter_Method,
         // NextVararg handles both next(g) and next(g, default) via variadic object[] args.

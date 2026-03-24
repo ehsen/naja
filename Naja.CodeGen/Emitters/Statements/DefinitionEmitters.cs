@@ -150,25 +150,43 @@ public class DefinitionEmitters : StatementEmitterBase
         // Skip vars already handled as cell params (per-call cells).
         var nestedRefs = CollectNamesReferencedByNestedFunctions(s.Body);
         var assigned = CollectAssignedNames(s.Body);
-        var paramNamesSet = new HashSet<string>(s.Params.Select(p => p.Name));
+        // Include capturedOuterParamNames so that params captured from an outer scope
+        // can be further hoisted for doubly-nested functions (multi-level closure).
+        var paramNamesSet = new HashSet<string>(s.Params.Select(p => p.Name).Concat(capturedOuterParamNames));
         foreach (var r in nestedRefs.Intersect(assigned.Union(paramNamesSet)))
         {
             if (fnCtx.CellParamOf.ContainsKey(r)) continue;  // cell param handles this
             if (!fnCtx.Fields.ContainsKey(r))
             {
-                var hoisted = _ctx.TypeBuilder.DefineField($"__nl_{r}", typeof(object), FieldAttributes.Private | FieldAttributes.Static);
-                fnCtx.Fields[r] = hoisted;
-                _ctx.Fields[r] = hoisted;
+                // Reuse existing outer-scope field instead of creating a duplicate
+                // (handles the case where a capturedOuterParam needs further hoisting)
+                if (_ctx.Fields.ContainsKey(r))
+                    fnCtx.Fields[r] = _ctx.Fields[r];
+                else
+                {
+                    var hoisted = _ctx.TypeBuilder.DefineField($"__nl_{r}", typeof(object), FieldAttributes.Private | FieldAttributes.Static);
+                    fnCtx.Fields[r] = hoisted;
+                    _ctx.Fields[r] = hoisted;
+                }
             }
             if (paramNamesSet.Contains(r))
                 fnCtx.HoistedParams.Add(r);
         }
-        // Copy hoisted parameter values into their static fields at function entry
+        // Copy original hoisted parameter values into their static fields at function entry
         for (int hi = 0; hi < s.Params.Count; hi++)
         {
             if (!fnCtx.HoistedParams.Contains(s.Params[hi].Name)) continue;
             switch (hi) { case 0: fnCtx.IL.Emit(OpCodes.Ldarg_0); break; case 1: fnCtx.IL.Emit(OpCodes.Ldarg_1); break; case 2: fnCtx.IL.Emit(OpCodes.Ldarg_2); break; case 3: fnCtx.IL.Emit(OpCodes.Ldarg_3); break; default: fnCtx.IL.Emit(OpCodes.Ldarg_S, (byte)hi); break; }
             fnCtx.IL.Emit(OpCodes.Stsfld, fnCtx.Fields[s.Params[hi].Name]);
+        }
+        // Copy capturedOuterParams that need further hoisting for doubly-nested functions
+        for (int ci = 0; ci < capturedOuterParamNames.Count; ci++)
+        {
+            var capName = capturedOuterParamNames[ci];
+            if (!fnCtx.HoistedParams.Contains(capName)) continue;
+            int argIdx = s.Params.Count + ci;
+            switch (argIdx) { case 0: fnCtx.IL.Emit(OpCodes.Ldarg_0); break; case 1: fnCtx.IL.Emit(OpCodes.Ldarg_1); break; case 2: fnCtx.IL.Emit(OpCodes.Ldarg_2); break; case 3: fnCtx.IL.Emit(OpCodes.Ldarg_3); break; default: fnCtx.IL.Emit(OpCodes.Ldarg_S, (byte)argIdx); break; }
+            fnCtx.IL.Emit(OpCodes.Stsfld, fnCtx.Fields[capName]);
         }
 
         // (Closure hoisting moved to AssemblyEmitter.EmitFunctionBody so promotion
@@ -461,6 +479,9 @@ public class DefinitionEmitters : StatementEmitterBase
                 break;
             case AssignStatement a:
                 CollectNamesInExpr(a.Value, names);
+                foreach (var t in a.Targets)
+                    if (t is not NameExpr)
+                        CollectNamesInExpr(t, names);
                 break;
             case AnnAssignStatement aa:
                 if (aa.Value is not null) CollectNamesInExpr(aa.Value, names);
@@ -490,7 +511,18 @@ public class DefinitionEmitters : StatementEmitterBase
                 foreach (var s in ts.Body) CollectReferencedNamesInStmt(s, names);
                 foreach (var h in ts.Handlers) foreach (var s in h.Body) CollectReferencedNamesInStmt(s, names);
                 break;
-            // Other statement kinds ignored (conservative)
+            case RaiseStatement rs:
+                if (rs.Exception is not null) CollectNamesInExpr(rs.Exception, names);
+                if (rs.Cause is not null) CollectNamesInExpr(rs.Cause, names);
+                break;
+            case AssertStatement ast:
+                CollectNamesInExpr(ast.Test, names);
+                if (ast.Message is not null) CollectNamesInExpr(ast.Message, names);
+                break;
+            case AugAssignStatement aas:
+                CollectNamesInExpr(aas.Value, names);
+                CollectNamesInExpr(aas.Target, names);
+                break;
             default:
                 break;
         }
@@ -530,11 +562,14 @@ public class DefinitionEmitters : StatementEmitterBase
                 // referenced but NOT locally assigned AND NOT a parameter of that function.
                 // Names declared nonlocal are free vars (they reference the enclosing scope).
                 var referenced = CollectReferencedNames(fn.Body);
+                // Recursively collect names needed by doubly-nested functions that pass
+                // through this function (multi-level closure capture).
+                var transitivelyNeeded = CollectNamesReferencedByNestedFunctions(fn.Body);
                 var locallyAssigned = CollectAssignedNames(fn.Body);
                 var nonlocalNames = CollectNonlocalNames(fn.Body);
                 foreach (var nl in nonlocalNames) locallyAssigned.Remove(nl);
                 foreach (var p in fn.Params) locallyAssigned.Add(p.Name);
-                foreach (var n in referenced)
+                foreach (var n in referenced.Union(transitivelyNeeded))
                     if (!locallyAssigned.Contains(n))
                         names.Add(n);
             }

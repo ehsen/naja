@@ -571,6 +571,7 @@ public sealed class CallEmitters : ExpressionEmitterBase
         "split" => NajaBuiltinsMethodCache.StrSplit_Method,
         "splitlines" => NajaBuiltinsMethodCache.StrSplitLines_Method,
         "title" => NajaBuiltinsMethodCache.StrTitle_Method,
+        "encode" => NajaBuiltinsMethodCache.StrEncode_Method,
         "format" => NajaBuiltinsMethodCache.Format_Method,
         _ => null
     };

@@ -293,7 +293,14 @@ public sealed class OperatorEmitters : ExpressionEmitterBase
                 return NajaTypes.Int;
 
             case BinaryOp.MatMul:
-                throw new CodeGenException("Matrix multiply (@) not supported yet", e.Line, e.Column);
+                // Matrix multiply: emit as dynamic call for now
+                // Boxed left and right operands, call NajaBuiltins.DynamicMatMul
+                var lType = _mainEmitter.Emit(e.Left);
+                TypeMapper.EmitBox(IL, lType);
+                var rType = _mainEmitter.Emit(e.Right);
+                TypeMapper.EmitBox(IL, rType);
+                IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.DynamicMatMul_Method);
+                return NajaTypes.Unknown;
 
             default:
                 throw new CodeGenException($"Unknown binary op {e.Op}", e.Line, e.Column);

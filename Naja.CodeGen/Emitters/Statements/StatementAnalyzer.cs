@@ -62,11 +62,15 @@ public static class StatementAnalyzer
             if (stmt is FunctionDef fn)
             {
                 var referenced = CollectReferencedNames(fn.Body);
+                // Recursively collect names needed by doubly-nested functions that pass
+                // through this function (multi-level closure capture: a -> b -> c where c
+                // references a variable from a, b must propagate that capture upward).
+                var transitivelyNeeded = CollectNamesReferencedByNestedFunctions(fn.Body);
                 var locallyAssigned = CollectAssignedNames(fn.Body);
                 var nonlocalNames = CollectNonlocalNames(fn.Body);
                 foreach (var nl in nonlocalNames) locallyAssigned.Remove(nl);
                 foreach (var p in fn.Params) locallyAssigned.Add(p.Name);
-                foreach (var n in referenced)
+                foreach (var n in referenced.Union(transitivelyNeeded))
                     if (!locallyAssigned.Contains(n))
                         names.Add(n);
             }
@@ -223,6 +227,9 @@ public static class StatementAnalyzer
                 break;
             case AssignStatement a:
                 CollectNamesInExpr(a.Value, names);
+                foreach (var t in a.Targets)
+                    if (t is not NameExpr)
+                        CollectNamesInExpr(t, names);
                 break;
             case AnnAssignStatement aa:
                 if (aa.Value is not null) CollectNamesInExpr(aa.Value, names);
@@ -252,7 +259,18 @@ public static class StatementAnalyzer
                 foreach (var s in ts.Body) CollectReferencedNamesInStmt(s, names);
                 foreach (var h in ts.Handlers) foreach (var s in h.Body) CollectReferencedNamesInStmt(s, names);
                 break;
-            // Other statement kinds ignored (conservative)
+            case RaiseStatement rs:
+                if (rs.Exception is not null) CollectNamesInExpr(rs.Exception, names);
+                if (rs.Cause is not null) CollectNamesInExpr(rs.Cause, names);
+                break;
+            case AssertStatement ast:
+                CollectNamesInExpr(ast.Test, names);
+                if (ast.Message is not null) CollectNamesInExpr(ast.Message, names);
+                break;
+            case AugAssignStatement aas:
+                CollectNamesInExpr(aas.Value, names);
+                CollectNamesInExpr(aas.Target, names);
+                break;
             default:
                 break;
         }

@@ -27,6 +27,9 @@ internal static class NajaBuiltinsMethodCache
     public static readonly MethodInfo DynamicMod_Method = 
         typeof(DynamicOperators).GetMethod(nameof(DynamicOperators.DynamicMod))!;
 
+    public static readonly MethodInfo DynamicMatMul_Method = 
+        typeof(DynamicOperators).GetMethod(nameof(DynamicOperators.DynamicMatMul))!;
+
     // ── Type conversions ──────────────────────────────────────────────────────
     public static readonly MethodInfo ToFloat_Method = 
         typeof(TypeConversion).GetMethod(nameof(TypeConversion.ToFloat))!;
@@ -212,6 +215,12 @@ internal static class NajaBuiltinsMethodCache
     public static readonly MethodInfo Dir_Method = 
         typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.Dir))!;
 
+    public static readonly MethodInfo Globals_Method = 
+        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Globals))!;
+
+    public static readonly MethodInfo Locals_Method = 
+        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.Locals))!;
+
     public static readonly MethodInfo Iter_Method = 
         typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.Iter))!;
 
@@ -347,6 +356,9 @@ internal static class NajaBuiltinsMethodCache
 
     public static readonly MethodInfo StrTitle_Method = 
         typeof(StringFunctions).GetMethod(nameof(StringFunctions.StrTitle))!;
+
+    public static readonly MethodInfo StrEncode_Method = 
+        typeof(StringFunctions).GetMethod(nameof(StringFunctions.StrEncode))!;
 
     // ── List method references ───────────────────────────────────────────────
     public static readonly MethodInfo ListAppend_Method = 

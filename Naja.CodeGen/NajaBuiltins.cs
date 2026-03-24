@@ -2051,6 +2051,18 @@ public static class NajaBuiltins
         return names;
     }
 
+    /// <summary>globals() returns dict of module-level variables. In Naja, this is a placeholder.</summary>
+    public static object Globals()
+    {
+        return new System.Collections.Generic.Dictionary<object, object> { { "__name__", "__main__" } };
+    }
+
+    /// <summary>locals() returns dict of local variables. In Naja, this is a placeholder.</summary>
+    public static object Locals()
+    {
+        return new System.Collections.Generic.Dictionary<object, object>();
+    }
+
     // ── format() ──────────────────────────────────────────────────────────────
 
     public static string Format(object value, object spec = null!)
@@ -2423,6 +2435,18 @@ public static class NajaBuiltins
         ToStr(s).Replace("\r\n", "\n").Split('\n').Select(p => (object)p).ToList();
     public static string StrTitle(object s) =>
         System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(ToStr(s).ToLower());
+    public static byte[] StrEncode(object s, object encoding = null!)
+    {
+        var str = ToStr(s);
+        var enc = encoding is null ? "utf-8" : ToStr(encoding).ToLower();
+        return enc switch
+        {
+            "utf-8" or "utf8" => System.Text.Encoding.UTF8.GetBytes(str),
+            "latin-1" or "latin1" or "iso-8859-1" => System.Text.Encoding.GetEncoding("iso-8859-1").GetBytes(str),
+            "ascii" => System.Text.Encoding.ASCII.GetBytes(str),
+            _ => throw new Exception($"LookupError: unknown encoding: {enc}")
+        };
+    }
 
     // ── List method bridge ────────────────────────────────────────────────────
 
