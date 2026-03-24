@@ -80,10 +80,8 @@ public sealed partial class Parser
             TokenType.Import => ParseImport(),
             TokenType.From => ParseFromImport(),
             TokenType.At => ParseDecorated(),
-            TokenType.Match => ParseMatch(),
-            TokenType.Type => ParseTypeAlias(),
             TokenType.Async => ParseAsync(),
-            _ => ParseExpressionStatement(),
+            _ => ParseSoftKeywordOrExpression(),
         };
 
         SkipNewlines();
@@ -287,7 +285,7 @@ public sealed partial class Parser
         var t = Expect(TokenType.For);
         var target = ParseTargetList();
         Expect(TokenType.In);
-        var iter = ParseExpression();
+        var iter = ParseTupleOrExpression();
         var body = ParseBlock();
         var els = new List<Statement>();
         if (Match(TokenType.Else))
@@ -345,22 +343,76 @@ public sealed partial class Parser
     {
         var t = Expect(TokenType.With);
         var items = new List<WithItem>();
-        do
+
+        // PEP 617: parenthesized context managers — with (...):
+        if (Check(TokenType.LeftParen) && IsParenthesizedWith())
         {
-            var ctx = ParseExpression();
-            Expression? asTarget = null;
-            if (Match(TokenType.As))
-                asTarget = ParseExpression();
-            items.Add(new WithItem(ctx, asTarget));
-        } while (Match(TokenType.Comma));
+            Advance(); // consume '('
+            do
+            {
+                SkipNewlines();
+                if (Check(TokenType.RightParen)) break;
+                var ctx = ParseExpression();
+                Expression? asTarget = null;
+                if (Match(TokenType.As))
+                    asTarget = ParseExpression();
+                items.Add(new WithItem(ctx, asTarget));
+                SkipNewlines();
+            } while (Match(TokenType.Comma));
+            SkipNewlines();
+            Expect(TokenType.RightParen);
+        }
+        else
+        {
+            do
+            {
+                var ctx = ParseExpression();
+                Expression? asTarget = null;
+                if (Match(TokenType.As))
+                    asTarget = ParseExpression();
+                items.Add(new WithItem(ctx, asTarget));
+            } while (Match(TokenType.Comma));
+        }
+
         var body = ParseBlock();
         return new WithStatement(items, body, isAsync, t.Line, t.Column);
+    }
+
+    /// <summary>
+    /// Looks ahead from the current '(' to find its matching ')'.
+    /// Returns true if that ')' is immediately followed (possibly after newlines) by ':',
+    /// indicating PEP 617 parenthesized context-manager syntax.
+    /// </summary>
+    private bool IsParenthesizedWith()
+    {
+        int depth = 0;
+        for (int i = _pos; i < _tokens.Count; i++)
+        {
+            var tt = _tokens[i].Type;
+            if (tt is TokenType.LeftParen or TokenType.LeftBracket or TokenType.LeftBrace)
+                depth++;
+            else if (tt is TokenType.RightParen or TokenType.RightBracket or TokenType.RightBrace)
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    // Skip newlines after the closing ')'
+                    var j = i + 1;
+                    while (j < _tokens.Count && _tokens[j].Type == TokenType.Newline) j++;
+                    return j < _tokens.Count && _tokens[j].Type == TokenType.Colon;
+                }
+            }
+            else if (tt == TokenType.Eof)
+                break;
+        }
+        return false;
     }
 
     private Statement ParseFunctionDef(bool isAsync, IReadOnlyList<Expression>? decorators = null)
     {
         var t = Expect(TokenType.Def);
         var name = ExpectIdentifier();
+        SkipTypeParams(); // PEP 695: skip [T, U, ...] type parameters
         var parameters = ParseParameterList();
         Expression? returnAnn = null;
         if (Match(TokenType.Arrow))
@@ -411,7 +463,10 @@ public sealed partial class Parser
             if (Match(TokenType.DoubleStar))
             {
                 var name = ExpectIdentifier();
-                @params.Add(new Parameter(name, null, null, false, true, false, false));
+                Expression? ann = null;
+                if (Match(TokenType.Colon)) ann = ParseExpression();
+                @params.Add(new Parameter(name, ann, null, false, true, false, false));
+                Match(TokenType.Comma); // allow trailing comma after **kwargs
                 break;
             }
             if (Match(TokenType.Star))
@@ -423,7 +478,9 @@ public sealed partial class Parser
                     continue;
                 }
                 var name = ExpectIdentifier();
-                @params.Add(new Parameter(name, null, null, true, false, false, false));
+                Expression? ann = null;
+                if (Match(TokenType.Colon)) ann = ParseExpression();
+                @params.Add(new Parameter(name, ann, null, true, false, false, false));
                 keywordOnly = true;
             }
             else
@@ -445,6 +502,7 @@ public sealed partial class Parser
     {
         var t = Expect(TokenType.Class);
         var name = ExpectIdentifier();
+        SkipTypeParams(); // PEP 695: skip [T, U, ...] type parameters
         var bases = new List<Expression>();
         var kws = new List<Argument>();
 
@@ -488,6 +546,68 @@ public sealed partial class Parser
         throw Error("Expected def or class after decorator");
     }
 
+    private Statement ParseSoftKeywordOrExpression()
+    {
+        var tok = Current();
+        if (tok.Type == TokenType.Identifier)
+        {
+            if (tok.Value == "match" && IsSoftMatchStatement())
+                return ParseMatch();
+            if (tok.Value == "type" && IsSoftTypeAlias())
+                return ParseTypeAlias();
+        }
+        return ParseExpressionStatement();
+    }
+
+    /// <summary>
+    /// Determines whether the current "match" identifier starts a match statement.
+    /// True unless followed by assignment, attribute, subscript, call, annotation-colon,
+    /// comma, or newline — all of which indicate it is used as a plain name.
+    /// </summary>
+    private bool IsSoftMatchStatement()
+    {
+        var next = Peek(1);
+        return next.Type is not (
+            TokenType.Assign or TokenType.PlusEqual or TokenType.MinusEqual or
+            TokenType.StarEqual or TokenType.SlashEqual or TokenType.DoubleSlashEqual or
+            TokenType.PercentEqual or TokenType.DoubleStarEqual or
+            TokenType.AmpersandEqual or TokenType.PipeEqual or TokenType.CaretEqual or
+            TokenType.LeftShiftEqual or TokenType.RightShiftEqual or
+            TokenType.Dot or TokenType.LeftBracket or
+            TokenType.Colon or
+            TokenType.Comma or TokenType.RightParen or TokenType.RightBracket or
+            TokenType.Newline or TokenType.Eof or TokenType.Semicolon
+        );
+    }
+
+    /// <summary>
+    /// Determines whether the current "type" identifier starts a PEP 695 type alias.
+    /// True when followed by an identifier and then '=' or '[' (generic alias).
+    /// </summary>
+    private bool IsSoftTypeAlias()
+    {
+        var next = Peek(1);
+        if (next.Type != TokenType.Identifier) return false;
+        var nextNext = Peek(2);
+        return nextNext.Type is TokenType.Assign or TokenType.LeftBracket;
+    }
+
+    /// <summary>
+    /// Skips a PEP 695 type parameter list <c>[T, U: bound, *Ts, **P]</c> if present.
+    /// We do not implement generic semantics — just parse past the brackets.
+    /// </summary>
+    private void SkipTypeParams()
+    {
+        if (!Check(TokenType.LeftBracket)) return;
+        int depth = 0;
+        while (!IsAtEnd())
+        {
+            if (Check(TokenType.LeftBracket)) { depth++; Advance(); }
+            else if (Check(TokenType.RightBracket)) { depth--; Advance(); if (depth == 0) break; }
+            else Advance();
+        }
+    }
+
     private Statement ParseAsync()
     {
         Expect(TokenType.Async);
@@ -499,14 +619,14 @@ public sealed partial class Parser
 
     private Statement ParseMatch()
     {
-        var t = Expect(TokenType.Match);
+        var t = Advance(); // consume 'match' soft keyword
         var subject = ParseExpression();
         Expect(TokenType.Colon);
         SkipNewlines();
         Expect(TokenType.Indent);
 
         var cases = new List<MatchCase>();
-        while (Check(TokenType.Case))
+        while (Current().Type == TokenType.Identifier && Current().Value == "case")
         {
             Advance();
             var pattern = ParsePattern();
@@ -550,8 +670,9 @@ public sealed partial class Parser
 
     private Statement ParseTypeAlias()
     {
-        var t = Expect(TokenType.Type);
+        var t = Advance(); // consume 'type' soft keyword
         var name = ExpectIdentifier();
+        SkipTypeParams(); // PEP 695: skip [T, ...] type parameters on generic type alias
         Expect(TokenType.Assign);
         var value = ParseExpression();
         SkipNewline();
