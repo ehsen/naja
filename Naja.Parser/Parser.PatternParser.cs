@@ -102,6 +102,10 @@ public sealed partial class Parser
 
         if (Match(TokenType.LeftParen))
         {
+            // Empty tuple pattern: case ():
+            if (Match(TokenType.RightParen))
+                return new SequencePattern([], t.Line, t.Column);
+
             var pattern = ParsePatternSequenceElement();
             if (Match(TokenType.Comma))
             {
@@ -178,6 +182,15 @@ public sealed partial class Parser
                     return new LiteralPattern(clsexpr, t.Line, t.Column);
                 return new CapturePattern(nameToken.Value, t.Line, t.Column);
             }
+        }
+
+        // Signed numeric literal pattern: case -1: / case -1.5: / case -1j:
+        if (Check(TokenType.Minus) || Check(TokenType.Plus))
+        {
+            var opTok = Advance();
+            var numExpr = ParsePostfix();
+            var op = opTok.Type == TokenType.Minus ? UnaryOp.Neg : UnaryOp.Pos;
+            return new LiteralPattern(new UnaryExpr(op, numExpr, opTok.Line, opTok.Column), t.Line, t.Column);
         }
 
         var expr = ParsePostfix();
