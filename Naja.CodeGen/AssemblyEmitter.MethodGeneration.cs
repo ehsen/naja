@@ -140,7 +140,7 @@ public sealed partial class AssemblyEmitter
             if (!ctx.Fields.ContainsKey(r))
             {
                 var fb = ct.DefineField($"__nl_{fn.Name}_{r}", typeof(object),
-                                        FieldAttributes.Private | FieldAttributes.Static);
+                                        FieldAttributes.Public | FieldAttributes.Static);
                 ctx.Fields[r] = fb;
             }
             if (paramNamesSetM.Contains(r))
@@ -157,6 +157,13 @@ public sealed partial class AssemblyEmitter
 
         var emitter = new StatementEmitter(ctx);
         emitter.EmitAll(fn.Body);
+
+        // Capture any methods/types/fields registered by inner defs (nested functions,
+        // nested classes, hoisted locals) so nested class bodies in Pass 3 can resolve them.
+        foreach (var (k, v) in ctx.Methods) _innerFunctionMethods.TryAdd(k, v);
+        foreach (var (k, v) in ctx.ClassTypes) _innerFunctionClassTypes.TryAdd(k, v);
+        foreach (var (k, v) in ctx.ClassConstructors) _innerFunctionClassCtors.TryAdd(k, v);
+        foreach (var (k, v) in ctx.Fields) _innerFunctionFields.TryAdd(k, v);
 
         EmitMethodEpilog(il, ctx, typeof(object));
     }
@@ -383,6 +390,14 @@ public sealed partial class AssemblyEmitter
 
         var emitter = new StatementEmitter(ctx);
         emitter.EmitAll(fn.Body);
+
+        // Capture any methods/types registered by inner defs (e.g. nested functions,
+        // nested classes) so that nested class bodies compiled in Pass 3 can resolve them.
+        foreach (var (k, v) in ctx.Methods) _innerFunctionMethods.TryAdd(k, v);
+        foreach (var (k, v) in ctx.ClassTypes) _innerFunctionClassTypes.TryAdd(k, v);
+        foreach (var (k, v) in ctx.ClassConstructors) _innerFunctionClassCtors.TryAdd(k, v);
+        foreach (var (k, v) in ctx.Fields) _innerFunctionFields.TryAdd(k, v);
+
         EmitMethodEpilog(il, ctx, returnType);
     }
 

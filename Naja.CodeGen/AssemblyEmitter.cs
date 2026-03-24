@@ -85,6 +85,14 @@ public sealed partial class AssemblyEmitter
     // class name appears in multiple function bodies.  Populated by Pass 1 scanning.
     private readonly Dictionary<string, ClassDef> _nestedClassDefs = new();
 
+    // Methods/types declared inside function bodies (e.g. nested defs like `make_decorator`).
+    // Nested class bodies are compiled in Pass 3 with only module-level dicts; these
+    // supplemental dicts carry inner-function declarations so class methods can resolve them.
+    private readonly Dictionary<string, MethodBuilder> _innerFunctionMethods = new();
+    private readonly Dictionary<string, TypeBuilder> _innerFunctionClassTypes = new();
+    private readonly Dictionary<string, ConstructorBuilder> _innerFunctionClassCtors = new();
+    private readonly Dictionary<string, FieldBuilder> _innerFunctionFields = new();
+
     // Deferred constructor completion.
     // DeclareClass (Pass 1) emits only the base ctor call and leaves the
     // ILGenerator open. EmitClassBody (Pass 3) completes it with the

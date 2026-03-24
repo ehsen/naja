@@ -97,6 +97,23 @@ public static class StatementAnalyzer
             {
                 foreach (var s in w.Body) foreach (var n in CollectNamesReferencedByNestedFunctions(new[] { s })) names.Add(n);
             }
+            else if (stmt is ClassDef cls)
+            {
+                // Class body methods can capture variables from the enclosing function scope
+                // (Python closure-through-class semantics: class scope is skipped, but
+                // enclosing function scope is visible).  Treat each class method like a
+                // nested function — collect names it references that aren't local to it.
+                foreach (var m in cls.Body.OfType<FunctionDef>())
+                {
+                    var referenced = CollectReferencedNames(m.Body);
+                    var locallyDefined = CollectAssignedNames(m.Body);
+                    foreach (var p in m.Params) locallyDefined.Add(p.Name);
+                    var transitive = CollectNamesReferencedByNestedFunctions(m.Body);
+                    foreach (var n in referenced.Union(transitive))
+                        if (!locallyDefined.Contains(n))
+                            names.Add(n);
+                }
+            }
         }
         return names;
     }

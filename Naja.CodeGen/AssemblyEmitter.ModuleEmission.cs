@@ -382,11 +382,23 @@ public sealed partial class AssemblyEmitter
         }
 
         // ── Pass 3 (nested): emit class bodies for classes defined inside functions ──
+        // Build merged dicts: module-level entries + anything registered inside function
+        // bodies (e.g. `make_decorator` defined inside test_eval_order — needed by the
+        // NameLookupTracer class methods that reference it as a closure).
+        var mergedFields = new Dictionary<string, FieldBuilder>(fields);
+        foreach (var (k, v) in _innerFunctionFields) mergedFields.TryAdd(k, v);
+        var mergedMethods = new Dictionary<string, MethodBuilder>(methods);
+        foreach (var (k, v) in _innerFunctionMethods) mergedMethods.TryAdd(k, v);
+        var mergedClassTypes = new Dictionary<string, TypeBuilder>(classTypes);
+        foreach (var (k, v) in _innerFunctionClassTypes) mergedClassTypes.TryAdd(k, v);
+        var mergedClassCtors = new Dictionary<string, ConstructorBuilder>(classCtors);
+        foreach (var (k, v) in _innerFunctionClassCtors) mergedClassCtors.TryAdd(k, v);
+
         foreach (var (uniqueName, cls) in _nestedClassDefs)
         {
-            if (classTypes.TryGetValue(uniqueName, out var ct))
-                EmitClassBody(cls, ct, modBuilder, fields, methods, paramTypes,
-                              classTypes, classCtors, importMap, classKeyOverride: uniqueName);
+            if (mergedClassTypes.TryGetValue(uniqueName, out var ct))
+                EmitClassBody(cls, ct, modBuilder, mergedFields, mergedMethods, paramTypes,
+                              mergedClassTypes, mergedClassCtors, importMap, classKeyOverride: uniqueName);
         }
 
         // Finalise class TypeBuilders created in this module
