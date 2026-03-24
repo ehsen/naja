@@ -586,7 +586,12 @@ public static class ReflectionHelpers
             throw new Exception("TypeError: 'NoneType' object is not callable");
 
         if (func is Delegate d)
+        {
+            var ps = d.Method.GetParameters();
+            if (ps.Length == 1 && ps[0].ParameterType == typeof(object[]))
+                return d.DynamicInvoke(new object[] { args });
             return d.DynamicInvoke(args.Length == 0 ? null : (object?[])args);
+        }
 
         if (func is MethodInfo mi)
         {
