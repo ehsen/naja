@@ -30,10 +30,10 @@ public sealed record Token(
         TokenType.Except or TokenType.Finally or TokenType.For or
         TokenType.From or TokenType.Global or TokenType.If or
         TokenType.Import or TokenType.In or TokenType.Is or
-        TokenType.Lambda or TokenType.Match or TokenType.Case or
+        TokenType.Lambda or
         TokenType.Nonlocal or TokenType.Not or TokenType.Or or
         TokenType.Pass or TokenType.Raise or TokenType.Return or
-        TokenType.Try or TokenType.Type or TokenType.While or
+        TokenType.Try or TokenType.While or
         TokenType.With or TokenType.Yield or
         TokenType.True or TokenType.False or TokenType.None;
 

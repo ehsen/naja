@@ -53,8 +53,6 @@ public sealed class Lexer
         ["in"] = TokenType.In,
         ["is"] = TokenType.Is,
         ["lambda"] = TokenType.Lambda,
-        ["match"] = TokenType.Match,
-        ["case"] = TokenType.Case,
         ["nonlocal"] = TokenType.Nonlocal,
         ["not"] = TokenType.Not,
         ["or"] = TokenType.Or,
@@ -62,7 +60,6 @@ public sealed class Lexer
         ["raise"] = TokenType.Raise,
         ["return"] = TokenType.Return,
         ["try"] = TokenType.Try,
-        ["type"] = TokenType.Type,
         ["while"] = TokenType.While,
         ["with"] = TokenType.With,
         ["yield"] = TokenType.Yield,
@@ -198,10 +195,12 @@ public sealed class Lexer
             return;
         }
 
-        // Strings and f-strings
+        // Strings and f-strings (single-char prefix: r"", b"", f"", u"")
+        // or two-char prefix: rb"", br"", rf"", fr"" — check Peek(2) for those
         if (c is '"' or '\'' ||
-            (c is 'f' or 'F' or 'b' or 'B' or 'r' or 'R' or 'u' or 'U'
-             && Peek(1) is '"' or '\''))
+            ((c is 'f' or 'F' or 'b' or 'B' or 'r' or 'R' or 'u' or 'U') &&
+             (Peek(1) is '"' or '\'' ||
+              ((Peek(1) is 'r' or 'R' or 'b' or 'B' or 'f' or 'F') && Peek(2) is '"' or '\''))))
         {
             _tokens.Add(ScanString(start, startCol));
             return;
@@ -267,6 +266,13 @@ public sealed class Lexer
                 sb.Append(Advance());
             while (_pos < _source.Length && char.IsDigit(Current()))
                 sb.Append(Advance());
+        }
+
+        // Complex suffix: j or J
+        if (_pos < _source.Length && Current() is 'j' or 'J')
+        {
+            Advance(); // consume j
+            return MakeToken(TokenType.Complex, sb.ToString(), start, startCol);
         }
 
         return MakeToken(isFloat ? TokenType.Float : TokenType.Integer, sb.ToString(), start, startCol);

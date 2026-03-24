@@ -4,7 +4,8 @@ public enum TokenType
 {
     // ── Literals ────────────────────────────────────────────────
     Integer,            // 42  0xFF  0b1010  0o77
-    Float,              // 3.14  1e10  1.5j (complex later)
+    Float,              // 3.14  1e10
+    Complex,            // 2j  3.5j  1e2j
     String,             // "hello"  'world'  """multi"""
     FString,            // f"hello {name}"
     Bytes,              // b"raw"
