@@ -11,6 +11,9 @@ namespace Naja.CodeGen.Builtins;
 /// </summary>
 public static class ReflectionHelpers
 {
+    // Dynamic attribute table for Type objects (e.g. decorated classes: C.extra = 'Hello').
+    // ConditionalWeakTable does not prevent GC of the key Type, keeping memory clean.
+    private static readonly ConditionalWeakTable<Type, Dictionary<string, object?>> _typeAttrs = new();
     /// <summary>Get a static attribute (property, field, or enum value) from a .NET type.</summary>
     public static object? GetStaticAttr(Type type, string name)
     {
@@ -86,6 +89,42 @@ public static class ReflectionHelpers
                 if (sFld is not null) return sFld.GetValue(null);
             }
             catch { }
+
+            // Dynamic attributes set via SetAttr (e.g. decorated class: C.extra = 'Hello')
+            if (_typeAttrs.TryGetValue(typeObj, out var typeAttrDict)
+                && typeAttrDict.TryGetValue(name, out var typeAttrVal))
+                return typeAttrVal;
+
+            throw new Exception($"AttributeError: type '{typeObj.Name}' has no attribute '{name}'");
+        }
+
+        // NajaFunction: check __dict__ for dynamically set attributes after reflection fails
+        if (obj is NajaFunction najaFunc)
+        {
+            var t0 = typeof(NajaFunction);
+            var flags0 = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+            var prop0 = t0.GetProperty(name, flags0);
+            if (prop0 is not null) return prop0.GetValue(najaFunc);
+            var fld0 = t0.GetField(name, flags0);
+            if (fld0 is not null) return fld0.GetValue(najaFunc);
+            // Fall through to __dict__ for dynamic attributes (e.g. func.author, func.dbval)
+            if (najaFunc.__dict__.TryGetValue(name, out var dictVal))
+                return dictVal;
+            throw new Exception($"AttributeError: 'function' object has no attribute '{name}'");
+        }
+
+        // Raw delegate (Func<>, Action<>): return None for Python function magic attrs
+        if (obj is Delegate del)
+        {
+            switch (name)
+            {
+                case "__name__": return del.Method?.Name;
+                case "__qualname__": return del.Method?.Name;
+                case "__module__": return null;
+                case "__doc__": return null;
+                case "__annotations__": return null;
+                case "__dict__": return new Dictionary<string, object?>();
+            }
         }
 
         var t = obj.GetType();
@@ -136,6 +175,14 @@ public static class ReflectionHelpers
     public static void SetAttr(object obj, string name, object? value)
     {
         if (obj is null) return;
+
+        // Dynamic attributes on Type objects (e.g. decorated class body: C.attr = value)
+        if (obj is Type typeObj)
+        {
+            _typeAttrs.GetOrCreateValue(typeObj)[name] = value;
+            return;
+        }
+
         var t = obj.GetType();
         var flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
 
@@ -166,6 +213,13 @@ public static class ReflectionHelpers
             try { field.SetValue(obj, TypeSystem.CoerceValue(value, field.FieldType)); }
             catch (TargetInvocationException tie) when (tie.InnerException is not null)
             { throw new Exception($"AttributeError: setting '{t.Name}.{name}' failed: {tie.InnerException.Message}", tie.InnerException); }
+            return;
+        }
+
+        // Fallback: store unknown attributes in NajaFunction.__dict__
+        if (obj is NajaFunction najaFuncSet)
+        {
+            najaFuncSet.__dict__[name] = value;
             return;
         }
 

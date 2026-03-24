@@ -314,8 +314,91 @@ public class DefinitionEmitters : StatementEmitterBase
         if (capturedOuterParamNames.Count > 0)
             _ctx.FunctionCapturedParams[s.Name] = capturedOuterParamNames;
 
-        // Push null as the "function object" value — local variable holds method ref
-        // Full delegate creation in Phase 7
+        // Apply non-trivial decorators (evaluate top-to-bottom, apply bottom-to-top)
+        var nonTrivialDecs = s.Decorators
+            .Where(d => !(d is NameExpr { Name: "staticmethod" or "classmethod" or "property" }))
+            .ToList();
+        if (nonTrivialDecs.Count > 0)
+        {
+            // Phase 1: evaluate all decorator expressions top-to-bottom
+            var decLocals = new List<LocalBuilder>();
+            for (int d = 0; d < nonTrivialDecs.Count; d++)
+            {
+                var decLocal = _ctx.Locals.Declare($"__fdec_{s.Name}_{d}", typeof(object));
+                TypeMapper.EmitBox(IL, _exprEmitter.Emit(nonTrivialDecs[d]));
+                IL.Emit(OpCodes.Stloc, decLocal);
+                decLocals.Add(decLocal);
+            }
+
+            // Phase 2: create NajaFunction wrapping the compiled method
+            var typeArgsForDec = pts.Concat(new[] { typeof(object) }).ToArray();
+            var delegateTypeForDec = System.Linq.Expressions.Expression.GetFuncType(typeArgsForDec);
+            IL.Emit(OpCodes.Ldnull);
+            IL.Emit(OpCodes.Ldftn, mb);
+            IL.Emit(OpCodes.Newobj, delegateTypeForDec.GetConstructors()[0]);
+            var totalDefaultsForDec = capturedOuterParamNames.Count + capturedCellNames.Count
+                + s.Params.Count(p => p.Default is not null);
+            IL.Emit(OpCodes.Ldc_I4, totalDefaultsForDec);
+            IL.Emit(OpCodes.Newarr, typeof(object));
+            for (int ci = 0; ci < capturedOuterParamNames.Count; ci++)
+            {
+                IL.Emit(OpCodes.Dup);
+                IL.Emit(OpCodes.Ldc_I4, ci);
+                if (_ctx.Fields.TryGetValue(capturedOuterParamNames[ci], out var capField))
+                    IL.Emit(OpCodes.Ldsfld, capField);
+                else
+                    IL.Emit(OpCodes.Ldnull);
+                IL.Emit(OpCodes.Stelem_Ref);
+            }
+            for (int ci = 0; ci < capturedCellNames.Count; ci++)
+            {
+                IL.Emit(OpCodes.Dup);
+                IL.Emit(OpCodes.Ldc_I4, capturedOuterParamNames.Count + ci);
+                if (_ctx.CellLocals.TryGetValue(capturedCellNames[ci], out var cellLoc))
+                    IL.Emit(OpCodes.Ldloc, cellLoc);
+                else
+                    IL.Emit(OpCodes.Ldnull);
+                IL.Emit(OpCodes.Stelem_Ref);
+            }
+            int defIdxForDec = 0;
+            foreach (var param in s.Params)
+            {
+                if (param.Default is not null)
+                {
+                    IL.Emit(OpCodes.Dup);
+                    IL.Emit(OpCodes.Ldc_I4, capturedOuterParamNames.Count + capturedCellNames.Count + defIdxForDec);
+                    TypeMapper.EmitBox(IL, _exprEmitter.Emit(param.Default));
+                    IL.Emit(OpCodes.Stelem_Ref);
+                    defIdxForDec++;
+                }
+            }
+            IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.CreateFunctionWithDefaults_Method);
+
+            // Set __name__ on the NajaFunction
+            IL.Emit(OpCodes.Dup);
+            IL.Emit(OpCodes.Ldstr, "__name__");
+            IL.Emit(OpCodes.Ldstr, s.Name);
+            IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.SetAttr_Method);
+
+            // Phase 3: apply decorators bottom-to-top
+            for (int d = nonTrivialDecs.Count - 1; d >= 0; d--)
+            {
+                var tmp = _ctx.Locals.Declare($"__fval_{s.Name}_{d}", typeof(object));
+                IL.Emit(OpCodes.Stloc, tmp);
+                IL.Emit(OpCodes.Ldloc, decLocals[d]);
+                IL.Emit(OpCodes.Ldc_I4_1);
+                IL.Emit(OpCodes.Newarr, typeof(object));
+                IL.Emit(OpCodes.Dup);
+                IL.Emit(OpCodes.Ldc_I4_0);
+                IL.Emit(OpCodes.Ldloc, tmp);
+                IL.Emit(OpCodes.Stelem_Ref);
+                IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.CallCallable_Method);
+            }
+
+            var funcLocal = _ctx.Locals.Declare(s.Name, typeof(object));
+            IL.Emit(OpCodes.Stloc, funcLocal);
+            _ctx.Methods.Remove(s.Name);
+        }
     }
 
     // ── Class def ─────────────────────────────────────────────────────────────
@@ -348,6 +431,39 @@ public class DefinitionEmitters : StatementEmitterBase
                     _ctx.ClassMethods.Add(aliasKey);
                 }
             }
+        }
+
+        // Apply class decorators (evaluate top-to-bottom, apply bottom-to-top)
+        if (s.Decorators.Count > 0)
+        {
+            var decLocals = new List<LocalBuilder>();
+            for (int d = 0; d < s.Decorators.Count; d++)
+            {
+                var decLocal = _ctx.Locals.Declare($"__cdec_{s.Name}_{d}", typeof(object));
+                TypeMapper.EmitBox(IL, _exprEmitter.Emit(s.Decorators[d]));
+                IL.Emit(OpCodes.Stloc, decLocal);
+                decLocals.Add(decLocal);
+            }
+            var typeName = tb?.Name ?? uniqueName;
+            IL.Emit(OpCodes.Ldstr, typeName);
+            IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ResolveTypeByName_Method);
+            for (int d = s.Decorators.Count - 1; d >= 0; d--)
+            {
+                var tmp = _ctx.Locals.Declare($"__cval_{s.Name}_{d}", typeof(object));
+                IL.Emit(OpCodes.Stloc, tmp);
+                IL.Emit(OpCodes.Ldloc, decLocals[d]);
+                IL.Emit(OpCodes.Ldc_I4_1);
+                IL.Emit(OpCodes.Newarr, typeof(object));
+                IL.Emit(OpCodes.Dup);
+                IL.Emit(OpCodes.Ldc_I4_0);
+                IL.Emit(OpCodes.Ldloc, tmp);
+                IL.Emit(OpCodes.Stelem_Ref);
+                IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.CallCallable_Method);
+            }
+            var classLocal = _ctx.Locals.Declare(s.Name, typeof(object));
+            IL.Emit(OpCodes.Stloc, classLocal);
+            _ctx.ClassTypes.Remove(s.Name);
+            _ctx.ClassConstructors.Remove(s.Name);
         }
     }
 

@@ -13,6 +13,10 @@ public sealed class NajaFunction
 
     public string? __name__ { get; set; }
     public string? __qualname__ { get; set; }
+    public string? __module__ { get; set; }
+    public string? __doc__ { get; set; }
+    public Dictionary<string, object?> __dict__ { get; } = new();
+    public Dictionary<string, object?>? __annotations__ { get; set; }
 
     public NajaFunction(Delegate target, object?[] defaults)
     {

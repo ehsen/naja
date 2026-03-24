@@ -252,9 +252,11 @@ public sealed class NameEmitters : ExpressionEmitterBase
 
         // 4b. User-defined class used as a value (e.g. isinstance(err, AppError)).
         // Use runtime type resolution instead of Ldtoken, which fails on unfinished TypeBuilders.
-        if (_ctx.ClassTypes.ContainsKey(e.Name))
+        // Use the TypeBuilder's actual IL name (e.g. "C_L74") rather than the Python name ("C")
+        // because ResolveTypeByName looks up types by their compiled assembly name.
+        if (_ctx.ClassTypes.TryGetValue(e.Name, out var classTypeBuilder))
         {
-            IL.Emit(OpCodes.Ldstr, e.Name);
+            IL.Emit(OpCodes.Ldstr, classTypeBuilder.Name);
             IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ResolveTypeByName_Method);
             return NajaTypes.Unknown;
         }

@@ -2545,6 +2545,16 @@ public sealed class NajaStaticMethod
     public object? __call__(object[] args) => Naja.CodeGen.Builtins.ReflectionHelpers.CallCallable(_func, args);
     public string __repr__() => $"<staticmethod({Naja.CodeGen.Builtins.TypeConversion.Repr(_func)})>";
     public override string ToString() => __repr__();
+    private object? TryGetMagicAttr(string name)
+    {
+        try { return Naja.CodeGen.Builtins.ReflectionHelpers.GetAttr(_func, name); }
+        catch { return null; }
+    }
+    public string? __name__ => TryGetMagicAttr("__name__") as string;
+    public string? __qualname__ => TryGetMagicAttr("__qualname__") as string;
+    public string? __module__ => TryGetMagicAttr("__module__") as string;
+    public string? __doc__ => TryGetMagicAttr("__doc__") as string;
+    public object? __annotations__ => TryGetMagicAttr("__annotations__");
 }
 
 /// <summary>Runtime representation of Python classmethod() descriptor wrapper.</summary>
@@ -2557,6 +2567,16 @@ public sealed class NajaClassMethod
     public object? __call__(object[] args) => Naja.CodeGen.Builtins.ReflectionHelpers.CallCallable(_func, args);
     public string __repr__() => $"<classmethod({Naja.CodeGen.Builtins.TypeConversion.Repr(_func)})>";
     public override string ToString() => __repr__();
+    private object? TryGetMagicAttr(string name)
+    {
+        try { return Naja.CodeGen.Builtins.ReflectionHelpers.GetAttr(_func, name); }
+        catch { return null; }
+    }
+    public string? __name__ => TryGetMagicAttr("__name__") as string;
+    public string? __qualname__ => TryGetMagicAttr("__qualname__") as string;
+    public string? __module__ => TryGetMagicAttr("__module__") as string;
+    public string? __doc__ => TryGetMagicAttr("__doc__") as string;
+    public object? __annotations__ => TryGetMagicAttr("__annotations__");
 }
 
 /// <summary>
