@@ -209,6 +209,9 @@ public static class TypeMapper
         "compile" => NajaBuiltinsMethodCache.Compile_Method,
         "eval"    => NajaBuiltinsMethodCache.Eval_Method,
         "exec"    => NajaBuiltinsMethodCache.Exec_Method,
+        // Python descriptor constructors — accept object[] vararg
+        "staticmethod" => NajaBuiltinsMethodCache.MakeStaticMethod_Method,
+        "classmethod"  => NajaBuiltinsMethodCache.MakeClassMethod_Method,
         _ => null
     };
 

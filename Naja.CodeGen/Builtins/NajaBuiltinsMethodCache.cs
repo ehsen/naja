@@ -457,4 +457,11 @@ internal static class NajaBuiltinsMethodCache
 
     public static readonly MethodInfo Exec_Method =
         typeof(TypeSystem).GetMethod(nameof(TypeSystem.Exec))!;
+
+    // ── Python descriptor wrappers ────────────────────────────────────────────
+    public static readonly MethodInfo MakeStaticMethod_Method =
+        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.MakeStaticMethod))!;
+
+    public static readonly MethodInfo MakeClassMethod_Method =
+        typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.MakeClassMethod))!;
 }

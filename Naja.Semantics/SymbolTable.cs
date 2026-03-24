@@ -195,6 +195,8 @@ public static class BuiltinScope
         Fn("super",     NajaTypes.Unknown);
         Fn("vars",      NajaTypes.Unknown, NajaTypes.Unknown);
         Fn("dir",       new ListType(NajaTypes.Str), NajaTypes.Unknown);
+        Fn("staticmethod", NajaTypes.Unknown, NajaTypes.Unknown);
+        Fn("classmethod",  NajaTypes.Unknown, NajaTypes.Unknown);
 
         // Built-in exceptions (as class types)
         foreach (var ex in new[]

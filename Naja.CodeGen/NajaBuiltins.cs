@@ -2519,6 +2519,44 @@ public static class NajaBuiltins
         var s = d.ToString("G", System.Globalization.CultureInfo.InvariantCulture);
         return s.Contains('.') || s.Contains('E') ? s : s + ".0";
     }
+
+    // ── Python descriptor wrappers ────────────────────────────────────────────
+
+    public static object? MakeStaticMethod(object[] args)
+    {
+        if (args.Length == 0) throw new System.ArgumentException("staticmethod() requires 1 argument");
+        return new NajaStaticMethod(args[0]!);
+    }
+
+    public static object? MakeClassMethod(object[] args)
+    {
+        if (args.Length == 0) throw new System.ArgumentException("classmethod() requires 1 argument");
+        return new NajaClassMethod(args[0]!);
+    }
+}
+
+/// <summary>Runtime representation of Python staticmethod() descriptor wrapper.</summary>
+public sealed class NajaStaticMethod
+{
+    private readonly object _func;
+    public NajaStaticMethod(object func) => _func = func;
+    public object __func__ => _func;
+    public object __wrapped__ => _func;
+    public object? __call__(object[] args) => Naja.CodeGen.Builtins.ReflectionHelpers.CallCallable(_func, args);
+    public string __repr__() => $"<staticmethod({Naja.CodeGen.Builtins.TypeConversion.Repr(_func)})>";
+    public override string ToString() => __repr__();
+}
+
+/// <summary>Runtime representation of Python classmethod() descriptor wrapper.</summary>
+public sealed class NajaClassMethod
+{
+    private readonly object _func;
+    public NajaClassMethod(object func) => _func = func;
+    public object __func__ => _func;
+    public object __wrapped__ => _func;
+    public object? __call__(object[] args) => Naja.CodeGen.Builtins.ReflectionHelpers.CallCallable(_func, args);
+    public string __repr__() => $"<classmethod({Naja.CodeGen.Builtins.TypeConversion.Repr(_func)})>";
+    public override string ToString() => __repr__();
 }
 
 /// <summary>
