@@ -51,6 +51,16 @@ public static class DynamicOperators
         }
 
         // Only convert to numeric if both operands are IConvertible (primitives)
+        if (a is System.Numerics.Complex ca)
+        {
+            var rb = b is System.Numerics.Complex cb2 ? cb2 : new System.Numerics.Complex(Convert.ToDouble(b), 0);
+            return ca + rb;
+        }
+        if (b is System.Numerics.Complex cb)
+        {
+            var ra = new System.Numerics.Complex(Convert.ToDouble(a), 0);
+            return ra + cb;
+        }
         if (a is IConvertible && b is IConvertible)
         {
             try
@@ -74,6 +84,16 @@ public static class DynamicOperators
     /// </summary>
     public static object DynamicSub(object a, object b)
     {
+        if (a is System.Numerics.Complex ca)
+        {
+            var rb = b is System.Numerics.Complex cb2 ? cb2 : new System.Numerics.Complex(Convert.ToDouble(b), 0);
+            return ca - rb;
+        }
+        if (b is System.Numerics.Complex cb)
+        {
+            var ra = new System.Numerics.Complex(Convert.ToDouble(a), 0);
+            return ra - cb;
+        }
         if ((a is IConvertible) && (b is IConvertible))
         {
             try
@@ -102,6 +122,20 @@ public static class DynamicOperators
                 var sb = new System.Text.StringBuilder(s.Length * count);
                 for (int i = 0; i < count; i++) sb.Append(s);
                 return sb.ToString();
+            }
+            catch { }
+        }
+
+        // Reversed string repetition: 3 * "ab" = "ababab"
+        if (b is string sb2 && a is IConvertible)
+        {
+            try
+            {
+                var count = (int)Convert.ToInt64(a);
+                if (count <= 0) return "";
+                var result = new System.Text.StringBuilder(sb2.Length * count);
+                for (int i = 0; i < count; i++) result.Append(sb2);
+                return result.ToString();
             }
             catch { }
         }

@@ -73,7 +73,7 @@ public sealed class OperatorEmitters : ExpressionEmitterBase
                 {
                     var l = _mainEmitter.Emit(e.Left);
                     var r = _mainEmitter.Emit(e.Right);
-                    if (l is UnknownType || r is UnknownType)
+                    if (l is UnknownType || r is UnknownType || l is StrType || r is StrType)
                     {
                         TypeMapper.EmitBox(IL, r);
                         var tmpR = _ctx.Locals.Declare($"__dynr_{e.Line}", typeof(object));

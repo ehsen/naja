@@ -113,6 +113,11 @@ public static class MathFunctions
     public static object ParseBigInt(string s) => System.Numerics.BigInteger.Parse(s);
 
     /// <summary>Negate a BigInteger value (for unary minus on big integer literals).</summary>
-    public static object NegateBigInt(object n) => -(System.Numerics.BigInteger)n;
+    public static object NegateBigInt(object n)
+    {
+        if (n is System.Numerics.Complex c)
+            return new System.Numerics.Complex(-c.Real, -c.Imaginary);
+        return -(System.Numerics.BigInteger)n;
+    }
 }
 
