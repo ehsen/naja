@@ -491,6 +491,15 @@ public sealed class NajaUnittest
     public Type TestCase => typeof(NajaTestCase);
 
     /// <summary>
+    /// Optional per-method filter used by NajaTestExecutor for granular (per-method) test runs.
+    /// Format: "ClassName.method_name" — restricts main() to run only the specified test method.
+    /// Set to null to run all test methods (default behaviour).
+    /// Thread-static so concurrent test runners on different threads don't interfere.
+    /// </summary>
+    [ThreadStatic]
+    public static string? MethodFilter;
+
+    /// <summary>
     /// unittest.main() — discovers and runs all NajaTestCase subclasses in the calling
     /// assembly only (not all loaded assemblies), so sequential NajaEngine.Eval() calls
     /// do not bleed test classes from one script into the next.
@@ -529,8 +538,19 @@ public sealed class NajaUnittest
             : AppDomain.CurrentDomain.GetAssemblies()
                 .SelectMany(a => { try { return a.GetTypes(); } catch { return Array.Empty<Type>(); } });
 
+        // Apply MethodFilter if set: restrict to a single class and/or method.
+        string? filterClass  = null;
+        string? filterMethod = null;
+        if (MethodFilter is { } mf)
+        {
+            var parts = mf.Split('.', 2);
+            if (parts.Length == 2) { filterClass = parts[0]; filterMethod = parts[1]; }
+            else                   { filterMethod = parts[0]; }
+        }
+
         var testClasses = allTypes
-            .Where(t => t.IsSubclassOf(typeof(NajaTestCase)) && !t.IsAbstract);
+            .Where(t => t.IsSubclassOf(typeof(NajaTestCase)) && !t.IsAbstract
+                        && (filterClass == null || t.Name == filterClass));
 
         int passed = 0, failed = 0, errors = 0, skipped = 0;
         var failures = new List<string>();
@@ -538,7 +558,8 @@ public sealed class NajaUnittest
         foreach (var cls in testClasses)
         {
             var testMethods = cls.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
-                .Where(m => m.Name.StartsWith("test") && m.GetParameters().Length == 0)
+                .Where(m => m.Name.StartsWith("test") && m.GetParameters().Length == 0
+                            && (filterMethod == null || m.Name == filterMethod))
                 .OrderBy(m => m.Name);
 
             foreach (var method in testMethods)

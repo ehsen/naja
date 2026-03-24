@@ -205,8 +205,24 @@ public static class BuiltinScope
             "FileNotFoundError", "PermissionError", "KeyboardInterrupt",
             "SystemExit", "OverflowError", "ZeroDivisionError",
             "MemoryError", "RecursionError", "ImportError", "NameError",
+            "GeneratorExit", "ArithmeticError", "LookupError",
+            "UnicodeError", "UnicodeDecodeError", "UnicodeEncodeError",
+            "BufferError", "EOFError", "ConnectionError", "TimeoutError",
+            "StopAsyncIteration", "AssertionError", "FloatingPointError",
+            "UnboundLocalError", "ModuleNotFoundError", "IsADirectoryError",
+            "NotADirectoryError", "InterruptedError", "ProcessLookupError",
+            "ChildProcessError", "BrokenPipeError", "ConnectionAbortedError",
+            "ConnectionRefusedError", "ConnectionResetError", "BlockingIOError",
+            "SyntaxError", "IndentationError", "TabError",
         })
             scope.Define(ex, SymbolKind.Builtin, new ClassType(ex), 0, 0);
+
+        // Built-in types exposed as class names
+        scope.Define("object",  SymbolKind.Builtin, new ClassType("object"),  0, 0);
+        scope.Define("bytes",   SymbolKind.Builtin, new ClassType("bytes"),   0, 0);
+        scope.Define("complex", SymbolKind.Builtin, new ClassType("complex"), 0, 0);
+        scope.Define("bytearray", SymbolKind.Builtin, new ClassType("bytearray"), 0, 0);
+        scope.Define("memoryview", SymbolKind.Builtin, new ClassType("memoryview"), 0, 0);
 
         // Built-in constants
         scope.Define("True",     SymbolKind.Builtin, NajaTypes.Bool,    0, 0);
