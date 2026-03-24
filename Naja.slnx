@@ -5,6 +5,7 @@
   <Project Path="Naja.CLI/Naja.CLI.csproj" />
   <Project Path="Naja.CodeGen.Tests/Naja.CodeGen.Tests.csproj" />
   <Project Path="Naja.CodeGen/Naja.CodeGen.csproj" />
+  <Project Path="Naja.CPythonTests/Naja.CPythonTests.csproj" />
   <Project Path="Naja.Inference.Tests/Naja.Inference.Tests.csproj" />
   <Project Path="Naja.Inference/Naja.Inference.csproj" />
   <Project Path="Naja.Lexer.Tests/Naja.Lexer.Tests.csproj" />
