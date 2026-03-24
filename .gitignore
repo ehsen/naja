@@ -27,3 +27,7 @@ desktop.ini
 *.trx
 *.coverage
 *.coveragexml
+
+# Diagnostic test run captures
+_test_output*.txt
+bulk_output.txt
