@@ -107,8 +107,7 @@ public sealed partial class Parser
     private string ExpectIdentifier()
     {
         var t = Current();
-        if (t.Type is TokenType.Identifier or TokenType.Match
-                   or TokenType.Case or TokenType.Type)
+        if (t.Type == TokenType.Identifier)
             return Advance().Value;
         throw Error($"Expected identifier but got '{t.Value}' ({t.Type})");
     }

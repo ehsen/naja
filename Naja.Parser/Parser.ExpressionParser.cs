@@ -283,8 +283,9 @@ public sealed partial class Parser
             {
                 var t = Advance();
                 var index = ParseSliceOrIndex();
-                // Handle multi-arg subscripts: dict[str, int], Tuple[int, str], etc.
-                if (index is not SliceExpr && Check(TokenType.Comma))
+                // Handle multi-arg subscripts: d[1:2, 1:2], dict[str, int], Tuple[int, str], etc.
+                // Python allows tuples of slices, so we check for comma regardless of index type
+                if (Check(TokenType.Comma))
                 {
                     var items = new List<Expression> { index };
                     while (Match(TokenType.Comma) && !Check(TokenType.RightBracket))
@@ -318,11 +319,11 @@ public sealed partial class Parser
         if (!Match(TokenType.Colon))
             return lower!;
 
-        if (!Check(TokenType.Colon) && !Check(TokenType.RightBracket))
+        if (!Check(TokenType.Colon) && !Check(TokenType.RightBracket) && !Check(TokenType.Comma))
             upper = ParseExpression();
 
         if (Match(TokenType.Colon))
-            if (!Check(TokenType.RightBracket))
+            if (!Check(TokenType.RightBracket) && !Check(TokenType.Comma))
                 step = ParseExpression();
 
         return new SliceExpr(lower, upper, step, line, col);
@@ -352,7 +353,7 @@ public sealed partial class Parser
                 var expr = ParseExpression();
 
                 // Allow bare generator expressions if they are the ONLY argument
-                if (Check(TokenType.For) && args.Count == 0)
+                if ((Check(TokenType.For) || Check(TokenType.Async)) && args.Count == 0)
                 {
                     var gens = ParseComprehensions();
                     expr = new GeneratorExpr(expr, gens, expr.Line, expr.Column);
@@ -374,28 +375,72 @@ public sealed partial class Parser
                 Advance();
                 return ParseIntExpr(t.Value, t.Line, t.Column);
 
+            case TokenType.Complex:
+                Advance();
+                return new ComplexLiteral(double.Parse(t.Value.Replace("_", ""),
+                    System.Globalization.CultureInfo.InvariantCulture), t.Line, t.Column);
+
             case TokenType.Float:
                 Advance();
-                return new FloatLiteral(double.Parse(t.Value,
+                return new FloatLiteral(double.Parse(t.Value.Replace("_", ""),
                     System.Globalization.CultureInfo.InvariantCulture), t.Line, t.Column);
 
             case TokenType.String:
                 Advance();
                 {
+                    // Fast path: single plain string, no adjacent tokens
+                    if (!Check(TokenType.String) && !Check(TokenType.FString))
+                        return new StringLiteral(t.Value, t.Line, t.Column);
+
+                    // Collect the chain: String* and FString* tokens (implicit concatenation)
+                    bool hasFStr = false;
+                    var extras = new List<Token>();
+                    while (Check(TokenType.String) || Check(TokenType.FString))
+                    {
+                        var next = Advance();
+                        if (next.Type == TokenType.FString) hasFStr = true;
+                        extras.Add(next);
+                    }
+                    if (!hasFStr)
+                    {
+                        // Pure string concat
+                        var sb = new System.Text.StringBuilder(t.Value);
+                        foreach (var tok in extras) sb.Append(tok.Value);
+                        return new StringLiteral(sb.ToString(), t.Line, t.Column);
+                    }
+                    // Mixed String/FString: produce FStringExpr; escape { } in plain parts
+                    var fsb = new System.Text.StringBuilder(t.Value.Replace("{", "{{").Replace("}", "}}"));
+                    foreach (var tok in extras)
+                    {
+                        if (tok.Type == TokenType.FString) fsb.Append(tok.Value);
+                        else fsb.Append(tok.Value.Replace("{", "{{").Replace("}", "}}"));
+                    }
+                    return new FStringExpr(fsb.ToString(), t.Line, t.Column);
+                }
+
+            case TokenType.Bytes:
+                Advance();
+                {
                     var sb = new System.Text.StringBuilder(t.Value);
-                    while (Check(TokenType.String))
+                    while (Check(TokenType.Bytes))
                         sb.Append(Advance().Value);
-                    return new StringLiteral(sb.ToString(), t.Line, t.Column);
+                    return new BytesLiteral(sb.ToString(), t.Line, t.Column);
                 }
 
             case TokenType.FString:
                 Advance();
                 {
-                    // Support implicit concatenation of adjacent f-strings:
-                    // f"First {first}, " f"Last {last}"  -> single template
+                    // Implicit concatenation: absorb adjacent FString and String tokens.
+                    // Plain string parts have their { } escaped so they are treated literally.
                     var sb = new System.Text.StringBuilder(t.Value);
-                    while (Check(TokenType.FString))
-                        sb.Append(Advance().Value);
+                    while (Check(TokenType.FString) || Check(TokenType.String))
+                    {
+                        var next = Advance();
+                        if (next.Type == TokenType.String)
+                            sb.Append(next.Value.Replace("{", "{{").Replace("}", "}}"));
+                        else
+                            sb.Append(next.Value);
+                    }
                     return new FStringExpr(sb.ToString(), t.Line, t.Column);
                 }
 
@@ -416,9 +461,6 @@ public sealed partial class Parser
                 return new EllipsisLiteral(t.Line, t.Column);
 
             case TokenType.Identifier:
-            case TokenType.Type:
-            case TokenType.Match:
-            case TokenType.Case:
                 {
                     Advance();
                     if (Match(TokenType.Walrus))
@@ -434,7 +476,7 @@ public sealed partial class Parser
 
                     var expr = ParseExpression();
 
-                    if (Check(TokenType.For))
+                    if (Check(TokenType.For) || Check(TokenType.Async))
                     {
                         var gens = ParseComprehensions();
                         Expect(TokenType.RightParen);
@@ -462,7 +504,7 @@ public sealed partial class Parser
 
                     var first = ParseExpression();
 
-                    if (Check(TokenType.For))
+                    if (Check(TokenType.For) || Check(TokenType.Async))
                     {
                         var gens = ParseComprehensions();
                         Expect(TokenType.RightBracket);
@@ -490,7 +532,7 @@ public sealed partial class Parser
                     if (Check(TokenType.Colon))
                         return ParseDictOrSet(t, first);
 
-                    if (Check(TokenType.For))
+                    if (Check(TokenType.For) || Check(TokenType.Async))
                     {
                         var gens = ParseComprehensions();
                         Expect(TokenType.RightBrace);
@@ -524,12 +566,39 @@ public sealed partial class Parser
                 {
                     Advance();
                     var lparams = new List<Parameter>();
+                    bool kwOnly = false;
                     while (!Check(TokenType.Colon) && !IsAtEnd())
                     {
-                        var pname = ExpectIdentifier();
-                        Expression? def = null;
-                        if (Match(TokenType.Assign)) def = ParseExpression();
-                        lparams.Add(new Parameter(pname, null, def, false, false, false, false));
+                        // PEP 570: positional-only separator /
+                        if (Match(TokenType.Slash))
+                        {
+                            Match(TokenType.Comma);
+                            continue;
+                        }
+                        if (Match(TokenType.DoubleStar))
+                        {
+                            lparams.Add(new Parameter(ExpectIdentifier(), null, null, false, true, false, false));
+                            Match(TokenType.Comma);
+                            break;
+                        }
+                        if (Match(TokenType.Star))
+                        {
+                            if (Check(TokenType.Comma) || Check(TokenType.Colon))
+                            {
+                                kwOnly = true;
+                                Match(TokenType.Comma);
+                                continue;
+                            }
+                            lparams.Add(new Parameter(ExpectIdentifier(), null, null, true, false, false, false));
+                            kwOnly = true;
+                        }
+                        else
+                        {
+                            var pname = ExpectIdentifier();
+                            Expression? def = null;
+                            if (Match(TokenType.Assign)) def = ParseExpression();
+                            lparams.Add(new Parameter(pname, null, def, false, false, kwOnly, false));
+                        }
                         if (!Match(TokenType.Comma)) break;
                     }
                     Expect(TokenType.Colon);
@@ -551,7 +620,7 @@ public sealed partial class Parser
             Expect(TokenType.Colon);
             var val = ParseExpression();
 
-            if (Check(TokenType.For))
+            if (Check(TokenType.For) || Check(TokenType.Async))
             {
                 var gens = ParseComprehensions();
                 Expect(TokenType.RightBrace);
@@ -559,6 +628,11 @@ public sealed partial class Parser
             }
 
             pairs.Add((firstKey, val));
+        }
+        else if (Match(TokenType.DoubleStar))
+        {
+            // Dict starting with **unpack: {**d, "key": val, ...}
+            pairs.Add((null, ParseExpression()));
         }
 
         while (Match(TokenType.Comma) && !Check(TokenType.RightBrace))
@@ -601,7 +675,10 @@ public sealed partial class Parser
         var first = ParseTarget();
         if (!Check(TokenType.Comma)) return first;
         var elems = new List<Expression> { first };
-        while (Match(TokenType.Comma) && !Check(TokenType.In) && !Check(TokenType.Colon) && !CheckNewlineOrEof())
+        while (Match(TokenType.Comma)
+               && !Check(TokenType.In) && !Check(TokenType.Colon)
+               && !Check(TokenType.RightParen) && !Check(TokenType.RightBracket)
+               && !CheckNewlineOrEof())
             elems.Add(ParseTarget());
         return new TupleExpr(elems, first.Line, first.Column);
     }
@@ -641,8 +718,16 @@ public sealed partial class Parser
             }
             else if (Check(TokenType.LeftBracket))
             {
-                Advance();
+                var bracket = Advance();
                 var idx = ParseSliceOrIndex();
+                // Handle multi-item subscripts in assignment targets too
+                if (Check(TokenType.Comma))
+                {
+                    var items = new List<Expression> { idx };
+                    while (Match(TokenType.Comma) && !Check(TokenType.RightBracket))
+                        items.Add(ParseSliceOrIndex());
+                    idx = new TupleExpr(items, bracket.Line, bracket.Column);
+                }
                 Expect(TokenType.RightBracket);
                 expr = new SubscriptExpr(expr, idx, expr.Line, expr.Column);
             }
