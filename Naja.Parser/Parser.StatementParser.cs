@@ -563,21 +563,58 @@ public sealed partial class Parser
     /// Determines whether the current "match" identifier starts a match statement.
     /// True unless followed by assignment, attribute, subscript, call, annotation-colon,
     /// comma, or newline — all of which indicate it is used as a plain name.
+    /// Special case: 'match [...]' uses lookahead to distinguish a list subject
+    /// (match statement) from a subscript operation like 'match[0]'.
     /// </summary>
     private bool IsSoftMatchStatement()
     {
         var next = Peek(1);
+
+        // 'match [...]' — lookahead past the bracket to check if ':' follows the closing ']'.
+        // This distinguishes 'match [a, b]:' (match stmt) from 'match[0]' (subscript).
+        if (next.Type == TokenType.LeftBracket)
+            return IsSubjectFollowedByColon(_pos + 1);
+
         return next.Type is not (
             TokenType.Assign or TokenType.PlusEqual or TokenType.MinusEqual or
             TokenType.StarEqual or TokenType.SlashEqual or TokenType.DoubleSlashEqual or
             TokenType.PercentEqual or TokenType.DoubleStarEqual or
             TokenType.AmpersandEqual or TokenType.PipeEqual or TokenType.CaretEqual or
             TokenType.LeftShiftEqual or TokenType.RightShiftEqual or
-            TokenType.Dot or TokenType.LeftBracket or
+            TokenType.Dot or
             TokenType.Colon or
             TokenType.Comma or TokenType.RightParen or TokenType.RightBracket or
             TokenType.Newline or TokenType.Eof or TokenType.Semicolon
         );
+    }
+
+    /// <summary>
+    /// Scans forward from the bracket token at <paramref name="startIdx"/> to find its
+    /// matching closer, then returns true if the next non-newline token is ':'.
+    /// Used to distinguish "match [...] :" (match statement) from "match[...]" (subscript).
+    /// </summary>
+    private bool IsSubjectFollowedByColon(int startIdx)
+    {
+        int depth = 0;
+        for (int i = startIdx; i < _tokens.Count; i++)
+        {
+            var tt = _tokens[i].Type;
+            if (tt is TokenType.LeftParen or TokenType.LeftBracket or TokenType.LeftBrace)
+                depth++;
+            else if (tt is TokenType.RightParen or TokenType.RightBracket or TokenType.RightBrace)
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    var j = i + 1;
+                    while (j < _tokens.Count && _tokens[j].Type == TokenType.Newline) j++;
+                    return j < _tokens.Count && _tokens[j].Type == TokenType.Colon;
+                }
+            }
+            else if (tt == TokenType.Eof)
+                break;
+        }
+        return false;
     }
 
     /// <summary>
