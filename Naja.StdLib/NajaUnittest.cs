@@ -292,6 +292,32 @@ public class NajaTestCase
         if (a is double da && b is long lb)  return da == (double)lb;
         if (a is long la2 && b is int ib)    return la2 == (long)ib;
         if (a is int ia && b is long lb2)    return (long)ia == lb2;
+        if (a is byte[] ba && b is byte[] bb) return System.Linq.Enumerable.SequenceEqual(ba, bb);
+        if (a is object[] oa && b is object[] ob)
+        {
+            if (oa.Length != ob.Length) return false;
+            for (int i = 0; i < oa.Length; i++)
+                if (!AreEqual(oa[i], ob[i])) return false;
+            return true;
+        }
+        if (a is System.Collections.Generic.List<object> la3 && b is System.Collections.Generic.List<object> lb3)
+        {
+            if (la3.Count != lb3.Count) return false;
+            for (int i = 0; i < la3.Count; i++)
+                if (!AreEqual(la3[i], lb3[i])) return false;
+            return true;
+        }
+        if (a is System.Collections.Generic.Dictionary<object, object> da2 &&
+            b is System.Collections.Generic.Dictionary<object, object> db2)
+        {
+            if (da2.Count != db2.Count) return false;
+            foreach (var kv in da2)
+            {
+                if (!db2.TryGetValue(kv.Key, out var v2)) return false;
+                if (!AreEqual(kv.Value, v2)) return false;
+            }
+            return true;
+        }
         return a.Equals(b);
     }
 
@@ -368,7 +394,13 @@ public class NajaTestCase
         // to Python except-clauses (e.g. except ZeroDivisionError:).
         if (callable is Delegate d)
         {
-            try { return d.DynamicInvoke(args); }
+            try
+            {
+                var dps = d.Method.GetParameters();
+                return (dps.Length == 1 && dps[0].ParameterType == typeof(object[]))
+                    ? d.DynamicInvoke(new object[] { args })
+                    : d.DynamicInvoke(args.Length == 0 ? null : (object?[])args);
+            }
             catch (System.Reflection.TargetInvocationException tie) when (tie.InnerException is not null)
             {
                 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(tie.InnerException).Throw();
