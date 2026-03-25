@@ -189,6 +189,7 @@ public static class TypeMapper
         "oct" => NajaBuiltinsMethodCache.Oct_Method,
         "open" => NajaBuiltinsMethodCache.Open_Method,
         "isinstance" => NajaBuiltinsMethodCache.IsInstance_Method,
+        "issubclass" => NajaBuiltinsMethodCache.IsSubclass_Method,
         "type" => NajaBuiltinsMethodCache.TypeOf_Method,
         "id" => NajaBuiltinsMethodCache.Id_Method,
         "hash" => NajaBuiltinsMethodCache.Hash_Method,
@@ -258,6 +259,18 @@ public static class TypeMapper
         "ReferenceError" => typeof(NullReferenceException),
         "GeneratorExit" => typeof(Exception),
         "StopAsyncIteration" => typeof(InvalidOperationException),
+        "UnboundLocalError" => typeof(InvalidOperationException),
+        "ModuleNotFoundError" => typeof(TypeLoadException),
+        "ConnectionError" => typeof(System.Net.Sockets.SocketException),
+        "TimeoutError" => typeof(TimeoutException),
+        "IsADirectoryError" or "NotADirectoryError" => typeof(System.IO.IOException),
+        "InterruptedError" or "ProcessLookupError" or "ChildProcessError" => typeof(Exception),
+        "BrokenPipeError" or "ConnectionAbortedError" or "ConnectionRefusedError" or "ConnectionResetError" => typeof(System.IO.IOException),
+        "BlockingIOError" => typeof(System.IO.IOException),
+        // Python Warning hierarchy — map all to Exception (no .NET equivalent)
+        "Warning" or "UserWarning" or "DeprecationWarning" or "PendingDeprecationWarning"
+            or "RuntimeWarning" or "SyntaxWarning" or "ResourceWarning" or "FutureWarning"
+            or "ImportWarning" or "UnicodeWarning" or "BytesWarning" or "EncodingWarning" => typeof(Exception),
         _ => null
     };
 }
