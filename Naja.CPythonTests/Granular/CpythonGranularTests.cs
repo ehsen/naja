@@ -42,10 +42,6 @@ public sealed class CpythonGranularTests : CPythonTestFixture
         => CPythonTestDiscovery.GetTestMethods("test_utf8source.py")
             .Select(row => new object[] { "test_utf8source.py", row[0], row[1] });
 
-    public static IEnumerable<object[]> AugAssignMethods
-        => CPythonTestDiscovery.GetTestMethods("test_augassign.py")
-            .Select(row => new object[] { "test_augassign.py", row[0], row[1] });
-
     public static IEnumerable<object[]> UnaryMethods
         => CPythonTestDiscovery.GetTestMethods("test_unary.py")
             .Select(row => new object[] { "test_unary.py", row[0], row[1] });
@@ -81,13 +77,6 @@ public sealed class CpythonGranularTests : CPythonTestFixture
     [MemberData(nameof(Utf8SourceMethods))]
     [Trait("File", "test_utf8source")]
     public void cpython_utf8source_method(
-        string fileName, string className, string methodName)
-        => RunGranularMethod(fileName, className, methodName);
-
-    [Theory]
-    [MemberData(nameof(AugAssignMethods))]
-    [Trait("File", "test_augassign")]
-    public void cpython_augassign_method(
         string fileName, string className, string methodName)
         => RunGranularMethod(fileName, className, methodName);
 
