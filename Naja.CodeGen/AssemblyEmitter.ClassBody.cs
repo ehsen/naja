@@ -262,6 +262,9 @@ public sealed partial class AssemblyEmitter
             var cctorCtx = new EmitContext(cctorIL, _model, ct, modBuilder, typeof(void), []);
             foreach (var (k, v) in moduleFields) cctorCtx.Fields[k] = v;
             foreach (var (k, v) in moduleMethods) cctorCtx.Methods[k] = v;
+            foreach (var (k, v) in moduleClassTypes) cctorCtx.ClassTypes[k] = v;
+            foreach (var (k, v) in moduleClassCtors) cctorCtx.ClassConstructors[k] = v;
+            foreach (var (k, v) in importMap) cctorCtx.ImportMap[k] = v;
             var cctorExpr = new ExpressionEmitter(cctorCtx);
             foreach (var member in cls.Body)
             {

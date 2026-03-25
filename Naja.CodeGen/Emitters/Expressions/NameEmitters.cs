@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Reflection.Emit;
 using Naja.CodeGen.Builtins;
 using Naja.Parser;
@@ -238,15 +239,35 @@ public sealed class NameEmitters : ExpressionEmitterBase
                 }
 
                 IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.CreateFunctionWithDefaults_Method);
+                
+                // Set __name__ on the NajaFunction
+                IL.Emit(OpCodes.Dup);
+                IL.Emit(OpCodes.Ldstr, "__name__");
+                IL.Emit(OpCodes.Ldstr, e.Name);
+                IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.SetAttr_Method);
+                
                 return NajaTypes.Unknown;
             }
 
-            var typeArgs2 = pts.Concat(new[] { method.ReturnType == typeof(void) ? typeof(object) : method.ReturnType }).ToArray();
+            // No captures or defaults: still wrap in NajaFunction to support __name__ and __dict__
+            var typeArgs2 = pts.Concat(new[] { typeof(object) }).ToArray();
             var delegateType2 = System.Linq.Expressions.Expression.GetFuncType(typeArgs2);
             var ctor2 = delegateType2.GetConstructors()[0];
             IL.Emit(OpCodes.Ldnull);        // static method target
             IL.Emit(OpCodes.Ldftn, method);
             IL.Emit(OpCodes.Newobj, ctor2);
+            
+            // Wrap in NajaFunction with empty defaults array
+            IL.Emit(OpCodes.Ldc_I4_0);
+            IL.Emit(OpCodes.Newarr, typeof(object));
+            IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.CreateFunctionWithDefaults_Method);
+            
+            // Set __name__ on the NajaFunction
+            IL.Emit(OpCodes.Dup);
+            IL.Emit(OpCodes.Ldstr, "__name__");
+            IL.Emit(OpCodes.Ldstr, e.Name);
+            IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.SetAttr_Method);
+            
             return NajaTypes.Unknown;
         }
 
@@ -279,6 +300,7 @@ public sealed class NameEmitters : ExpressionEmitterBase
             "str" => typeof(string),
             "bool" => typeof(bool),
             "bytes" => typeof(byte[]),
+            "object" => typeof(object),
             "list" => typeof(System.Collections.Generic.List<object>),
             "dict" => typeof(System.Collections.Generic.Dictionary<object, object>),
             "set" => typeof(System.Collections.Generic.HashSet<object>),
@@ -376,19 +398,32 @@ public sealed class NameEmitters : ExpressionEmitterBase
             return NajaTypes.Unknown;
         }
 
-        // 6c. Builtins used as first-class values (e.g. assertRaises(SyntaxError, compile, ...)).
-        // Only applies to vararg (object[]) builtins — they can be wrapped as Func<object[], object>.
+        // 6c. Builtins used as first-class values (e.g. assertRaises(TypeError, isinstance, x, y),
+        // assertRaises(SyntaxError, compile, ...)).
+        // Vararg (object[]) builtins are wrapped as Func<object[], object?>; fixed-arity builtins
+        // push their MethodInfo via ldtoken so CallCallable can dispatch them generically.
         {
             var builtinMethod = TypeMapper.ResolveBuiltin(e.Name);
-            if (builtinMethod is not null
-                && builtinMethod.GetParameters().Length == 1
-                && builtinMethod.GetParameters()[0].ParameterType == typeof(object[]))
+            if (builtinMethod is not null)
             {
-                var delegateType = typeof(Func<object[], object?>);
-                var ctor = delegateType.GetConstructors()[0];
-                IL.Emit(OpCodes.Ldnull);
-                IL.Emit(OpCodes.Ldftn, builtinMethod);
-                IL.Emit(OpCodes.Newobj, ctor);
+                var parameters = builtinMethod.GetParameters();
+                if (parameters.Length == 1 && parameters[0].ParameterType == typeof(object[]))
+                {
+                    // Vararg builtin: create a Func<object[], object?> delegate for efficient direct call
+                    var delegateType = typeof(Func<object[], object?>);
+                    var ctor = delegateType.GetConstructors()[0];
+                    IL.Emit(OpCodes.Ldnull);
+                    IL.Emit(OpCodes.Ldftn, builtinMethod);
+                    IL.Emit(OpCodes.Newobj, ctor);
+                }
+                else
+                {
+                    // Fixed-arity builtin: push MethodInfo via ldtoken + GetMethodFromHandle.
+                    // CallCallable handles MethodInfo dispatch (ReflectionHelpers.CallCallable).
+                    IL.Emit(OpCodes.Ldtoken, builtinMethod);
+                    IL.Emit(OpCodes.Call, typeof(MethodBase).GetMethod(
+                        "GetMethodFromHandle", new[] { typeof(RuntimeMethodHandle) })!);
+                }
                 return NajaTypes.Unknown;
             }
         }

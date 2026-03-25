@@ -264,6 +264,10 @@ public class DefinitionEmitters : StatementEmitterBase
                 }
             }
 
+            // Pre-register wrapper for recursive self-calls inside the generator body
+            bodyCtx.Methods[s.Name] = mb;
+            bodyCtx.MethodParamTypes[s.Name] = pts;
+
             var bodyEmitter = new StatementEmitter(bodyCtx);
             bodyEmitter.EmitAll(s.Body);
 
@@ -278,6 +282,10 @@ public class DefinitionEmitters : StatementEmitterBase
         }
 
         var fnIL = fnCtx.IL;
+
+        // Pre-register for recursive self-calls before compiling the body
+        fnCtx.Methods[s.Name] = mb;
+        fnCtx.MethodParamTypes[s.Name] = pts;
 
         var bodyEmitter2 = new StatementEmitter(fnCtx);
         bodyEmitter2.EmitAll(s.Body);
@@ -398,6 +406,60 @@ public class DefinitionEmitters : StatementEmitterBase
             var funcLocal = _ctx.Locals.Declare(s.Name, typeof(object));
             IL.Emit(OpCodes.Stloc, funcLocal);
             _ctx.Methods.Remove(s.Name);
+        }
+        else
+        {
+            // No non-trivial decorators: emit NajaFunction creation inline and store in
+            // a local so subsequent references (NameEmitters section 3) load this same
+            // instance rather than creating a new one each time (fixes BUG-A5).
+            var typeArgsForFn = pts.Concat(new[] { typeof(object) }).ToArray();
+            var delegateTypeForFn = System.Linq.Expressions.Expression.GetFuncType(typeArgsForFn);
+            IL.Emit(OpCodes.Ldnull);
+            IL.Emit(OpCodes.Ldftn, mb);
+            IL.Emit(OpCodes.Newobj, delegateTypeForFn.GetConstructors()[0]);
+            var totalDefaultsForFn = capturedOuterParamNames.Count + capturedCellNames.Count
+                + s.Params.Count(p => p.Default is not null);
+            IL.Emit(OpCodes.Ldc_I4, totalDefaultsForFn);
+            IL.Emit(OpCodes.Newarr, typeof(object));
+            for (int ci = 0; ci < capturedOuterParamNames.Count; ci++)
+            {
+                IL.Emit(OpCodes.Dup);
+                IL.Emit(OpCodes.Ldc_I4, ci);
+                if (_ctx.Fields.TryGetValue(capturedOuterParamNames[ci], out var capFieldFn))
+                    IL.Emit(OpCodes.Ldsfld, capFieldFn);
+                else
+                    IL.Emit(OpCodes.Ldnull);
+                IL.Emit(OpCodes.Stelem_Ref);
+            }
+            for (int ci = 0; ci < capturedCellNames.Count; ci++)
+            {
+                IL.Emit(OpCodes.Dup);
+                IL.Emit(OpCodes.Ldc_I4, capturedOuterParamNames.Count + ci);
+                if (_ctx.CellLocals.TryGetValue(capturedCellNames[ci], out var cellLocFn))
+                    IL.Emit(OpCodes.Ldloc, cellLocFn);
+                else
+                    IL.Emit(OpCodes.Ldnull);
+                IL.Emit(OpCodes.Stelem_Ref);
+            }
+            int defIdxFn = 0;
+            foreach (var param in s.Params)
+            {
+                if (param.Default is not null)
+                {
+                    IL.Emit(OpCodes.Dup);
+                    IL.Emit(OpCodes.Ldc_I4, capturedOuterParamNames.Count + capturedCellNames.Count + defIdxFn);
+                    TypeMapper.EmitBox(IL, _exprEmitter.Emit(param.Default));
+                    IL.Emit(OpCodes.Stelem_Ref);
+                    defIdxFn++;
+                }
+            }
+            IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.CreateFunctionWithDefaults_Method);
+            IL.Emit(OpCodes.Dup);
+            IL.Emit(OpCodes.Ldstr, "__name__");
+            IL.Emit(OpCodes.Ldstr, s.Name);
+            IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.SetAttr_Method);
+            var funcLocalFn = _ctx.Locals.Declare(s.Name, typeof(object));
+            IL.Emit(OpCodes.Stloc, funcLocalFn);
         }
     }
 

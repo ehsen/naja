@@ -474,9 +474,29 @@ public sealed class CallEmitters : ExpressionEmitterBase
             var bridge = ResolveStrMethod(attr.Attribute);
             if (bridge is not null)
             {
-                foreach (var arg in args) { var t = _mainEmitter.Emit(arg.Value); TypeMapper.EmitBox(IL, t); }
-                var expectedArgs = bridge.GetParameters().Length - 1;
-                for (int i = args.Count; i < expectedArgs; i++) IL.Emit(OpCodes.Ldnull);
+                var bridgeParams = bridge.GetParameters();
+                // If last parameter is object[] (e.g. StrFormat), pack args into array
+                if (bridgeParams.Length >= 2 && bridgeParams[^1].ParameterType == typeof(object[]))
+                {
+                    int fixedCount = bridgeParams.Length - 2;
+                    for (int i = 0; i < fixedCount && i < args.Count; i++)
+                    { var t = _mainEmitter.Emit(args[i].Value); TypeMapper.EmitBox(IL, t); }
+                    int packStart = fixedCount;
+                    IL.Emit(OpCodes.Ldc_I4, Math.Max(0, args.Count - packStart));
+                    IL.Emit(OpCodes.Newarr, typeof(object));
+                    for (int i = packStart; i < args.Count; i++)
+                    {
+                        IL.Emit(OpCodes.Dup); IL.Emit(OpCodes.Ldc_I4, i - packStart);
+                        var at = _mainEmitter.Emit(args[i].Value); TypeMapper.EmitBox(IL, at);
+                        IL.Emit(OpCodes.Stelem_Ref);
+                    }
+                }
+                else
+                {
+                    foreach (var arg in args) { var t = _mainEmitter.Emit(arg.Value); TypeMapper.EmitBox(IL, t); }
+                    var expectedArgs = bridgeParams.Length - 1;
+                    for (int i = args.Count; i < expectedArgs; i++) IL.Emit(OpCodes.Ldnull);
+                }
                 IL.Emit(OpCodes.Call, bridge);
                 if (bridge.ReturnType == typeof(void)) { IL.Emit(OpCodes.Ldnull); return NajaTypes.None; }
                 if (bridge.ReturnType == typeof(long)) return NajaTypes.Int;
@@ -572,7 +592,7 @@ public sealed class CallEmitters : ExpressionEmitterBase
         "splitlines" => NajaBuiltinsMethodCache.StrSplitLines_Method,
         "title" => NajaBuiltinsMethodCache.StrTitle_Method,
         "encode" => NajaBuiltinsMethodCache.StrEncode_Method,
-        "format" => NajaBuiltinsMethodCache.Format_Method,
+        "format" => NajaBuiltinsMethodCache.StrFormat_Method,
         _ => null
     };
 
