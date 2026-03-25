@@ -37,6 +37,10 @@ public sealed class SemanticAnalyzer
 
     public SemanticModel Analyze(Module module)
     {
+        // Pre-scan: register all top-level class and function names BEFORE analyzing
+        // their bodies. This allows forward references (e.g. class B(A): where A is
+        // defined later in the module) to resolve correctly.
+        PreScanNames(module.Body);
         AnalyzeStatements(module.Body);
         return new SemanticModel(_scope, _diagnostics, _types, _symbols);
     }
@@ -192,8 +196,20 @@ public sealed class SemanticAnalyzer
             ? ResolveAnnotation(fn.ReturnAnnotation)
             : NajaTypes.Unknown;
 
-        var fnType = new FunctionType(paramTypes, returnType);
-        var sym    = _scope.Define(fn.Name, SymbolKind.Function, fnType, fn.Line, fn.Column);
+        var fnType  = new FunctionType(paramTypes, returnType);
+        var existing = _scope.LookupLocal(fn.Name);
+        Symbol sym;
+        if (existing is { Kind: SymbolKind.Function })
+        {
+            // Already pre-registered by PreScanNames — update type directly to avoid
+            // Widen(FunctionType_A, FunctionType_B) → UnionType regression.
+            existing.Type = fnType;
+            sym = existing;
+        }
+        else
+        {
+            sym = _scope.Define(fn.Name, SymbolKind.Function, fnType, fn.Line, fn.Column);
+        }
         _symbols[fn] = sym;
 
         // Analyze decorators in current scope
@@ -210,6 +226,9 @@ public sealed class SemanticAnalyzer
                 if (param.Default is not null) AnalyzeExpr(param.Default);
             }
 
+            // Pre-scan: register all nested class/function names before analyzing the body
+            // so that forward references inside the function body resolve correctly.
+            PreScanNames(fn.Body);
             AnalyzeStatements(fn.Body);
         });
     }
@@ -218,8 +237,18 @@ public sealed class SemanticAnalyzer
 
     private void Analyze(ClassDef cls)
     {
-        var clsType = new ClassType(cls.Name);
-        var sym     = _scope.Define(cls.Name, SymbolKind.Class, clsType, cls.Line, cls.Column);
+        var clsType     = new ClassType(cls.Name);
+        var existingCls = _scope.LookupLocal(cls.Name);
+        Symbol sym;
+        if (existingCls is { Kind: SymbolKind.Class })
+        {
+            existingCls.Type = clsType;
+            sym = existingCls;
+        }
+        else
+        {
+            sym = _scope.Define(cls.Name, SymbolKind.Class, clsType, cls.Line, cls.Column);
+        }
         _symbols[cls] = sym;
 
         foreach (var dec in cls.Decorators) AnalyzeExpr(dec);
@@ -227,7 +256,9 @@ public sealed class SemanticAnalyzer
 
         WithScope(ScopeKind.Class, cls.Name, () =>
         {
-            // 'self' is available inside class methods (defined when analyzing each method)
+            // Pre-scan class body so that methods defined later can be referenced
+            // (e.g. __rmul__ = __mul__ where __mul__ is defined above in the class body)
+            PreScanNames(cls.Body);
             AnalyzeStatements(cls.Body);
         });
     }
@@ -692,6 +723,64 @@ public sealed class SemanticAnalyzer
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Pre-scans a statement list and registers all class and function names in the
+    /// CURRENT scope BEFORE analyzing any statement bodies.
+    ///
+    /// This implements Python module-level scoping: "def f" and "class C" bind the
+    /// name in the enclosing scope immediately, even if f/C appear after code that
+    /// references them. Without this pass, forward references like:
+    ///   class Sub(Base):  ...      # where Base is defined later
+    ///   __rmul__ = __mul__         # inside a class body, __mul__ defined just above
+    /// would cause "Undefined name" errors.
+    /// </summary>
+    private void PreScanNames(IReadOnlyList<Statement> stmts)
+    {
+        foreach (var stmt in stmts)
+        {
+            switch (stmt)
+            {
+                case FunctionDef fn:
+                    if (_scope.LookupLocal(fn.Name) is null)
+                    {
+                        var paramTypes = fn.Params.Select(p =>
+                            p.Annotation is not null ? ResolveAnnotation(p.Annotation) : NajaTypes.Unknown
+                        ).ToList();
+                        var returnType = fn.ReturnAnnotation is not null
+                            ? ResolveAnnotation(fn.ReturnAnnotation)
+                            : NajaTypes.Unknown;
+                        var fnType = new FunctionType(paramTypes, returnType);
+                        var sym = _scope.Define(fn.Name, SymbolKind.Function, fnType, fn.Line, fn.Column);
+                        _symbols[fn] = sym;
+                    }
+                    break;
+
+                case ClassDef cls:
+                    if (_scope.LookupLocal(cls.Name) is null)
+                    {
+                        var clsType = new ClassType(cls.Name);
+                        var sym = _scope.Define(cls.Name, SymbolKind.Class, clsType, cls.Line, cls.Column);
+                        _symbols[cls] = sym;
+                    }
+                    break;
+
+                case AssignStatement assign:
+                    // Pre-scan simple assignments so names like __rmul__ = __mul__ resolve
+                    foreach (var target in assign.Targets)
+                        PreScanAssignTarget(target);
+                    break;
+            }
+        }
+    }
+
+    private void PreScanAssignTarget(Expression target)
+    {
+        if (target is NameExpr n && _scope.LookupLocal(n.Name) is null)
+            _scope.Define(n.Name, SymbolKind.Variable, NajaTypes.Unknown, n.Line, n.Column);
+        else if (target is TupleExpr t)
+            foreach (var elem in t.Elements) PreScanAssignTarget(elem);
+    }
 
     private void SetType(AstNode node, NajaType type) => _types[node] = type;
 }
