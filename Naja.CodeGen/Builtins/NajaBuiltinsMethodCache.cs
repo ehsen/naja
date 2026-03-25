@@ -168,6 +168,9 @@ internal static class NajaBuiltinsMethodCache
     public static readonly MethodInfo IsInstance_Method = 
         typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.IsInstance))!;
 
+    public static readonly MethodInfo IsSubclass_Method =
+        typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.IsSubclass))!;
+
     public static readonly MethodInfo Callable_Method = 
         typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.Callable))!;
 
@@ -359,6 +362,9 @@ internal static class NajaBuiltinsMethodCache
 
     public static readonly MethodInfo StrEncode_Method = 
         typeof(StringFunctions).GetMethod(nameof(StringFunctions.StrEncode))!;
+
+    public static readonly MethodInfo StrFormat_Method = 
+        typeof(StringFunctions).GetMethod(nameof(StringFunctions.StrFormat))!;
 
     // ── List method references ───────────────────────────────────────────────
     public static readonly MethodInfo ListAppend_Method = 

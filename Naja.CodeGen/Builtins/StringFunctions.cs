@@ -120,4 +120,98 @@ public static class StringFunctions
             _ => throw new Exception($"LookupError: unknown encoding: {enc}")
         };
     }
+
+    /// <summary>String format method: "template".format(*args) with {!r} and {!s} conversion support.</summary>
+    public static string StrFormat(object self, object[] args)
+    {
+        var template = TypeConversion.ToStr(self);
+        var result = new System.Text.StringBuilder();
+        int argIndex = 0;
+
+        for (int i = 0; i < template.Length; i++)
+        {
+            if (template[i] == '{')
+            {
+                if (i + 1 < template.Length && template[i + 1] == '{')
+                {
+                    result.Append('{');
+                    i++; // skip the second '{'
+                    continue;
+                }
+
+                // Find the closing '}'
+                int closeIdx = template.IndexOf('}', i);
+                if (closeIdx == -1)
+                    throw new Exception("ValueError: Single '{' encountered in format string");
+
+                var placeholder = template.Substring(i + 1, closeIdx - i - 1);
+                i = closeIdx;
+
+                // Parse placeholder: [index][!conversion][:format_spec]
+                string? conversion = null;
+                string? formatSpec = null;
+                int explicitIndex = -1;
+
+                // Check for conversion (!r, !s, !a)
+                int bangIdx = placeholder.IndexOf('!');
+                if (bangIdx >= 0)
+                {
+                    conversion = placeholder.Substring(bangIdx + 1, 1);
+                    placeholder = placeholder.Substring(0, bangIdx);
+                }
+
+                // Check for format spec (:...)
+                int colonIdx = placeholder.IndexOf(':');
+                if (colonIdx >= 0)
+                {
+                    formatSpec = placeholder.Substring(colonIdx + 1);
+                    placeholder = placeholder.Substring(0, colonIdx);
+                }
+
+                // Parse index (empty string means auto-increment)
+                if (string.IsNullOrEmpty(placeholder))
+                    explicitIndex = argIndex++;
+                else if (int.TryParse(placeholder, out var idx))
+                    explicitIndex = idx;
+                else
+                    throw new Exception($"ValueError: Invalid format string: {{{placeholder}}}");
+
+                if (explicitIndex < 0 || explicitIndex >= args.Length)
+                    throw new Exception($"IndexError: tuple index out of range");
+
+                var value = args[explicitIndex];
+
+                // Apply conversion
+                string formatted;
+                if (conversion == "r")
+                    formatted = TypeConversion.Repr(value);
+                else if (conversion == "s")
+                    formatted = TypeConversion.ToStr(value);
+                else if (conversion == "a")
+                    formatted = TypeConversion.Repr(value); // ascii() is like repr() but escapes non-ASCII
+                else if (formatSpec is not null)
+                    formatted = ExceptionHelpers.Format(value, formatSpec);
+                else
+                    formatted = TypeConversion.ToStr(value);
+
+                result.Append(formatted);
+            }
+            else if (template[i] == '}')
+            {
+                if (i + 1 < template.Length && template[i + 1] == '}')
+                {
+                    result.Append('}');
+                    i++; // skip the second '}'
+                }
+                else
+                    throw new Exception("ValueError: Single '}' encountered in format string");
+            }
+            else
+            {
+                result.Append(template[i]);
+            }
+        }
+
+        return result.ToString();
+    }
 }

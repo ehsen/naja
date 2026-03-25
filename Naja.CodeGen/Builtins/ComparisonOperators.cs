@@ -1,3 +1,5 @@
+using System.Linq;
+
 namespace Naja.CodeGen.Builtins;
 
 /// <summary>
@@ -38,6 +40,10 @@ public static class ComparisonOperators
             }
             return true;
         }
+
+        // Bytes equality (structural, like Python)
+        if (a is byte[] bytesA && b is byte[] bytesB)
+            return bytesA.SequenceEqual(bytesB);
 
         // Dict equality
         if (a is System.Collections.Generic.Dictionary<object, object> dictA && 

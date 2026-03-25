@@ -90,6 +90,49 @@ public static class ReflectionHelpers
             }
             catch { }
 
+            // Static methods: wrap in a delegate so they can be called
+            try
+            {
+                var sMethod = typeObj.GetMethod(name, classFlags);
+                if (sMethod is not null)
+                {
+                    // Build a Func<object[], object> delegate for the static method
+                    var paramCount = sMethod.GetParameters().Length;
+                    var paramTypes = Enumerable.Repeat(typeof(object), paramCount)
+                        .Concat(new[] { typeof(object) }).ToArray();
+                    var delegateType = System.Linq.Expressions.Expression.GetFuncType(paramTypes);
+                    return Delegate.CreateDelegate(delegateType, sMethod);
+                }
+            }
+            catch { }
+
+            // Instance methods accessed via Type: create a wrapper that expects 'self' as first arg
+            // This enables patterns like: bar = classmethod(A().foo)
+            var instanceFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+            try
+            {
+                var iMethod = typeObj.GetMethod(name, instanceFlags);
+                if (iMethod is not null)
+                {
+                    // Return a NajaFunction that wraps the unbound method
+                    var paramCount = iMethod.GetParameters().Length + 1; // +1 for self
+                    var paramTypes = Enumerable.Repeat(typeof(object), paramCount)
+                        .Concat(new[] { typeof(object) }).ToArray();
+                    var delegateType = System.Linq.Expressions.Expression.GetFuncType(paramTypes);
+                    
+                    // Create a wrapper that takes (self, ...args) and invokes iMethod
+                    var wrapper = new Func<object[], object?>(args =>
+                    {
+                        if (args.Length == 0) throw new Exception($"TypeError: {name}() missing 1 required positional argument: 'self'");
+                        var self = args[0];
+                        var methodArgs = args.Skip(1).ToArray();
+                        return iMethod.Invoke(self, methodArgs);
+                    });
+                    return new NajaFunction(wrapper, Array.Empty<object>());
+                }
+            }
+            catch { }
+
             // Dynamic attributes set via SetAttr (e.g. decorated class: C.extra = 'Hello')
             if (_typeAttrs.TryGetValue(typeObj, out var typeAttrDict)
                 && typeAttrDict.TryGetValue(name, out var typeAttrVal))
@@ -334,11 +377,21 @@ public static class ReflectionHelpers
                 var pParams = bridgeM.GetParameters();
                 var invokeArgs = new object[pParams.Length];
                 invokeArgs[0] = obj;
-                for (int i = 1; i < invokeArgs.Length; i++)
-                    invokeArgs[i] = Type.Missing;
-
-                for (int i = 0; i < args.Length && i + 1 < invokeArgs.Length; i++)
-                    invokeArgs[i + 1] = args[i];
+                if (pParams.Length >= 2 && pParams[pParams.Length - 1].ParameterType == typeof(object[]))
+                {
+                    for (int i = 1; i < pParams.Length - 1; i++)
+                        invokeArgs[i] = i - 1 < args.Length ? args[i - 1] : Type.Missing;
+                    invokeArgs[pParams.Length - 1] = args.Length >= pParams.Length - 1
+                        ? args.Skip(pParams.Length - 2).ToArray()
+                        : System.Array.Empty<object>();
+                }
+                else
+                {
+                    for (int i = 1; i < invokeArgs.Length; i++)
+                        invokeArgs[i] = Type.Missing;
+                    for (int i = 0; i < args.Length && i + 1 < invokeArgs.Length; i++)
+                        invokeArgs[i + 1] = args[i];
+                }
                 try
                 {
                     return bridgeM.Invoke(null, invokeArgs);
@@ -357,11 +410,23 @@ public static class ReflectionHelpers
             .Where(m => string.Equals(m.Name, method, StringComparison.OrdinalIgnoreCase))
             .Cast<MethodBase>();
 
-        if (!TryBindBestCallable(candidates2, args, out var mb, out var boundArgs))
-            throw new Exception($"AttributeError: '{t.Name}' object has no method '{method}' matching {args.Length} argument(s)");
+        MethodBase mb;
+        object?[] boundArgs;
+        bool isStaticFallback = false;
+        if (!TryBindBestCallable(candidates2, args, out mb, out boundArgs))
+        {
+            // Fall back to static methods (e.g. @staticmethod decorated methods in Python classes)
+            var staticFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.IgnoreCase;
+            var staticCandidates = t.GetMethods(staticFlags)
+                .Where(m => string.Equals(m.Name, method, StringComparison.OrdinalIgnoreCase))
+                .Cast<MethodBase>();
+            if (!TryBindBestCallable(staticCandidates, args, out mb, out boundArgs))
+                throw new Exception($"AttributeError: '{t.Name}' object has no method '{method}' matching {args.Length} argument(s)");
+            isStaticFallback = true;
+        }
 
         var mi = (MethodInfo)mb;
-        try { return mi.Invoke(obj, boundArgs); }
+        try { return mi.Invoke(isStaticFallback ? null : obj, boundArgs); }
         catch (TargetInvocationException tie) when (tie.InnerException is not null)
         {
             System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(tie.InnerException).Throw();
@@ -377,7 +442,30 @@ public static class ReflectionHelpers
             .Where(m => string.Equals(m.Name, methodName, StringComparison.OrdinalIgnoreCase));
 
         if (!TryBindBestCallable(candidates, args, out var method, out var boundArgs))
+        {
+            // Also check static fields/properties for callable values:
+            // e.g. bar = classmethod(fn) or bar = staticmethod(fn) stored as a static field.
+            var fieldFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
+            var field = type.GetFields(fieldFlags)
+                .FirstOrDefault(f => string.Equals(f.Name, methodName, StringComparison.OrdinalIgnoreCase));
+            if (field is not null)
+            {
+                var fieldVal = field.GetValue(null);
+                if (fieldVal is not null)
+                    return CallCallable(fieldVal, args);
+            }
+
+            var prop = type.GetProperties(fieldFlags)
+                .FirstOrDefault(p => string.Equals(p.Name, methodName, StringComparison.OrdinalIgnoreCase));
+            if (prop?.GetGetMethod(nonPublic: true) is { } propGetter)
+            {
+                var propVal = propGetter.Invoke(null, null);
+                if (propVal is not null)
+                    return CallCallable(propVal, args);
+            }
+
             throw new Exception($"AttributeError: type '{type.FullName}' has no static method '{methodName}' matching {args.Length} argument(s)");
+        }
 
         try { return method.Invoke(null, boundArgs); }
         catch (TargetInvocationException tie) when (tie.InnerException is not null)
@@ -543,6 +631,15 @@ public static class ReflectionHelpers
         if (classOrType is NajaFunction)
             return obj is NajaFunction;
         return false;
+    }
+
+    /// <summary>Check if a class is a subclass of another class or type.</summary>
+    public static bool IsSubclass(object cls, object classOrType)
+    {
+        Type? t1 = cls as Type;
+        Type? t2 = classOrType as Type;
+        if (t1 is null || t2 is null) return false;
+        return t2.IsAssignableFrom(t1);
     }
 
     /// <summary>Check if an object is callable (has __call__ method or is a delegate/function).</summary>
@@ -711,8 +808,12 @@ public static class ReflectionHelpers
         method = null!;
         boundArgs = null!;
 
-        // Filter by parameter count
-        var exact = candidates.Where(m => m.GetParameters().Length == args.Length).ToList();
+        // Filter by parameter count — exclude params-array methods (handled by the dedicated loop below)
+        var exact = candidates.Where(m => {
+            var ps = m.GetParameters();
+            return ps.Length == args.Length &&
+                   (ps.Length == 0 || !ps[ps.Length - 1].IsDefined(typeof(ParamArrayAttribute), false));
+        }).ToList();
         if (exact.Count > 0)
         {
             // Try to find one with perfect type match
@@ -750,11 +851,12 @@ public static class ReflectionHelpers
             }
         }
 
-        // Try by count and type coercion
+        // Try by count and type coercion (non-params overloads only)
         foreach (var mb in candidates)
         {
             var ps = mb.GetParameters();
-            if (ps.Length != args.Length) continue;
+            bool isParamsMb = ps.Length > 0 && ps[ps.Length - 1].IsDefined(typeof(ParamArrayAttribute), false);
+            if (ps.Length != args.Length || isParamsMb) continue;
 
             var bound = new object?[ps.Length];
             bool ok = true;
@@ -783,6 +885,8 @@ public static class ReflectionHelpers
         foreach (var mb in candidates)
         {
             var ps = mb.GetParameters();
+            // Skip params-array overloads — the dedicated params-array loop below handles them.
+            if (ps.Length > 0 && ps[ps.Length - 1].IsDefined(typeof(ParamArrayAttribute), false)) continue;
             // Must supply at least as many args as required (non-optional) params,
             // and no more than the total number of params.
             int requiredCount = ps.Count(p => !p.IsOptional && !p.HasDefaultValue);
