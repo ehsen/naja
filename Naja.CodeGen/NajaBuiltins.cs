@@ -2386,10 +2386,10 @@ public static class NajaBuiltins
 
         // Tuple/array of types: isinstance(x, (A, B))
         if (typeOrTuple is object[] arr)
-            return arr.OfType<Type>().Any(ty => ty.IsInstanceOfType(obj));
+            return arr.OfType<Type>().Any(ty => Builtins.ReflectionHelpers.IsInstance(obj, ty));
 
         if (typeOrTuple is Type t)
-            return t.IsInstanceOfType(obj);
+            return Builtins.ReflectionHelpers.IsInstance(obj, t);
 
         // Fallback: typeOrTuple might be a Type? returned as object from ResolveTypeByName
         return false;
