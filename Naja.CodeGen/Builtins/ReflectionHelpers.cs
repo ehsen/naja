@@ -47,7 +47,17 @@ public static class ReflectionHelpers
                 .FirstOrDefault(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase));
         }
         if (field is not null)
-            return field.GetValue(null);
+        {
+            var fieldValue = field.GetValue(null);
+
+            // BUG-A9: Handle descriptor protocol for staticmethod/classmethod accessed via class
+            if (fieldValue is NajaStaticMethod staticMethod)
+                return staticMethod.__func__;
+            if (fieldValue is NajaClassMethod classMethod)
+                return classMethod.__func__;
+
+            return fieldValue;
+        }
 
         // Return null instead of throwing - caller should handle missing fields
         return null;
@@ -156,6 +166,22 @@ public static class ReflectionHelpers
             throw new Exception($"AttributeError: 'function' object has no attribute '{name}'");
         }
 
+        // BUG-A7: Descriptor protocol for @staticmethod and @classmethod
+        // When accessing a staticmethod/classmethod via instance attribute access,
+        // the descriptor should be unwrapped to the underlying function.
+        if (obj is NajaStaticMethod staticMethodDesc)
+        {
+            // staticmethod accessed via instance: unwrap to __func__
+            return staticMethodDesc.__func__;
+        }
+
+        if (obj is NajaClassMethod classMethodDesc)
+        {
+            // classmethod accessed via instance: return the bound method (not fully supported yet)
+            // For now, just return __func__ like staticmethod
+            return classMethodDesc.__func__;
+        }
+
         // Raw delegate (Func<>, Action<>): return None for Python function magic attrs
         if (obj is Delegate del)
         {
@@ -191,7 +217,19 @@ public static class ReflectionHelpers
             field = t.GetFields(flags).FirstOrDefault(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase));
         }
 
-        if (field is not null) return field.GetValue(obj);
+        if (field is not null)
+        {
+            var fieldValue = field.GetValue(obj);
+
+            // BUG-A7: Handle descriptor protocol unwrapping
+            // If accessing a staticmethod/classmethod through instance, unwrap it
+            if (fieldValue is NajaStaticMethod staticMethod)
+                return staticMethod.__func__;
+            if (fieldValue is NajaClassMethod classMethod)
+                return classMethod.__func__;
+
+            return fieldValue;
+        }
 
         // Python MRO fallback: class variables (static fields) accessible via instance
         FieldInfo? staticField = null;
@@ -201,7 +239,18 @@ public static class ReflectionHelpers
                 BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy);
         }
         catch { }
-        if (staticField is not null) return staticField.GetValue(null);
+        if (staticField is not null)
+        {
+            var staticValue = staticField.GetValue(null);
+
+            // BUG-A7: Handle descriptor protocol unwrapping for static fields accessed via instance
+            if (staticValue is NajaStaticMethod staticMethod)
+                return staticMethod.__func__;
+            if (staticValue is NajaClassMethod classMethod)
+                return classMethod.__func__;
+
+            return staticValue;
+        }
 
         // Try dict-like storage for Python objects
         if (obj is System.Collections.Generic.Dictionary<string, object> d &&
@@ -653,9 +702,38 @@ public static class ReflectionHelpers
     public static bool IsInstance(object obj, object classOrType)
     {
         if (classOrType is Type t)
+        {
+            // Check Python numeric hierarchy first: isinstance(1, float) should be True
+            if (IsInstanceNumericHierarchy(obj, t))
+                return true;
             return t.IsInstanceOfType(obj);
+        }
         if (classOrType is NajaFunction)
             return obj is NajaFunction;
+        return false;
+    }
+
+    /// <summary>Check Python numeric type hierarchy (e.g., isinstance(1, float) → True).</summary>
+    private static bool IsInstanceNumericHierarchy(object obj, Type expectedType)
+    {
+        if (obj is null) return false;
+
+        var actualType = obj.GetType();
+
+        // Python: isinstance(x, float) accepts int, long, float, decimal
+        if (expectedType == typeof(double) || expectedType == typeof(float))
+        {
+            return actualType == typeof(int) || actualType == typeof(long) || 
+                   actualType == typeof(double) || actualType == typeof(float) ||
+                   actualType == typeof(decimal);
+        }
+
+        // bool is a special case
+        if (expectedType == typeof(bool))
+        {
+            return actualType == typeof(bool);
+        }
+
         return false;
     }
 
