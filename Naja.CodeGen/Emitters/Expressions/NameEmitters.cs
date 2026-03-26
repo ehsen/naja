@@ -428,6 +428,13 @@ public sealed class NameEmitters : ExpressionEmitterBase
             }
         }
 
-        throw new CodeGenException($"Undefined name '{e.Name}'", e.Line, e.Column);
+        // Emit a runtime NameError rather than aborting compilation.
+        // Python semantics: accessing an undefined name raises NameError at runtime,
+        // enabling patterns like `try: bad_name except NameError: pass`.
+        var nameErrorCtor = typeof(MissingFieldException).GetConstructor(new[] { typeof(string) })!;
+        IL.Emit(OpCodes.Ldstr, $"name '{e.Name}' is not defined");
+        IL.Emit(OpCodes.Newobj, nameErrorCtor);
+        IL.Emit(OpCodes.Throw);
+        return NajaTypes.Unknown;
     }
 }
