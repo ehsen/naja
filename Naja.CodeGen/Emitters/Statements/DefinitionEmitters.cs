@@ -56,9 +56,9 @@ public class DefinitionEmitters : StatementEmitterBase
         // Each captured cell variable gets an extra object[] param (__cell_varname) so the inner
         // function can read/write the same cell as the outer call that created it.
         var capturedCellNames = new List<string>();
+        var innerBodyRefs2 = CollectReferencedNames(s.Body);
         if (!isGenerator && (_ctx.CellLocals.Count > 0 || _ctx.CellParamOf.Count > 0))
         {
-            var innerBodyRefs2 = CollectReferencedNames(s.Body);
             var innerOwnParams2 = new HashSet<string>(s.Params.Select(p => p.Name));
             var innerNonlocals2 = CollectNonlocalNames(s.Body);
             foreach (var cv in _ctx.CellLocals.Keys.Concat(_ctx.CellParamOf.Keys))
@@ -67,6 +67,23 @@ public class DefinitionEmitters : StatementEmitterBase
                 if (!innerBodyRefs2.Contains(cv) && !innerNonlocals2.Contains(cv)) continue;
                 if (!capturedCellNames.Contains(cv))
                     capturedCellNames.Add(cv);
+            }
+        }
+
+        // BUG-A3: Handle recursive nested functions that reference their own name.
+        // If this nested function references its own name (for recursion),
+        // we need to make sure it's available as a cell so it can call itself.
+        if (!isGenerator && innerBodyRefs2.Contains(s.Name))
+        {
+            // Promote this function's name to a cell variable in the outer scope
+            if (!capturedCellNames.Contains(s.Name))
+            {
+                // Create a cell for this function in the outer scope if not already exists
+                if (!_ctx.CellLocals.ContainsKey(s.Name))
+                {
+                    _ctx.CellLocals[s.Name] = _ctx.Locals.Declare($"__cell_{s.Name}", typeof(object[]));
+                }
+                capturedCellNames.Add(s.Name);
             }
         }
 
