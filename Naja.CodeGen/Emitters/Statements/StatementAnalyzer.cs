@@ -24,6 +24,18 @@ public static class StatementAnalyzer
                 case AnnAssignStatement aa:
                     if (aa.Target is NameExpr ne2) names.Add(ne2.Name);
                     break;
+                case FunctionDef fd:
+                    names.Add(fd.Name);
+                    break;
+                case ClassDef cd:
+                    names.Add(cd.Name);
+                    break;
+                case ImportStatement im:
+                    foreach (var n in im.Names) names.Add(n.Alias ?? n.Name.Split('.')[0]);
+                    break;
+                case FromImportStatement fim:
+                    foreach (var n in fim.Names) names.Add(n.Alias ?? n.Name);
+                    break;
                 case ForStatement fs:
                     if (fs.Target is NameExpr ne3) names.Add(ne3.Name);
                     foreach (var s in fs.Body) foreach (var n in CollectAssignedNames(new[] { s })) names.Add(n);
@@ -62,9 +74,6 @@ public static class StatementAnalyzer
             if (stmt is FunctionDef fn)
             {
                 var referenced = CollectReferencedNames(fn.Body);
-                // Recursively collect names needed by doubly-nested functions that pass
-                // through this function (multi-level closure capture: a -> b -> c where c
-                // references a variable from a, b must propagate that capture upward).
                 var transitivelyNeeded = CollectNamesReferencedByNestedFunctions(fn.Body);
                 var locallyAssigned = CollectAssignedNames(fn.Body);
                 var nonlocalNames = CollectNonlocalNames(fn.Body);
@@ -73,36 +82,46 @@ public static class StatementAnalyzer
                 foreach (var n in referenced.Union(transitivelyNeeded))
                     if (!locallyAssigned.Contains(n))
                         names.Add(n);
+                
+                foreach (var p in fn.Params) if (p.Default != null) CollectNamesReferencedByNestedFunctionsInExpr(p.Default, names);
+                foreach (var d in fn.Decorators) CollectNamesReferencedByNestedFunctionsInExpr(d, names);
             }
             else if (stmt is IfStatement ifs)
             {
+                CollectNamesReferencedByNestedFunctionsInExpr(ifs.Condition, names);
                 foreach (var s in ifs.Then) foreach (var n in CollectNamesReferencedByNestedFunctions(new[] { s })) names.Add(n);
                 foreach (var (_, b) in ifs.Elifs) foreach (var s in b) foreach (var n in CollectNamesReferencedByNestedFunctions(new[] { s })) names.Add(n);
                 foreach (var s in ifs.Else) foreach (var n in CollectNamesReferencedByNestedFunctions(new[] { s })) names.Add(n);
             }
             else if (stmt is ForStatement fs)
             {
+                CollectNamesReferencedByNestedFunctionsInExpr(fs.Iter, names);
                 foreach (var s in fs.Body) foreach (var n in CollectNamesReferencedByNestedFunctions(new[] { s })) names.Add(n);
+                foreach (var s in fs.Else) foreach (var n in CollectNamesReferencedByNestedFunctions(new[] { s })) names.Add(n);
             }
             else if (stmt is WhileStatement ws)
             {
+                CollectNamesReferencedByNestedFunctionsInExpr(ws.Condition, names);
                 foreach (var s in ws.Body) foreach (var n in CollectNamesReferencedByNestedFunctions(new[] { s })) names.Add(n);
+                foreach (var s in ws.Else) foreach (var n in CollectNamesReferencedByNestedFunctions(new[] { s })) names.Add(n);
             }
             else if (stmt is TryStatement ts)
             {
                 foreach (var s in ts.Body) foreach (var n in CollectNamesReferencedByNestedFunctions(new[] { s })) names.Add(n);
                 foreach (var h in ts.Handlers) foreach (var s in h.Body) foreach (var n in CollectNamesReferencedByNestedFunctions(new[] { s })) names.Add(n);
+                foreach (var s in ts.Else) foreach (var n in CollectNamesReferencedByNestedFunctions(new[] { s })) names.Add(n);
+                foreach (var s in ts.Finally) foreach (var n in CollectNamesReferencedByNestedFunctions(new[] { s })) names.Add(n);
             }
             else if (stmt is WithStatement w)
             {
+                foreach (var item in w.Items) CollectNamesReferencedByNestedFunctionsInExpr(item.Context, names);
                 foreach (var s in w.Body) foreach (var n in CollectNamesReferencedByNestedFunctions(new[] { s })) names.Add(n);
             }
             else if (stmt is ClassDef cls)
             {
-                // Class body methods can capture variables from the enclosing function scope
-                // (Python closure-through-class semantics: class scope is skipped, but
-                // enclosing function scope is visible).  Treat each class method like a
-                // nested function — collect names it references that aren't local to it.
+                foreach (var b in cls.Bases) CollectNamesReferencedByNestedFunctionsInExpr(b, names);
+                foreach (var d in cls.Decorators) CollectNamesReferencedByNestedFunctionsInExpr(d, names);
+                
                 foreach (var m in cls.Body.OfType<FunctionDef>())
                 {
                     var referenced = CollectReferencedNames(m.Body);
@@ -114,8 +133,50 @@ public static class StatementAnalyzer
                             names.Add(n);
                 }
             }
+            else if (stmt is ExprStatement es) CollectNamesReferencedByNestedFunctionsInExpr(es.Expr, names);
+            else if (stmt is AssignStatement a) { CollectNamesReferencedByNestedFunctionsInExpr(a.Value, names); foreach (var t in a.Targets) CollectNamesReferencedByNestedFunctionsInExpr(t as Expression, names); }
+            else if (stmt is AnnAssignStatement aa) { if (aa.Value != null) CollectNamesReferencedByNestedFunctionsInExpr(aa.Value, names); }
+            else if (stmt is AugAssignStatement au) { CollectNamesReferencedByNestedFunctionsInExpr(au.Target, names); CollectNamesReferencedByNestedFunctionsInExpr(au.Value, names); }
+            else if (stmt is ReturnStatement rs) { if (rs.Value != null) CollectNamesReferencedByNestedFunctionsInExpr(rs.Value, names); }
+            else if (stmt is AssertStatement ast) { CollectNamesReferencedByNestedFunctionsInExpr(ast.Test, names); if (ast.Message != null) CollectNamesReferencedByNestedFunctionsInExpr(ast.Message, names); }
+            else if (stmt is RaiseStatement rst) { if (rst.Exception != null) CollectNamesReferencedByNestedFunctionsInExpr(rst.Exception, names); if (rst.Cause != null) CollectNamesReferencedByNestedFunctionsInExpr(rst.Cause, names); }
         }
         return names;
+    }
+
+    private static void CollectNamesReferencedByNestedFunctionsInExpr(Expression? expr, HashSet<string> names)
+    {
+        if (expr == null) return;
+        switch (expr)
+        {
+            case LambdaExpr le:
+                var referenced = CollectReferencedNames(new[] { new ExprStatement(le.Body, le.Line, le.Column) });
+                var transitivelyNeeded = new HashSet<string>();
+                CollectNamesReferencedByNestedFunctionsInExpr(le.Body, transitivelyNeeded);
+                var locallyAssigned = new HashSet<string>();
+                foreach (var p in le.Params) locallyAssigned.Add(p.Name);
+                foreach (var n in referenced.Union(transitivelyNeeded))
+                    if (!locallyAssigned.Contains(n))
+                        names.Add(n);
+                break;
+            case BinaryExpr be: CollectNamesReferencedByNestedFunctionsInExpr(be.Left, names); CollectNamesReferencedByNestedFunctionsInExpr(be.Right, names); break;
+            case UnaryExpr ue: CollectNamesReferencedByNestedFunctionsInExpr(ue.Operand, names); break;
+            case BoolOpExpr bo: foreach (var v in bo.Values) CollectNamesReferencedByNestedFunctionsInExpr(v, names); break;
+            case CompareExpr ce: CollectNamesReferencedByNestedFunctionsInExpr(ce.Left, names); foreach (var (_, r) in ce.Comparators) CollectNamesReferencedByNestedFunctionsInExpr(r, names); break;
+            case IfExpr ie: CollectNamesReferencedByNestedFunctionsInExpr(ie.Condition, names); CollectNamesReferencedByNestedFunctionsInExpr(ie.Then, names); CollectNamesReferencedByNestedFunctionsInExpr(ie.Else, names); break;
+            case CallExpr ce2: CollectNamesReferencedByNestedFunctionsInExpr(ce2.Func, names); foreach (var a in ce2.Args) CollectNamesReferencedByNestedFunctionsInExpr(a.Value, names); break;
+            case AttributeExpr ae: CollectNamesReferencedByNestedFunctionsInExpr(ae.Object, names); break;
+            case SubscriptExpr se: CollectNamesReferencedByNestedFunctionsInExpr(se.Object, names); CollectNamesReferencedByNestedFunctionsInExpr(se.Index, names); break;
+            case ListExpr le: foreach (var e in le.Elements) CollectNamesReferencedByNestedFunctionsInExpr(e, names); break;
+            case TupleExpr te: foreach (var e in te.Elements) CollectNamesReferencedByNestedFunctionsInExpr(e, names); break;
+            case SetExpr se: foreach (var e in se.Elements) CollectNamesReferencedByNestedFunctionsInExpr(e, names); break;
+            case DictExpr de: foreach (var p in de.Pairs) { CollectNamesReferencedByNestedFunctionsInExpr(p.Key, names); CollectNamesReferencedByNestedFunctionsInExpr(p.Value, names); } break;
+            case ListCompExpr lce: CollectNamesReferencedByNestedFunctionsInExpr(lce.Element, names); foreach (var g in lce.Generators) { CollectNamesReferencedByNestedFunctionsInExpr(g.Iter, names); foreach (var c in g.Conditions) CollectNamesReferencedByNestedFunctionsInExpr(c, names); } break;
+            case SetCompExpr sce: CollectNamesReferencedByNestedFunctionsInExpr(sce.Element, names); foreach (var g in sce.Generators) { CollectNamesReferencedByNestedFunctionsInExpr(g.Iter, names); foreach (var c in g.Conditions) CollectNamesReferencedByNestedFunctionsInExpr(c, names); } break;
+            case DictCompExpr dce: CollectNamesReferencedByNestedFunctionsInExpr(dce.Key, names); CollectNamesReferencedByNestedFunctionsInExpr(dce.Value, names); foreach (var g in dce.Generators) { CollectNamesReferencedByNestedFunctionsInExpr(g.Iter, names); foreach (var c in g.Conditions) CollectNamesReferencedByNestedFunctionsInExpr(c, names); } break;
+            case GeneratorExpr ge: CollectNamesReferencedByNestedFunctionsInExpr(ge.Element, names); foreach (var g in ge.Generators) { CollectNamesReferencedByNestedFunctionsInExpr(g.Iter, names); foreach (var c in g.Conditions) CollectNamesReferencedByNestedFunctionsInExpr(c, names); } break;
+            case YieldExpr ye: CollectNamesReferencedByNestedFunctionsInExpr(ye.Value, names); break;
+        }
     }
 
     /// <summary>

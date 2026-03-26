@@ -358,10 +358,21 @@ public sealed class CallEmitters : ExpressionEmitterBase
             else
             {
                 Type searchType = baseType is TypeBuilder tb ? tb.BaseType ?? typeof(object) : baseType;
-                candidates = searchType.GetMethods(flags)
-                                     .Where(m => m.Name.Equals(attr.Attribute, StringComparison.OrdinalIgnoreCase))
-                                     .Cast<MethodInfo>()
-                                     .ToList();
+                if (searchType is TypeBuilder stb)
+                {
+                    string searchMethodKey = $"{stb.Name}.{attr.Attribute}";
+                    if (_ctx.AllClassMethods.TryGetValue(searchMethodKey, out var smb))
+                        candidates = new List<MethodInfo> { smb };
+                    else
+                        candidates = new List<MethodInfo>();
+                }
+                else
+                {
+                    candidates = searchType.GetMethods(flags)
+                                         .Where(m => m.Name.Equals(attr.Attribute, StringComparison.OrdinalIgnoreCase))
+                                         .Cast<MethodInfo>()
+                                         .ToList();
+                }
             }
 
             if (candidates.Count == 0 && attr.Attribute == "__init__")

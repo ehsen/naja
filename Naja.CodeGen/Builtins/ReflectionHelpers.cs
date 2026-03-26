@@ -211,6 +211,32 @@ public static class ReflectionHelpers
         var (chainFound, chainVal) = ExceptionHelpers.TryGetChainingAttr(obj, name);
         if (chainFound) return chainVal;
 
+        // Method lookup: instance methods on compiled Python classes and .NET objects,
+        // including inherited methods (e.g. `self.fail` on a class that inherits NajaTestCase).
+        {
+            var methods = t.GetMethods(
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.FlattenHierarchy)
+                .Where(m => string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            if (methods.Length > 0)
+            {
+                var capturedObj = obj;
+                var capturedMethods = methods;
+                var wrapper = new Func<object[], object?>(args =>
+                {
+                    var m = capturedMethods.FirstOrDefault(x => x.GetParameters().Length == args.Length)
+                         ?? capturedMethods[0];
+                    try { return m.Invoke(capturedObj, args.Length == 0 ? null : (object?[])args); }
+                    catch (System.Reflection.TargetInvocationException tie) when (tie.InnerException is not null)
+                    {
+                        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(tie.InnerException).Throw();
+                        throw;
+                    }
+                });
+                return new NajaFunction(wrapper, System.Array.Empty<object>());
+            }
+        }
+
         throw new Exception($"AttributeError: '{t.Name}' object has no attribute '{name}'");
     }
 

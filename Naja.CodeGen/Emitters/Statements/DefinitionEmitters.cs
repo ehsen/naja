@@ -138,7 +138,7 @@ public class DefinitionEmitters : StatementEmitterBase
             if (fnCtx.CellParamOf.ContainsKey(nlName)) continue;
             if (!fnCtx.Fields.ContainsKey(nlName))
             {
-                var nlField = _ctx.TypeBuilder.DefineField($"__nl_{nlName}", typeof(object), FieldAttributes.Private | FieldAttributes.Static);
+                var nlField = _ctx.TypeBuilder.DefineField($"__nl_{nlName}", typeof(object), FieldAttributes.Public | FieldAttributes.Static);
                 fnCtx.Fields[nlName] = nlField;
                 _ctx.Fields[nlName] = nlField;  // also visible in outer scope
             }
@@ -164,7 +164,7 @@ public class DefinitionEmitters : StatementEmitterBase
                     fnCtx.Fields[r] = _ctx.Fields[r];
                 else
                 {
-                    var hoisted = _ctx.TypeBuilder.DefineField($"__nl_{r}", typeof(object), FieldAttributes.Private | FieldAttributes.Static);
+                    var hoisted = _ctx.TypeBuilder.DefineField($"__nl_{r}", typeof(object), FieldAttributes.Public | FieldAttributes.Static);
                     fnCtx.Fields[r] = hoisted;
                     _ctx.Fields[r] = hoisted;
                 }
@@ -271,6 +271,10 @@ public class DefinitionEmitters : StatementEmitterBase
             var bodyEmitter = new StatementEmitter(bodyCtx);
             bodyEmitter.EmitAll(s.Body);
 
+            // Propagate nested-class field contexts from generator body upward
+            foreach (var (k, v) in bodyCtx.NestedClassFieldContexts)
+                _ctx.NestedClassFieldContexts[k] = v;
+
             if (bodyCtx.MethodReturnLabel.HasValue)
                 bodyIL.MarkLabel(bodyCtx.MethodReturnLabel.Value);
             bodyIL.Emit(OpCodes.Ret);
@@ -289,6 +293,11 @@ public class DefinitionEmitters : StatementEmitterBase
 
         var bodyEmitter2 = new StatementEmitter(fnCtx);
         bodyEmitter2.EmitAll(s.Body);
+
+        // Propagate nested-class field contexts upward so the AssemblyEmitter can
+        // supply the correct field bindings for each nested class in Pass 3.
+        foreach (var (k, v) in fnCtx.NestedClassFieldContexts)
+            _ctx.NestedClassFieldContexts[k] = v;
 
         // Non-generator epilog
         if (fnCtx.MethodReturnLabel.HasValue)
@@ -403,8 +412,33 @@ public class DefinitionEmitters : StatementEmitterBase
                 IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.CallCallable_Method);
             }
 
-            var funcLocal = _ctx.Locals.Declare(s.Name, typeof(object));
-            IL.Emit(OpCodes.Stloc, funcLocal);
+            if (_ctx.Fields.TryGetValue(s.Name, out var staticField))
+            {
+                IL.Emit(OpCodes.Stsfld, staticField);
+            }
+            else if (_ctx.CellParamOf.TryGetValue(s.Name, out var cellPName))
+            {
+                var tmp = _ctx.Locals.Declare($"__cpf_{s.Name}", typeof(object));
+                IL.Emit(OpCodes.Stloc, tmp);
+                _ctx.TryEmitLoadParam(cellPName);
+                IL.Emit(OpCodes.Ldc_I4_0);
+                IL.Emit(OpCodes.Ldloc, tmp);
+                IL.Emit(OpCodes.Stelem_Ref);
+            }
+            else if (_ctx.CellLocals.TryGetValue(s.Name, out var cellLoc))
+            {
+                var tmp = _ctx.Locals.Declare($"__clf_{s.Name}", typeof(object));
+                IL.Emit(OpCodes.Stloc, tmp);
+                IL.Emit(OpCodes.Ldloc, cellLoc);
+                IL.Emit(OpCodes.Ldc_I4_0);
+                IL.Emit(OpCodes.Ldloc, tmp);
+                IL.Emit(OpCodes.Stelem_Ref);
+            }
+            else
+            {
+                var funcLocal = _ctx.Locals.Declare(s.Name, typeof(object));
+                IL.Emit(OpCodes.Stloc, funcLocal);
+            }
             _ctx.Methods.Remove(s.Name);
         }
         else
@@ -458,8 +492,33 @@ public class DefinitionEmitters : StatementEmitterBase
             IL.Emit(OpCodes.Ldstr, "__name__");
             IL.Emit(OpCodes.Ldstr, s.Name);
             IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.SetAttr_Method);
-            var funcLocalFn = _ctx.Locals.Declare(s.Name, typeof(object));
-            IL.Emit(OpCodes.Stloc, funcLocalFn);
+            if (_ctx.Fields.TryGetValue(s.Name, out var staticFieldNoDec))
+            {
+                IL.Emit(OpCodes.Stsfld, staticFieldNoDec);
+            }
+            else if (_ctx.CellParamOf.TryGetValue(s.Name, out var cellPNameNoDec))
+            {
+                var tmp = _ctx.Locals.Declare($"__cpf_{s.Name}", typeof(object));
+                IL.Emit(OpCodes.Stloc, tmp);
+                _ctx.TryEmitLoadParam(cellPNameNoDec);
+                IL.Emit(OpCodes.Ldc_I4_0);
+                IL.Emit(OpCodes.Ldloc, tmp);
+                IL.Emit(OpCodes.Stelem_Ref);
+            }
+            else if (_ctx.CellLocals.TryGetValue(s.Name, out var cellLocNoDec))
+            {
+                var tmp = _ctx.Locals.Declare($"__clf_{s.Name}", typeof(object));
+                IL.Emit(OpCodes.Stloc, tmp);
+                IL.Emit(OpCodes.Ldloc, cellLocNoDec);
+                IL.Emit(OpCodes.Ldc_I4_0);
+                IL.Emit(OpCodes.Ldloc, tmp);
+                IL.Emit(OpCodes.Stelem_Ref);
+            }
+            else
+            {
+                var funcLocalFn = _ctx.Locals.Declare(s.Name, typeof(object));
+                IL.Emit(OpCodes.Stloc, funcLocalFn);
+            }
         }
     }
 
@@ -479,6 +538,12 @@ public class DefinitionEmitters : StatementEmitterBase
 
             if (_ctx.ClassCtorArgCounts.TryGetValue(uniqueName, out var argCount))
                 _ctx.ClassCtorArgCounts[s.Name] = argCount;
+
+            // Snapshot the current hoisted-field bindings for this nested class.
+            // This allows Pass 3 to use the exact fields visible at the class definition
+            // site instead of the coarse merged dict (which suffers TryAdd collisions when
+            // multiple enclosing methods hoist different fields under the same variable name).
+            _ctx.NestedClassFieldContexts[uniqueName] = new Dictionary<string, FieldBuilder>(_ctx.Fields);
 
             // Alias method stubs from unique-name prefix to original-name prefix
             foreach (var key in _ctx.AllClassMethods.Keys
@@ -522,8 +587,34 @@ public class DefinitionEmitters : StatementEmitterBase
                 IL.Emit(OpCodes.Stelem_Ref);
                 IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.CallCallable_Method);
             }
-            var classLocal = _ctx.Locals.Declare(s.Name, typeof(object));
-            IL.Emit(OpCodes.Stloc, classLocal);
+            if (_ctx.Fields.TryGetValue(s.Name, out var staticField))
+            {
+                IL.Emit(OpCodes.Stsfld, staticField);
+            }
+            else if (_ctx.CellParamOf.TryGetValue(s.Name, out var cellPName))
+            {
+                var tmp = _ctx.Locals.Declare($"__cpc_{s.Name}", typeof(object));
+                IL.Emit(OpCodes.Stloc, tmp);
+                _ctx.TryEmitLoadParam(cellPName);
+                IL.Emit(OpCodes.Ldc_I4_0);
+                IL.Emit(OpCodes.Ldloc, tmp);
+                IL.Emit(OpCodes.Stelem_Ref);
+            }
+            else if (_ctx.CellLocals.TryGetValue(s.Name, out var cellLoc))
+            {
+                var tmp = _ctx.Locals.Declare($"__clc_{s.Name}", typeof(object));
+                IL.Emit(OpCodes.Stloc, tmp);
+                IL.Emit(OpCodes.Ldloc, cellLoc);
+                IL.Emit(OpCodes.Ldc_I4_0);
+                IL.Emit(OpCodes.Ldloc, tmp);
+                IL.Emit(OpCodes.Stelem_Ref);
+            }
+            else
+            {
+                var classLocal = _ctx.Locals.Declare(s.Name, typeof(object));
+                IL.Emit(OpCodes.Stloc, classLocal);
+            }
+            
             _ctx.ClassTypes.Remove(s.Name);
             _ctx.ClassConstructors.Remove(s.Name);
         }

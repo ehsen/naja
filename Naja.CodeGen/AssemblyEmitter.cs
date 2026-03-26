@@ -93,6 +93,14 @@ public sealed partial class AssemblyEmitter
     private readonly Dictionary<string, ConstructorBuilder> _innerFunctionClassCtors = new();
     private readonly Dictionary<string, FieldBuilder> _innerFunctionFields = new();
 
+    // Per-nested-class field context snapshots (uniqueName → Fields at class definition time).
+    // Avoids the TryAdd collision in _innerFunctionFields when multiple methods in the same
+    // class hoist different fields under the same variable name (e.g. 'x' in testExtraNesting
+    // vs testNonLocalMethod both on ScopeTests — the first wins TryAdd, breaking later ones).
+    // Populated by propagating EmitContext.NestedClassFieldContexts upward through function
+    // body emission; used in Pass 3 (nested) to supply the exact fields per class.
+    private readonly Dictionary<string, Dictionary<string, FieldBuilder>> _nestedClassFieldContexts = new();
+
     // Deferred constructor completion.
     // DeclareClass (Pass 1) emits only the base ctor call and leaves the
     // ILGenerator open. EmitClassBody (Pass 3) completes it with the

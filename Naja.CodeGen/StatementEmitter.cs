@@ -77,7 +77,12 @@ public sealed class StatementEmitter
                         !_ctx.Parameters.Contains(dn.Name))
                         throw new CodeGenException($"cannot delete undefined name '{dn.Name}'", dn.Line, dn.Column);
                 break;
-            case ImportStatement _: break;
+            case ImportStatement s:
+                // Register locally-imported module names so NameEmitters can resolve them
+                // (e.g. `import sys` inside a method body makes `sys` available as a name).
+                foreach (var alias in s.Names)
+                    _ctx.NamespaceImports[alias.Alias ?? alias.Name] = "";
+                break;
             case FromImportStatement _: break;
             case GlobalStatement s:
                 foreach (var name in s.Names) _ctx.GlobalNames.Add(name);

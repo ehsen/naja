@@ -137,6 +137,7 @@ public sealed partial class AssemblyEmitter
         Dictionary<string, TypeBuilder> moduleClassTypes,
         Dictionary<string, ConstructorBuilder> moduleClassCtors,
         Dictionary<string, (string TypeName, string AssemblyName)> importMap,
+        Dictionary<string, string> namespaceImports,
         string? classKeyOverride = null)
     {
         var classKey = classKeyOverride ?? cls.Name;
@@ -262,9 +263,15 @@ public sealed partial class AssemblyEmitter
             var cctorCtx = new EmitContext(cctorIL, _model, ct, modBuilder, typeof(void), []);
             foreach (var (k, v) in moduleFields) cctorCtx.Fields[k] = v;
             foreach (var (k, v) in moduleMethods) cctorCtx.Methods[k] = v;
+            foreach (var (k, v) in moduleParamTypes) cctorCtx.MethodParamTypes[k] = v;
             foreach (var (k, v) in moduleClassTypes) cctorCtx.ClassTypes[k] = v;
             foreach (var (k, v) in moduleClassCtors) cctorCtx.ClassConstructors[k] = v;
+            foreach (var (k, v) in _classCtorArgCounts) cctorCtx.ClassCtorArgCounts[k] = v;
+            foreach (var (k, v) in _classMethods) cctorCtx.AllClassMethods[k] = v;
+            foreach (var (k, v) in _classMethodParamTypes) cctorCtx.AllClassMethodParamTypes[k] = v;
+            foreach (var mn in _classMethodNames) cctorCtx.ClassMethods.Add(mn);
             foreach (var (k, v) in importMap) cctorCtx.ImportMap[k] = v;
+            foreach (var (k, v) in namespaceImports) cctorCtx.NamespaceImports[k] = v;
             var cctorExpr = new ExpressionEmitter(cctorCtx);
             foreach (var member in cls.Body)
             {
@@ -294,7 +301,7 @@ public sealed partial class AssemblyEmitter
                                moduleFields, moduleMethods, moduleParamTypes,
                                moduleClassTypes, moduleClassCtors,
                                instanceFields, classMethods, classParamTs, importMap,
-                               new Dictionary<string, string>()); // Namespace imports not yet passed to class methods
+                               namespaceImports);
         }
 
         // ── Generate CLR property wrappers ────────────────────────────────────

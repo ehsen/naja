@@ -27,27 +27,49 @@ public sealed class LambdaEmitters : ExpressionEmitterBase
     /// </summary>
     public NajaType EmitLambda(LambdaExpr e)
     {
-        // Detect outer-scope params captured by this lambda's body.
-        // (e.g. `lambda x: lambda: x` — the inner lambda captures outer param `x`)
         var capturedOuterParams = new List<(string name, int outerIdx)>();
-        if (_ctx.Parameters.Count > 0)
+        var capturedCellVars = new List<(string name, string mappedName)>();
+
+        if (_ctx.Parameters.Count > 0 || _ctx.CellLocals.Count > 0 || _ctx.CellParamOf.Count > 0)
         {
             var referencedNames = CollectNamesInBodyExpr(e.Body);
+            // Transitively referenced names from inner lambdas
+            var transitivelyNeeded = new HashSet<string>();
+            CollectNamesReferencedByNestedFunctionsInExpr(e.Body, transitivelyNeeded);
+            referencedNames.UnionWith(transitivelyNeeded);
+
             var innerParamNames = e.Params.Select(p => p.Name).ToHashSet();
             foreach (var name in referencedNames)
             {
                 if (innerParamNames.Contains(name)) continue;
+
                 int outerIdx = _ctx.GetParamIndex(name);
                 if (outerIdx >= 0)
+                {
                     capturedOuterParams.Add((name, outerIdx));
+                    continue;
+                }
+
+                if (_ctx.CellLocals.ContainsKey(name))
+                {
+                    capturedCellVars.Add((name, name));
+                    continue;
+                }
+
+                if (_ctx.CellParamOf.TryGetValue(name, out var cellParamName))
+                {
+                    capturedCellVars.Add((name, cellParamName));
+                    continue;
+                }
             }
         }
 
-        // Build extended param lists: real declared params + synthetic captured outer params
         var realParamTypes = e.Params.Select(_ => typeof(object)).ToArray();
-        var allParamTypes = realParamTypes.Concat(capturedOuterParams.Select(_ => typeof(object))).ToArray();
+        var allParamTypes = realParamTypes.Concat(capturedOuterParams.Select(_ => typeof(object)))
+                                          .Concat(capturedCellVars.Select(_ => typeof(object[]))).ToArray();
         var allParamNames = e.Params.Select(p => p.Name)
-                               .Concat(capturedOuterParams.Select(cp => cp.name)).ToList();
+                               .Concat(capturedOuterParams.Select(cp => cp.name))
+                               .Concat(capturedCellVars.Select(cv => $"__cell_{cv.name}")).ToList();
 
         var lambdaName = $"<lambda>_{e.Line}_{e.Column}";
         var mb = _ctx.TypeBuilder.DefineMethod(
@@ -63,6 +85,7 @@ public sealed class LambdaEmitters : ExpressionEmitterBase
         foreach (var (k, v) in _ctx.Fields) lambdaCtx.Fields[k] = v;
         foreach (var (k, v) in _ctx.Methods) lambdaCtx.Methods[k] = v;
         foreach (var (k, v) in _ctx.MethodParamTypes) lambdaCtx.MethodParamTypes[k] = v;
+        foreach (var cv in capturedCellVars) lambdaCtx.CellParamOf[cv.name] = $"__cell_{cv.name}";
         // Copy locals from outer scope for closure support
         foreach (var localName in _ctx.Locals.GetAllNames())
         {
@@ -83,12 +106,11 @@ public sealed class LambdaEmitters : ExpressionEmitterBase
         IL.Emit(OpCodes.Ldftn, mb);
         IL.Emit(OpCodes.Newobj, ctor);
 
-        // Wrap in NajaFunction when explicit parameter defaults OR captured outer params exist
         bool hasExplicitDefaults = e.Params.Any(p => p.Default is not null);
-        bool needsNajaFn = hasExplicitDefaults || capturedOuterParams.Count > 0;
+        bool needsNajaFn = hasExplicitDefaults || capturedOuterParams.Count > 0 || capturedCellVars.Count > 0;
         if (needsNajaFn)
         {
-            int defaultsCount = e.Params.Count(p => p.Default is not null) + capturedOuterParams.Count;
+            int defaultsCount = e.Params.Count(p => p.Default is not null) + capturedOuterParams.Count + capturedCellVars.Count;
             IL.Emit(OpCodes.Ldc_I4, defaultsCount);
             IL.Emit(OpCodes.Newarr, typeof(object));
 
@@ -153,6 +175,41 @@ public sealed class LambdaEmitters : ExpressionEmitterBase
             case ListExpr le: foreach (var el in le.Elements) CollectNamesInBodyExprRec(el, names); break;
             case TupleExpr te: foreach (var el in te.Elements) CollectNamesInBodyExprRec(el, names); break;
             case LambdaExpr le2: CollectNamesInBodyExprRec(le2.Body, names); break;
+            }
+        }
+
+    private static void CollectNamesReferencedByNestedFunctionsInExpr(Expression? expr, HashSet<string> names)
+    {
+        if (expr == null) return;
+        switch (expr)
+        {
+            case LambdaExpr le:
+                var referenced = CollectNamesInBodyExpr(le.Body);
+                var transitivelyNeeded = new HashSet<string>();
+                CollectNamesReferencedByNestedFunctionsInExpr(le.Body, transitivelyNeeded);
+                var locallyAssigned = new HashSet<string>();
+                foreach (var p in le.Params) locallyAssigned.Add(p.Name);
+                foreach (var n in referenced.Union(transitivelyNeeded))
+                    if (!locallyAssigned.Contains(n))
+                        names.Add(n);
+                break;
+            case BinaryExpr be: CollectNamesReferencedByNestedFunctionsInExpr(be.Left, names); CollectNamesReferencedByNestedFunctionsInExpr(be.Right, names); break;
+            case UnaryExpr ue: CollectNamesReferencedByNestedFunctionsInExpr(ue.Operand, names); break;
+            case BoolOpExpr bo: foreach (var v in bo.Values) CollectNamesReferencedByNestedFunctionsInExpr(v, names); break;
+            case CompareExpr ce: CollectNamesReferencedByNestedFunctionsInExpr(ce.Left, names); foreach (var (_, r) in ce.Comparators) CollectNamesReferencedByNestedFunctionsInExpr(r, names); break;
+            case IfExpr ie: CollectNamesReferencedByNestedFunctionsInExpr(ie.Condition, names); CollectNamesReferencedByNestedFunctionsInExpr(ie.Then, names); CollectNamesReferencedByNestedFunctionsInExpr(ie.Else, names); break;
+            case CallExpr ce2: CollectNamesReferencedByNestedFunctionsInExpr(ce2.Func, names); foreach (var a in ce2.Args) CollectNamesReferencedByNestedFunctionsInExpr(a.Value, names); break;
+            case AttributeExpr ae: CollectNamesReferencedByNestedFunctionsInExpr(ae.Object, names); break;
+            case SubscriptExpr se: CollectNamesReferencedByNestedFunctionsInExpr(se.Object, names); CollectNamesReferencedByNestedFunctionsInExpr(se.Index, names); break;
+            case ListExpr le: foreach (var e in le.Elements) CollectNamesReferencedByNestedFunctionsInExpr(e, names); break;
+            case TupleExpr te: foreach (var e in te.Elements) CollectNamesReferencedByNestedFunctionsInExpr(e, names); break;
+            case SetExpr se: foreach (var e in se.Elements) CollectNamesReferencedByNestedFunctionsInExpr(e, names); break;
+            case DictExpr de: foreach (var p in de.Pairs) { CollectNamesReferencedByNestedFunctionsInExpr(p.Key, names); CollectNamesReferencedByNestedFunctionsInExpr(p.Value, names); } break;
+            case ListCompExpr lce: CollectNamesReferencedByNestedFunctionsInExpr(lce.Element, names); foreach (var g in lce.Generators) { CollectNamesReferencedByNestedFunctionsInExpr(g.Iter, names); foreach (var c in g.Conditions) CollectNamesReferencedByNestedFunctionsInExpr(c, names); } break;
+            case SetCompExpr sce: CollectNamesReferencedByNestedFunctionsInExpr(sce.Element, names); foreach (var g in sce.Generators) { CollectNamesReferencedByNestedFunctionsInExpr(g.Iter, names); foreach (var c in g.Conditions) CollectNamesReferencedByNestedFunctionsInExpr(c, names); } break;
+            case DictCompExpr dce: CollectNamesReferencedByNestedFunctionsInExpr(dce.Key, names); CollectNamesReferencedByNestedFunctionsInExpr(dce.Value, names); foreach (var g in dce.Generators) { CollectNamesReferencedByNestedFunctionsInExpr(g.Iter, names); foreach (var c in g.Conditions) CollectNamesReferencedByNestedFunctionsInExpr(c, names); } break;
+            case GeneratorExpr ge: CollectNamesReferencedByNestedFunctionsInExpr(ge.Element, names); foreach (var g in ge.Generators) { CollectNamesReferencedByNestedFunctionsInExpr(g.Iter, names); foreach (var c in g.Conditions) CollectNamesReferencedByNestedFunctionsInExpr(c, names); } break;
+            case YieldExpr ye: CollectNamesReferencedByNestedFunctionsInExpr(ye.Value, names); break;
         }
     }
 }

@@ -378,7 +378,7 @@ public sealed partial class AssemblyEmitter
             if (stmt is FunctionDef fn && methods.TryGetValue(fn.Name, out var mb))
                 EmitFunctionBody(fn, mb, typeBuilder, modBuilder, fields, methods, paramTypes, importMap);
             else if (stmt is ClassDef cls && classTypes.TryGetValue(cls.Name, out var ct))
-                EmitClassBody(cls, ct, modBuilder, fields, methods, paramTypes, classTypes, classCtors, importMap);
+                EmitClassBody(cls, ct, modBuilder, fields, methods, paramTypes, classTypes, classCtors, importMap, namespaceImports);
         }
 
         // ── Pass 3 (nested): emit class bodies for classes defined inside functions ──
@@ -397,8 +397,21 @@ public sealed partial class AssemblyEmitter
         foreach (var (uniqueName, cls) in _nestedClassDefs)
         {
             if (mergedClassTypes.TryGetValue(uniqueName, out var ct))
-                EmitClassBody(cls, ct, modBuilder, mergedFields, mergedMethods, paramTypes,
-                              mergedClassTypes, mergedClassCtors, importMap, classKeyOverride: uniqueName);
+            {
+                // Start with the global merged fields, then overlay the per-class snapshot
+                // captured at the exact point this class was defined inside its enclosing
+                // function body.  This resolves the TryAdd collision where multiple methods
+                // on the same class hoist different static fields under the same variable
+                // name (e.g. 'x' in testExtraNesting vs testNonLocalMethod on ScopeTests).
+                var classFields = mergedFields;
+                if (_nestedClassFieldContexts.TryGetValue(uniqueName, out var specificFields))
+                {
+                    classFields = new Dictionary<string, FieldBuilder>(mergedFields);
+                    foreach (var (k, v) in specificFields) classFields[k] = v;
+                }
+                EmitClassBody(cls, ct, modBuilder, classFields, mergedMethods, paramTypes,
+                              mergedClassTypes, mergedClassCtors, importMap, namespaceImports, classKeyOverride: uniqueName);
+            }
         }
 
         // Finalise class TypeBuilders created in this module

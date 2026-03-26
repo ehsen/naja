@@ -209,6 +209,17 @@ public sealed class EmitContext
     /// </summary>
     public Dictionary<string, Parser.FunctionDef> FunctionDefs { get; } = new();
 
+    /// <summary>
+    /// Per-nested-class field context snapshot: maps the nested class unique name
+    /// (e.g. "C_L677") to the <see cref="Fields"/> dictionary as it was at the
+    /// moment the class was defined inside the enclosing function body.
+    /// Propagated upward through nested EmitContext instances so the AssemblyEmitter
+    /// can supply the correct hoisted-field bindings when compiling each nested class
+    /// body in Pass 3, instead of using the coarse merged _innerFunctionFields dict
+    /// which suffers from TryAdd collisions when multiple methods hoist same-named vars.
+    /// </summary>
+    public Dictionary<string, Dictionary<string, FieldBuilder>> NestedClassFieldContexts { get; } = new();
+
     public EmitContext(
         ILGenerator il,
         SemanticModel model,
