@@ -164,6 +164,8 @@ public sealed partial class AssemblyEmitter
         foreach (var (k, v) in ctx.ClassTypes) _innerFunctionClassTypes.TryAdd(k, v);
         foreach (var (k, v) in ctx.ClassConstructors) _innerFunctionClassCtors.TryAdd(k, v);
         foreach (var (k, v) in ctx.Fields) _innerFunctionFields.TryAdd(k, v);
+        // Per-class field context snapshots: overwrite (not TryAdd) so later methods win.
+        foreach (var (k, v) in ctx.NestedClassFieldContexts) _nestedClassFieldContexts[k] = v;
 
         EmitMethodEpilog(il, ctx, typeof(object));
     }
@@ -257,9 +259,9 @@ public sealed partial class AssemblyEmitter
         foreach (var r in nestedRefs.Intersect(assigned.Union(paramNamesSet)))
         {
             if (paramNamesSet.Contains(r))
-            {
-                // Parameter captured by inner function → static field (value snapshot via NajaFunction)
-                var fb = tb.DefineField($"__nl_{r}", typeof(object), FieldAttributes.Private | FieldAttributes.Static);
+                {
+                    // Parameter captured by inner function → static field (value snapshot via NajaFunction)
+                    var fb = tb.DefineField($"__nl_{r}", typeof(object), FieldAttributes.Public | FieldAttributes.Static);
                 ctx.Fields[r] = fb;
                 ctx.HoistedParams.Add(r);
             }
@@ -381,6 +383,9 @@ public sealed partial class AssemblyEmitter
             var bodyEmitter = new StatementEmitter(bodyCtx);
             bodyEmitter.EmitAll(fn.Body);
 
+            // Propagate nested-class field contexts from generator body upward
+            foreach (var (k, v) in bodyCtx.NestedClassFieldContexts) _nestedClassFieldContexts[k] = v;
+
             if (bodyCtx.MethodReturnLabel.HasValue)
                 bodyIL.MarkLabel(bodyCtx.MethodReturnLabel.Value);
             bodyIL.Emit(OpCodes.Ret);
@@ -397,6 +402,8 @@ public sealed partial class AssemblyEmitter
         foreach (var (k, v) in ctx.ClassTypes) _innerFunctionClassTypes.TryAdd(k, v);
         foreach (var (k, v) in ctx.ClassConstructors) _innerFunctionClassCtors.TryAdd(k, v);
         foreach (var (k, v) in ctx.Fields) _innerFunctionFields.TryAdd(k, v);
+        // Per-class field context snapshots: overwrite (not TryAdd) so later methods win.
+        foreach (var (k, v) in ctx.NestedClassFieldContexts) _nestedClassFieldContexts[k] = v;
 
         EmitMethodEpilog(il, ctx, returnType);
     }
