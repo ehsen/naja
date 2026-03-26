@@ -50,6 +50,18 @@ public sealed class CpythonGranularTests : CPythonTestFixture
         => CPythonTestDiscovery.GetTestMethods("test_decorators.py")
             .Select(row => new object[] { "test_decorators.py", row[0], row[1] });
 
+    public static IEnumerable<object[]> ScopeMethods
+        => CPythonTestDiscovery.GetTestMethods("test_scope.py")
+            .Select(row => new object[] { "test_scope.py", row[0], row[1] });
+
+    public static IEnumerable<object[]> SuperMethods
+        => CPythonTestDiscovery.GetTestMethods("test_super.py")
+            .Select(row => new object[] { "test_super.py", row[0], row[1] });
+
+    public static IEnumerable<object[]> CompareMethods
+        => CPythonTestDiscovery.GetTestMethods("test_compare.py")
+            .Select(row => new object[] { "test_compare.py", row[0], row[1] });
+
     // ── Theories ──────────────────────────────────────────────────────────
 
     [Theory]
@@ -91,6 +103,27 @@ public sealed class CpythonGranularTests : CPythonTestFixture
     [MemberData(nameof(DecoratorsMethods))]
     [Trait("File", "test_decorators")]
     public void cpython_decorators_method(
+        string fileName, string className, string methodName)
+        => RunGranularMethod(fileName, className, methodName);
+
+    [Theory]
+    [MemberData(nameof(ScopeMethods))]
+    [Trait("File", "test_scope")]
+    public void cpython_scope_method(
+        string fileName, string className, string methodName)
+        => RunGranularMethod(fileName, className, methodName);
+
+    [Theory]
+    [MemberData(nameof(SuperMethods))]
+    [Trait("File", "test_super")]
+    public void cpython_super_method(
+        string fileName, string className, string methodName)
+        => RunGranularMethod(fileName, className, methodName);
+
+    [Theory]
+    [MemberData(nameof(CompareMethods))]
+    [Trait("File", "test_compare")]
+    public void cpython_compare_method(
         string fileName, string className, string methodName)
         => RunGranularMethod(fileName, className, methodName);
 
