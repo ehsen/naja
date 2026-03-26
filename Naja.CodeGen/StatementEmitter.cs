@@ -74,7 +74,9 @@ public sealed class StatementEmitter
                     if (target is NameExpr dn &&
                         !_ctx.Locals.Contains(dn.Name) &&
                         !_ctx.Fields.ContainsKey(dn.Name) &&
-                        !_ctx.Parameters.Contains(dn.Name))
+                        !_ctx.Parameters.Contains(dn.Name) &&
+                        !_ctx.ClassTypes.ContainsKey(dn.Name) &&
+                        !_ctx.Methods.ContainsKey(dn.Name))
                         throw new CodeGenException($"cannot delete undefined name '{dn.Name}'", dn.Line, dn.Column);
                 break;
             case ImportStatement s:

@@ -342,6 +342,8 @@ public sealed class NameEmitters : ExpressionEmitterBase
                                   System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static),
                 "os"       => typeof(NajaOs).GetField("Instance",
                                   System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static),
+                "datetime" => typeof(NajaDateTime).GetField("Instance",
+                                  System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static),
                 "unittest" => typeof(NajaUnittest).GetField("Instance",
                                   System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static),
                 _          => null
@@ -391,9 +393,28 @@ public sealed class NameEmitters : ExpressionEmitterBase
                 // Fallback: runtime Type.GetType with the type name only (no assembly).
                 // This allows ASP.NET Core and other framework types to be resolved at runtime
                 // when the correct assembly is loaded via the runtimeconfig.json framework.
+                // If still not found, throw a clear error instead of propagating null.
                 IL.Emit(OpCodes.Ldstr, import.TypeName);
                 var getType = typeof(Type).GetMethod("GetType", new[] { typeof(string) })!;
                 IL.Emit(OpCodes.Call, getType);
+
+                // Stack: [result]  (may be null)
+                // Dup for the null check; the original stays on stack for the success path.
+                var typeResolvedLabel = IL.DefineLabel();
+                IL.Emit(OpCodes.Dup);         // [result, result]
+                IL.Emit(OpCodes.Brtrue, typeResolvedLabel);  // [result] — if non-null, jump
+
+                // Type is null: pop the null and throw a clear error.
+                IL.Emit(OpCodes.Pop);  // []
+                IL.Emit(OpCodes.Ldstr,
+                    $"Unable to resolve imported type '{import.TypeName}' at runtime. " +
+                    $"Ensure the assembly containing '{import.TypeName}' is loaded.");
+                var typeLoadExCtor = typeof(TypeLoadException).GetConstructor(new[] { typeof(string) })!;
+                IL.Emit(OpCodes.Newobj, typeLoadExCtor);
+                IL.Emit(OpCodes.Throw);
+
+                // Success path: the original (non-null) result is still on the stack.
+                IL.MarkLabel(typeResolvedLabel);
             }
             return NajaTypes.Unknown;
         }
