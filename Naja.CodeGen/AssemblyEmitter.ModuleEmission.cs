@@ -106,7 +106,7 @@ public sealed partial class AssemblyEmitter
                     }
                 case ClassDef cls:
                     {
-                        var ct = DeclareClass(cls, modBuilder, importMap, module.Body, out var ctor, namespaceImports);
+                        var ct = DeclareClass(cls, modBuilder, importMap, module.Body, out var ctor, namespaceImports, overrideName: null, localClassTypes: classTypes);
                         classTypes[cls.Name] = ct;
                         classCtors[cls.Name] = ctor;
                         _classTypes[cls.Name] = ct;
@@ -456,7 +456,7 @@ public sealed partial class AssemblyEmitter
                     if (!_nestedClassDefs.ContainsKey(uniqueName))
                     {
                         var ct = DeclareClass(cls, modBuilder, importMap, moduleBody, out var ctor,
-                                              namespaceImports, overrideName: uniqueName);
+                                              namespaceImports, overrideName: uniqueName, localClassTypes: classTypes);
                         _nestedClassDefs[uniqueName] = cls;
                         classTypes[uniqueName] = ct;
                         classCtors[uniqueName] = ctor;

@@ -24,7 +24,8 @@ public sealed partial class AssemblyEmitter
         IReadOnlyList<Statement> moduleBody,
         out ConstructorBuilder defaultCtor,
         Dictionary<string, string>? namespaceImports = null,
-        string? overrideName = null)
+        string? overrideName = null,
+        Dictionary<string, TypeBuilder>? localClassTypes = null)
     {
         // Resolve base class — search loaded assemblies first to handle strong-named
         // WinForms types correctly (Type.GetType with AQN is unreliable for them).
@@ -44,9 +45,15 @@ public sealed partial class AssemblyEmitter
                     ?? Type.GetType(imp.TypeName)
                     ?? typeof(object);
             }
-            else if (_classTypes.TryGetValue(baseExpr.Name, out var localBase))
+            else if (localClassTypes?.TryGetValue(baseExpr.Name, out var localClassBase) == true)
             {
-                baseType = localBase;
+                // Check local class types first (classes defined earlier in this module)
+                baseType = localClassBase;
+            }
+            else if (_classTypes.TryGetValue(baseExpr.Name, out var moduleBase))
+            {
+                // Fall back to module-level class types from previous modules
+                baseType = moduleBase;
             }
             else
             {
