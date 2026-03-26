@@ -36,49 +36,89 @@ public sealed partial class AssemblyEmitter
 
         // ── Build import map ──────────────────────────────────────────────────
         // Must happen before Pass 1 because DeclareClass needs it to resolve base types.
-        // We search AppDomain loaded assemblies first so strong-named WinForms types
-        // (e.g. System.Windows.Forms.Form) resolve correctly without guessing AQNs.
+        // 
+        // Three import categories:
+        // 1. Python StdLib (sys, math, os, etc.) → resolved via StdLibResolver
+        // 2. .NET Framework types (System.*, etc.) → resolved via FrameworkTypeResolver
+        // 3. Namespace imports (import System) → resolved on-demand at access time
+        //
+        // We search StdLib first (modular assemblies), then AppDomain (strong-named types),
+        // then FrameworkTypeResolver (disk-based resolution for framework types).
         var importMap = new Dictionary<string, (string TypeName, string AssemblyName)>();
         var namespaceImports = new Dictionary<string, string>();
+        var usedStdLibAssemblies = new HashSet<string>();  // Track which stdlib assemblies are needed
+
         foreach (var stmt in module.Body)
         {
             if (stmt is FromImportStatement fis)
             {
-                foreach (var alias in fis.Names)
+                // Check if this is a stdlib module import (e.g., "from sys import argv")
+                if (StdLibResolver.TryResolve(fis.Module, out var stdLibModule))
                 {
-                    var localName = alias.Alias ?? alias.Name;
-                    // Handle both "from System import X" and "from System.X import Y"
-                    var typeName = fis.Module.Contains('.')
-                        ? fis.Module + "." + alias.Name
-                        : fis.Module + "." + alias.Name;
+                    foreach (var alias in fis.Names)
+                    {
+                        var localName = alias.Alias ?? alias.Name;
+                        // For stdlib modules, the type is the singleton class (e.g., NajaSys)
+                        // and we access members via reflection at codegen time
+                        importMap[localName] = (stdLibModule.TypeName, stdLibModule.AssemblyName);
+                    }
+                    usedStdLibAssemblies.Add(stdLibModule.AssemblyName);
+                }
+                else
+                {
+                    // Standard .NET type import
+                    foreach (var alias in fis.Names)
+                    {
+                        var localName = alias.Alias ?? alias.Name;
+                        // Handle both "from System import X" and "from System.X import Y"
+                        var typeName = fis.Module.Contains('.')
+                            ? fis.Module + "." + alias.Name
+                            : fis.Module + "." + alias.Name;
 
-                    // Resolve the assembly that owns this type.
-                    // Strategy (mirrors Roslyn): ask the disk-based FrameworkTypeResolver
-                    // first so the compiler process never needs the target framework loaded.
-                    // Fall back to AppDomain only for types the host itself has loaded
-                    // (e.g. mscorlib / System.Private.CoreLib primitives).
-                    string asmShortName = _typeResolver.ResolveAssemblyName(typeName)
-                        ?? AppDomain.CurrentDomain.GetAssemblies()
-                               .Select(a => { try { return a.GetType(typeName, false, true); } catch { return null; } })
-                               .FirstOrDefault(t => t is not null)
-                               ?.Assembly.GetName().Name
-                        ?? fis.Module;   // last-resort: use the namespace itself
+                        // Resolve the assembly that owns this type.
+                        // Strategy (mirrors Roslyn): ask the disk-based FrameworkTypeResolver
+                        // first so the compiler process never needs the target framework loaded.
+                        // Fall back to AppDomain only for types the host itself has loaded
+                        // (e.g. mscorlib / System.Private.CoreLib primitives).
+                        string asmShortName = _typeResolver.ResolveAssemblyName(typeName)
+                            ?? AppDomain.CurrentDomain.GetAssemblies()
+                                   .Select(a => { try { return a.GetType(typeName, false, true); } catch { return null; } })
+                                   .FirstOrDefault(t => t is not null)
+                                   ?.Assembly.GetName().Name
+                            ?? fis.Module;   // last-resort: use the namespace itself
 
-                    importMap[localName] = (typeName, asmShortName);
+                        importMap[localName] = (typeName, asmShortName);
+                    }
                 }
             }
             else if (stmt is ImportStatement imp)
             {
-                // Handle "import System" style namespace imports
-                // We don't scan assemblies here - types are resolved on-demand at access time
+                // Handle both stdlib and namespace imports:
+                // "import sys" → register as stdlib singleton
+                // "import System" → register as namespace import for on-demand resolution
                 foreach (var alias in imp.Names)
                 {
-                    var nsName = alias.Alias ?? alias.Name;
-                    // Store the namespace import with null assembly - we'll search for the type at access time
-                    namespaceImports[nsName] = "";
+                    var baseName = alias.Name.Split('.')[0];  // e.g., "sys" from "sys.path"
+                    var localName = alias.Alias ?? baseName;
+
+                    if (StdLibResolver.TryResolve(baseName, out var stdLibModule))
+                    {
+                        // Python stdlib module: create a mapping to the singleton instance
+                        importMap[localName] = (stdLibModule.TypeName, stdLibModule.AssemblyName);
+                        usedStdLibAssemblies.Add(stdLibModule.AssemblyName);
+                    }
+                    else
+                    {
+                        // Namespace import: types resolved on-demand at access time
+                        namespaceImports[localName] = "";
+                    }
                 }
             }
         }
+
+        // Store used stdlib assemblies for smart reference injection
+        // (only the assemblies actually imported get referenced in the generated code)
+        var usedAssemblies = usedStdLibAssemblies.ToList();
 
         // ── Pass 1: declare ALL stubs before emitting any IL ──────────────────
         // EmitName searches ctx.Fields / ctx.Methods / ctx.ClassTypes at emit time.
