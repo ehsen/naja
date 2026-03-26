@@ -41,7 +41,7 @@ public class ScopeEmitters : StatementEmitterBase
                 var syntheticField = _ctx.TypeBuilder.DefineField(
                     $"__nl_{name}",
                     typeof(object),
-                    FieldAttributes.Private | FieldAttributes.Static);
+                    FieldAttributes.Public | FieldAttributes.Static);
                 _ctx.Fields[name] = syntheticField;
             }
             // Remove from locals if accidentally declared as a local so field wins
