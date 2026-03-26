@@ -20,6 +20,9 @@ public class NajaTestCase
     /// <summary>Called once after all tests in the class. Override in subclass.</summary>
     public static void tearDownClass() { }
 
+    /// <summary>addCleanup(func, *args) — register a cleanup function (no-op in Naja).</summary>
+    public void addCleanup(object func, params object[] args) { /* no-op */ }
+
     // ── Equality ──────────────────────────────────────────────────────────────
     public void assertEqual(object? first, object? second) =>
         assertEqual(first, second, null);
@@ -87,6 +90,37 @@ public class NajaTestCase
     {
         if (ReferenceEquals(first, second))
             Fail($"unexpectedly identical: {Format(first)}", msg);
+    }
+
+    // ── hasattr ───────────────────────────────────────────────────────────────
+    public void assertHasAttr(object? obj, object? name) =>
+        assertHasAttr(obj, name, null);
+
+    public void assertHasAttr(object? obj, object? name, object? msg)
+    {
+        if (!ObjectHasAttr(obj, name))
+            Fail($"{Format(obj)} has no attribute '{name}'", msg);
+    }
+
+    public void assertNotHasAttr(object? obj, object? name) =>
+        assertNotHasAttr(obj, name, null);
+
+    public void assertNotHasAttr(object? obj, object? name, object? msg)
+    {
+        if (ObjectHasAttr(obj, name))
+            Fail($"{Format(obj)} has unexpected attribute '{name}'", msg);
+    }
+
+    private static bool ObjectHasAttr(object? obj, object? name)
+    {
+        var nameStr = name?.ToString() ?? "";
+        var t = obj?.GetType();
+        if (t is null) return false;
+        var flags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance
+                  | System.Reflection.BindingFlags.FlattenHierarchy;
+        return t.GetProperty(nameStr, flags) is not null
+            || t.GetField(nameStr, flags) is not null
+            || t.GetMethods(flags).Any(m => string.Equals(m.Name, nameStr, StringComparison.OrdinalIgnoreCase));
     }
 
     // ── Containment ───────────────────────────────────────────────────────────

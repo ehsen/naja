@@ -69,4 +69,16 @@ public sealed class NajaSys
     // ── Recursion limit ───────────────────────────────────────────────────────
     public long getrecursionlimit() => 1000L;
     public void setrecursionlimit(object limit) { /* no-op */ }
+
+    // ── Tracing (no-op stubs — Naja has no trace infrastructure) ─────────────
+    private object? _traceFunc = null;
+    /// <summary>sys.settrace(func) — set a trace function; no-op in Naja.</summary>
+    public void settrace(object? func) { _traceFunc = func; }
+    /// <summary>sys.settrace() — raises TypeError (matches CPython: requires exactly 1 argument).</summary>
+    public void settrace() => throw new InvalidCastException("settrace() takes exactly one argument (0 given)");
+    /// <summary>sys.gettrace() — return current trace function (always None in Naja).</summary>
+    public object? gettrace() => _traceFunc;
+    /// <summary>sys.getframe([depth]) — no-op stub returns None.</summary>
+    public object? getframe() => null;
+    public object? getframe(object depth) => null;
 }
