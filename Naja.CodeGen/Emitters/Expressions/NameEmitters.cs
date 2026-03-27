@@ -332,22 +332,7 @@ public sealed class NameEmitters : ExpressionEmitterBase
         if (_ctx.NamespaceImports.ContainsKey(e.Name))
         {
             // Stdlib singleton modules: emit ldsfld <Module>::Instance
-            var stdlibField = e.Name switch
-            {
-                "re"       => typeof(NajaReModule).GetField("Instance",
-                                  System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static),
-                "math"     => typeof(NajaMath).GetField("Instance",
-                                  System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static),
-                "sys"      => typeof(NajaSys).GetField("Instance",
-                                  System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static),
-                "os"       => typeof(NajaOs).GetField("Instance",
-                                  System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static),
-                "datetime" => typeof(NajaDateTime).GetField("Instance",
-                                  System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static),
-                "unittest" => typeof(NajaUnittest).GetField("Instance",
-                                  System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static),
-                _          => null
-            };
+            var stdlibField = GetStdLibField(e.Name);
 
             if (stdlibField is not null)
             {
@@ -457,5 +442,38 @@ public sealed class NameEmitters : ExpressionEmitterBase
         IL.Emit(OpCodes.Newobj, nameErrorCtor);
         IL.Emit(OpCodes.Throw);
         return NajaTypes.Unknown;
+    }
+
+    /// <summary>
+    /// Resolve stdlib module singleton fields dynamically, supporting both the monolithic
+    /// Naja.StdLib assembly and the modular assemblies (Naja.StdLib.Core, .Text, .IO, .Time).
+    /// Falls back through all loaded assemblies so whichever is present at runtime is used.
+    /// </summary>
+    private static FieldInfo? GetStdLibField(string moduleName)
+    {
+        var moduleTypeMap = new Dictionary<string, (string TypeName, string Assembly)>
+        {
+            ["re"]       = ("Naja.StdLib.NajaRe",           "Naja.StdLib"),
+            ["io"]       = ("Naja.StdLib.NajaIo",           "Naja.StdLib"),
+            ["json"]     = ("Naja.StdLib.NajaJson",          "Naja.StdLib"),
+            ["math"]     = ("Naja.StdLib.NajaMath",          "Naja.StdLib"),
+            ["sys"]      = ("Naja.StdLib.NajaSys",           "Naja.StdLib"),
+            ["os"]       = ("Naja.StdLib.NajaOs",            "Naja.StdLib"),
+            ["datetime"] = ("Naja.StdLib.NajaDateTime",      "Naja.StdLib"),
+            ["unittest"] = ("Naja.StdLib.NajaUnittest",      "Naja.StdLib"),
+        };
+
+        if (!moduleTypeMap.TryGetValue(moduleName, out var entry))
+            return null;
+
+        // Search already-loaded assemblies first (avoids partial assembly name issues)
+        var moduleType =
+            AppDomain.CurrentDomain.GetAssemblies()
+                .Select(a => a.GetType(entry.TypeName, throwOnError: false))
+                .FirstOrDefault(t => t is not null)
+            ?? Type.GetType($"{entry.TypeName}, {entry.Assembly}", throwOnError: false);
+
+        return moduleType?.GetField("Instance",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
     }
 }

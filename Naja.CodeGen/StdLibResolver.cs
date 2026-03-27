@@ -22,25 +22,28 @@ public static class StdLibResolver
         new()
         {
             // ── CORE module: sys, math, unittest ──────────────────────────────
-            ["sys"] = ("Naja.StdLib.Core.NajaSys", "Naja.StdLib.Core", "Core"),
-            ["math"] = ("Naja.StdLib.Core.NajaMath", "Naja.StdLib.Core", "Core"),
-            ["unittest"] = ("Naja.StdLib.Core.NajaUnittest", "Naja.StdLib.Core", "Core"),
+            ["sys"] = ("Naja.StdLib.NajaSys", "Naja.StdLib", "Core"),
+            ["math"] = ("Naja.StdLib.NajaMath", "Naja.StdLib", "Core"),
+            ["unittest"] = ("Naja.StdLib.NajaUnittest", "Naja.StdLib", "Core"),
             
             // ── TIME module: datetime ─────────────────────────────────────────
-            ["datetime"] = ("Naja.StdLib.Time.NajaDateTime", "Naja.StdLib.Time", "Time"),
+            ["datetime"] = ("Naja.StdLib.NajaDateTime", "Naja.StdLib", "Time"),
             ["time"] = ("Naja.StdLib.Time.NajaTime", "Naja.StdLib.Time", "Time"),  // Placeholder for future
             
             // ── IO module: os, pathlib ───────────────────────────────────────
-            ["os"] = ("Naja.StdLib.IO.NajaOs", "Naja.StdLib.IO", "IO"),
+            ["os"] = ("Naja.StdLib.NajaOs", "Naja.StdLib", "IO"),
             ["pathlib"] = ("Naja.StdLib.IO.NajaPathlib", "Naja.StdLib.IO", "IO"),  // Placeholder for future
             
             // ── DATA module: json, csv ───────────────────────────────────────
-            ["json"] = ("Naja.StdLib.Data.NajaJson", "Naja.StdLib.Data", "Data"),  // Placeholder
+            ["json"] = ("Naja.StdLib.NajaJson", "Naja.StdLib", "Data"),
             ["csv"] = ("Naja.StdLib.Data.NajaCsv", "Naja.StdLib.Data", "Data"),    // Placeholder
             
             // ── TEXT module: re, string ──────────────────────────────────────
-            ["re"] = ("Naja.StdLib.Text.NajaRe", "Naja.StdLib.Text", "Text"),      // Placeholder
+            ["re"] = ("Naja.StdLib.NajaRe", "Naja.StdLib", "Text"),
             ["string"] = ("Naja.StdLib.Text.NajaString", "Naja.StdLib.Text", "Text"),  // Placeholder
+
+            // ── IO streams: io ───────────────────────────────────────────────
+            ["io"] = ("Naja.StdLib.NajaIo", "Naja.StdLib", "IO"),
         };
 
     /// <summary>

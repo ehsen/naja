@@ -132,6 +132,39 @@ public sealed class AttributeEmitters : ExpressionEmitterBase
                     return NajaTypes.Unknown;
                 }
 
+                // Instance property (e.g. stdlib singletons: sys.version, math.pi, os.sep).
+                // The instance was already popped above; re-emit the object to call the getter.
+                var instProp = dotnetType.GetProperty(e.Attribute,
+                    BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy);
+                if (instProp?.GetGetMethod() is { } instGetter)
+                {
+                    _mainEmitter.Emit(e.Object);
+                    IL.Emit(OpCodes.Callvirt, instGetter);
+                    var pt = instProp.PropertyType;
+                    if (pt == typeof(long)) return NajaTypes.Int;
+                    if (pt == typeof(double)) return NajaTypes.Float;
+                    if (pt == typeof(bool)) return NajaTypes.Bool;
+                    if (pt == typeof(string)) return NajaTypes.Str;
+                    if (pt.IsValueType) IL.Emit(OpCodes.Box, pt);
+                    return NajaTypes.Unknown;
+                }
+
+                // Instance field (re-emit the object)
+                var instField = dotnetType.GetField(e.Attribute,
+                    BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy);
+                if (instField is not null)
+                {
+                    _mainEmitter.Emit(e.Object);
+                    IL.Emit(OpCodes.Ldfld, instField);
+                    var ft2 = instField.FieldType;
+                    if (ft2 == typeof(long)) return NajaTypes.Int;
+                    if (ft2 == typeof(double)) return NajaTypes.Float;
+                    if (ft2 == typeof(bool)) return NajaTypes.Bool;
+                    if (ft2 == typeof(string)) return NajaTypes.Str;
+                    if (ft2.IsValueType) IL.Emit(OpCodes.Box, ft2);
+                    return NajaTypes.Unknown;
+                }
+
                 IL.Emit(OpCodes.Ldtoken, dotnetType);
                 IL.Emit(OpCodes.Call, typeof(Type).GetMethod("GetTypeFromHandle")!);
                 IL.Emit(OpCodes.Ldstr, e.Attribute);
