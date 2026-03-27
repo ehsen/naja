@@ -2051,6 +2051,482 @@ public class CodeGenTests
             """));
     }
 
+    // ── stdlib: re ────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void StdLib_Re_Search_Found()
+    {
+        Assert.Equal("123", Run("""
+            import re
+            m = re.search(r'\d+', 'abc 123 def')
+            print(m.group())
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Re_Search_NotFound_IsNone()
+    {
+        Assert.Equal("True", Run("""
+            import re
+            m = re.search(r'\d+', 'no digits here')
+            print(m is None)
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Re_Match_AtStart()
+    {
+        Assert.Equal("hello", Run("""
+            import re
+            m = re.match(r'\w+', 'hello world')
+            print(m.group())
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Re_Match_FailsIfNotAtStart()
+    {
+        Assert.Equal("True", Run("""
+            import re
+            m = re.match(r'\d+', 'abc 123')
+            print(m is None)
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Re_FindAll_NoGroups()
+    {
+        Assert.Equal("['1', '2', '3']", Run("""
+            import re
+            result = re.findall(r'\d', '1a2b3c')
+            print(result)
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Re_FindAll_WithGroup()
+    {
+        Assert.Equal("['foo', 'bar']", Run("""
+            import re
+            result = re.findall(r'(\w+)=\w+', 'foo=1 bar=2')
+            print(result)
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Re_Sub_Basic()
+    {
+        Assert.Equal("hello world", Run("""
+            import re
+            result = re.sub(r'\d+', 'world', 'hello 123')
+            print(result)
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Re_Sub_WithCount()
+    {
+        Assert.Equal("X X 3", Run("""
+            import re
+            result = re.sub(r'\d', 'X', '1 2 3', 2)
+            print(result)
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Re_Split_Basic()
+    {
+        Assert.Equal("['one', 'two', 'three']", Run("""
+            import re
+            result = re.split(r'\s+', 'one two three')
+            print(result)
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Re_Compile_And_Reuse()
+    {
+        Assert.Equal("True\nTrue", Run("""
+            import re
+            p = re.compile(r'\d+')
+            print(p.search('abc 42').group() == '42')
+            print(p.search('99 xyz').group() == '99')
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Re_IgnoreCase_Flag()
+    {
+        Assert.Equal("Hello", Run("""
+            import re
+            m = re.search(r'hello', 'Hello World', re.IGNORECASE)
+            print(m.group())
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Re_Groups()
+    {
+        Assert.Equal("2024 01 15", Run("""
+            import re
+            m = re.match(r'(\d{4})-(\d{2})-(\d{2})', '2024-01-15')
+            y, mo, d = m.groups()
+            print(y, mo, d)
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Re_Escape()
+    {
+        var result = Run("""
+            import re
+            s = re.escape('1+2=3')
+            print(len(s) > 0)
+            """);
+        Assert.Equal("True", result);
+    }
+
+    [Fact]
+    public void StdLib_Re_Fullmatch()
+    {
+        Assert.Equal("True\nFalse", Run("""
+            import re
+            print(re.fullmatch(r'\d+', '123') is not None)
+            print(re.fullmatch(r'\d+', '123abc') is not None)
+            """));
+    }
+
+    // ── stdlib: io ────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void StdLib_Io_StringIO_WriteRead()
+    {
+        Assert.Equal("hello", Run("""
+            import io
+            buf = io.StringIO()
+            buf.write('hello')
+            buf.seek(0)
+            print(buf.read())
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Io_StringIO_Getvalue()
+    {
+        Assert.Equal("hello world", Run("""
+            import io
+            buf = io.StringIO()
+            buf.write('hello')
+            buf.write(' world')
+            print(buf.getvalue())
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Io_StringIO_InitialValue()
+    {
+        Assert.Equal("hello", Run("""
+            import io
+            buf = io.StringIO('hello')
+            print(buf.getvalue())
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Io_StringIO_Tell_And_Seek()
+    {
+        Assert.Equal("0\n3", Run("""
+            import io
+            buf = io.StringIO('abcdef')
+            print(buf.tell())
+            buf.seek(3)
+            print(buf.tell())
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Io_StringIO_Readline()
+    {
+        // readline() without a newline returns the full content up to EOF
+        Assert.Equal("hello", Run("""
+            import io
+            buf = io.StringIO('hello')
+            result = buf.readline()
+            print(result)
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Io_StringIO_ReadLines()
+    {
+        // readlines() on content without actual newlines returns 1 line
+        Assert.Equal("1", Run("""
+            import io
+            buf = io.StringIO('hello world')
+            lines = buf.readlines()
+            print(len(lines))
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Io_StringIO_Closed_After_Close()
+    {
+        Assert.Equal("False\nTrue", Run("""
+            import io
+            buf = io.StringIO()
+            print(buf.closed)
+            buf.close()
+            print(buf.closed)
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Io_StringIO_ContextManager()
+    {
+        Assert.Equal("hello", Run("""
+            import io
+            with io.StringIO() as buf:
+                buf.write('hello')
+                print(buf.getvalue())
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Io_BytesIO_WriteRead()
+    {
+        Assert.Equal("5", Run("""
+            import io
+            buf = io.BytesIO()
+            n = buf.write(b'hello')
+            print(n)
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Io_BytesIO_Getvalue()
+    {
+        Assert.Equal("5", Run("""
+            import io
+            buf = io.BytesIO()
+            buf.write(b'hello')
+            print(len(buf.getvalue()))
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Io_BytesIO_Seek_Tell()
+    {
+        Assert.Equal("0", Run("""
+            import io
+            buf = io.BytesIO(b'hello')
+            buf.seek(0)
+            print(buf.tell())
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Io_DefaultBufferSize()
+    {
+        Assert.Equal("8192", Run("""
+            import io
+            print(io.DEFAULT_BUFFER_SIZE)
+            """));
+    }
+
+    // ── stdlib: json ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public void StdLib_Json_Dumps_String()
+    {
+        Assert.Equal("\"hello\"", Run("""
+            import json
+            print(json.dumps("hello"))
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Json_Dumps_Int()
+    {
+        Assert.Equal("42", Run("""
+            import json
+            print(json.dumps(42))
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Json_Dumps_Float()
+    {
+        Assert.Equal("3.14", Run("""
+            import json
+            print(json.dumps(3.14))
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Json_Dumps_None()
+    {
+        Assert.Equal("null", Run("""
+            import json
+            print(json.dumps(None))
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Json_Dumps_True_False()
+    {
+        Assert.Equal("true\nfalse", Run("""
+            import json
+            print(json.dumps(True))
+            print(json.dumps(False))
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Json_Dumps_List()
+    {
+        Assert.Equal("[1, 2, 3]", Run("""
+            import json
+            print(json.dumps([1, 2, 3]))
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Json_Dumps_Dict()
+    {
+        Assert.Equal("{\"a\": 1}", Run("""
+            import json
+            d = {"a": 1}
+            print(json.dumps(d))
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Json_Dumps_Nested()
+    {
+        Assert.Equal("{\"x\": [1, 2]}", Run("""
+            import json
+            print(json.dumps({"x": [1, 2]}))
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Json_Dumps_Sort_Keys()
+    {
+        Assert.Equal("{\"a\": 1, \"b\": 2}", Run("""
+            import json
+            d = {"b": 2, "a": 1}
+            print(json.dumps(d, None, True))
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Json_Loads_String()
+    {
+        Assert.Equal("hello", Run("""
+            import json
+            v = json.loads('"hello"')
+            print(v)
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Json_Loads_Int()
+    {
+        Assert.Equal("42", Run("""
+            import json
+            v = json.loads('42')
+            print(v)
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Json_Loads_Float()
+    {
+        Assert.Equal("3.14", Run("""
+            import json
+            v = json.loads('3.14')
+            print(v)
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Json_Loads_None()
+    {
+        Assert.Equal("None", Run("""
+            import json
+            v = json.loads('null')
+            print(v)
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Json_Loads_Bool()
+    {
+        Assert.Equal("True\nFalse", Run("""
+            import json
+            print(json.loads('true'))
+            print(json.loads('false'))
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Json_Loads_List()
+    {
+        Assert.Equal("3", Run("""
+            import json
+            v = json.loads('[1, 2, 3]')
+            print(len(v))
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Json_Loads_Dict()
+    {
+        Assert.Equal("1", Run("""
+            import json
+            d = json.loads('{"a": 1}')
+            print(d["a"])
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Json_Roundtrip()
+    {
+        Assert.Equal("True", Run("""
+            import json
+            data = {"name": "Naja", "version": 1}
+            s = json.dumps(data)
+            back = json.loads(s)
+            print(back["name"] == "Naja")
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Json_Loads_Invalid_Raises()
+    {
+        Assert.Equal("ValueError", Run("""
+            import json
+            try:
+                json.loads('not json')
+            except ValueError as e:
+                print("ValueError")
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Json_Dump_Load_StringIO()
+    {
+        Assert.Equal("world", Run("""
+            import json
+            import io
+            buf = io.StringIO()
+            json.dump({"hello": "world"}, buf)
+            buf.seek(0)
+            result = json.load(buf)
+            print(result["hello"])
+            """));
+    }
+
     // ── stdlib: unittest ──────────────────────────────────────────────────────
 
     [Fact]
