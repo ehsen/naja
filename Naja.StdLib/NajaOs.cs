@@ -1,3 +1,5 @@
+using Naja.StdLib.Core;
+
 namespace Naja.StdLib;
 
 /// <summary>

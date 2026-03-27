@@ -1,3 +1,5 @@
+using Naja.StdLib.Core;
+
 namespace Naja.StdLib;
 
 /// <summary>
@@ -59,7 +61,7 @@ public sealed class NajaSys
 
     public void exit(object code)
     {
-        int exitCode = Convert.ToInt32(code);
+        int exitCode = (int)TypeCoercion.ToLong(code);
         System.Environment.Exit(exitCode);
     }
 
@@ -74,11 +76,10 @@ public sealed class NajaSys
     private object? _traceFunc = null;
     /// <summary>sys.settrace(func) — set a trace function; no-op in Naja.</summary>
     public void settrace(object? func) { _traceFunc = func; }
-    /// <summary>sys.settrace() — raises TypeError (matches CPython: requires exactly 1 argument).</summary>
-    public void settrace() => throw new InvalidCastException("settrace() takes exactly one argument (0 given)");
     /// <summary>sys.gettrace() — return current trace function (always None in Naja).</summary>
     public object? gettrace() => _traceFunc;
     /// <summary>sys.getframe([depth]) — no-op stub returns None.</summary>
     public object? getframe() => null;
     public object? getframe(object depth) => null;
 }
+

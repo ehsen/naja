@@ -1,8 +1,13 @@
+using Naja.StdLib.Core;
+
 namespace Naja.StdLib;
 
 /// <summary>
 /// Python 'math' module emulation via System.Math.
 /// Exposes constants (pi, e, inf, nan, tau) and common math functions.
+/// 
+/// All type coercion goes through Protocols and TypeCoercion to ensure
+/// dunder methods are checked before primitive conversion (as per CPython).
 /// </summary>
 public sealed class NajaMath
 {
@@ -16,65 +21,107 @@ public sealed class NajaMath
     public double nan => double.NaN;
 
     // ── Rounding / truncation ─────────────────────────────────────────────────
-    public long floor(object x)  => (long)Math.Floor(ToDouble(x));
-    public long ceil(object x)   => (long)Math.Ceiling(ToDouble(x));
-    public long trunc(object x)  => (long)Math.Truncate(ToDouble(x));
-    public double fabs(object x)   => Math.Abs(ToDouble(x));
+    /// <summary>math.floor(x) — returns the floor of x as an int.</summary>
+    public long floor(object x)
+    {
+        // Protocol dispatch: check for __floor__ first
+        if (Protocols.HasMethod(x, "__floor__"))
+        {
+            try
+            {
+                var result = Protocols.InvokeIfExists(x, "__floor__");
+                if (result is long l) return l;
+                if (result is int i) return i;
+            }
+            catch { }
+        }
+
+        return (long)Math.Floor(TypeCoercion.ToDouble(x));
+    }
+
+    /// <summary>math.ceil(x) — returns the ceiling of x as an int.</summary>
+    public long ceil(object x)
+    {
+        // Protocol dispatch: check for __ceil__ first
+        if (Protocols.HasMethod(x, "__ceil__"))
+        {
+            try
+            {
+                var result = Protocols.InvokeIfExists(x, "__ceil__");
+                if (result is long l) return l;
+                if (result is int i) return i;
+            }
+            catch { }
+        }
+
+        return (long)Math.Ceiling(TypeCoercion.ToDouble(x));
+    }
+
+    /// <summary>math.trunc(x) — truncates x to an integer.</summary>
+    public long trunc(object x) => (long)Math.Truncate(TypeCoercion.ToDouble(x));
+
+    /// <summary>math.fabs(x) — returns the absolute value of x.</summary>
+    public double fabs(object x) => Math.Abs(TypeCoercion.ToDouble(x));
 
     // ── Powers and logarithms ─────────────────────────────────────────────────
-    public double sqrt(object x)        => Math.Sqrt(ToDouble(x));
-    public double exp(object x)         => Math.Exp(ToDouble(x));
-    public double log(object x)         => Math.Log(ToDouble(x));
-    public double log(object x, object base_) => Math.Log(ToDouble(x), ToDouble(base_));
-    public double log2(object x)        => Math.Log2(ToDouble(x));
-    public double log10(object x)       => Math.Log10(ToDouble(x));
-    public double pow(object x, object y) => Math.Pow(ToDouble(x), ToDouble(y));
+    public double sqrt(object x)        => Math.Sqrt(TypeCoercion.ToDouble(x));
+    public double cbrt(object x)        => Math.Cbrt(TypeCoercion.ToDouble(x));
+    public double exp(object x)         => Math.Exp(TypeCoercion.ToDouble(x));
+    public double log(object x)         => Math.Log(TypeCoercion.ToDouble(x));
+    public double log(object x, object base_) => Math.Log(TypeCoercion.ToDouble(x), TypeCoercion.ToDouble(base_));
+    public double log2(object x)        => Math.Log2(TypeCoercion.ToDouble(x));
+    public double log10(object x)       => Math.Log10(TypeCoercion.ToDouble(x));
+    public double pow(object x, object y) => Math.Pow(TypeCoercion.ToDouble(x), TypeCoercion.ToDouble(y));
 
     // ── Trigonometry ──────────────────────────────────────────────────────────
-    public double sin(object x)   => Math.Sin(ToDouble(x));
-    public double cos(object x)   => Math.Cos(ToDouble(x));
-    public double tan(object x)   => Math.Tan(ToDouble(x));
-    public double asin(object x)  => Math.Asin(ToDouble(x));
-    public double acos(object x)  => Math.Acos(ToDouble(x));
-    public double atan(object x)  => Math.Atan(ToDouble(x));
-    public double atan2(object y, object x) => Math.Atan2(ToDouble(y), ToDouble(x));
-    public double sinh(object x)  => Math.Sinh(ToDouble(x));
-    public double cosh(object x)  => Math.Cosh(ToDouble(x));
-    public double tanh(object x)  => Math.Tanh(ToDouble(x));
-    public double degrees(object x) => ToDouble(x) * (180.0 / Math.PI);
-    public double radians(object x) => ToDouble(x) * (Math.PI / 180.0);
+    public double sin(object x)   => Math.Sin(TypeCoercion.ToDouble(x));
+    public double cos(object x)   => Math.Cos(TypeCoercion.ToDouble(x));
+    public double tan(object x)   => Math.Tan(TypeCoercion.ToDouble(x));
+    public double asin(object x)  => Math.Asin(TypeCoercion.ToDouble(x));
+    public double acos(object x)  => Math.Acos(TypeCoercion.ToDouble(x));
+    public double atan(object x)  => Math.Atan(TypeCoercion.ToDouble(x));
+    public double atan2(object y, object x) => Math.Atan2(TypeCoercion.ToDouble(y), TypeCoercion.ToDouble(x));
+    public double sinh(object x)  => Math.Sinh(TypeCoercion.ToDouble(x));
+    public double cosh(object x)  => Math.Cosh(TypeCoercion.ToDouble(x));
+    public double tanh(object x)  => Math.Tanh(TypeCoercion.ToDouble(x));
+    public double degrees(object x) => TypeCoercion.ToDouble(x) * (180.0 / Math.PI);
+    public double radians(object x) => TypeCoercion.ToDouble(x) * (Math.PI / 180.0);
 
     // ── Number theory ─────────────────────────────────────────────────────────
+    /// <summary>math.factorial(n) — returns n! (n must be a non-negative integer).</summary>
     public long factorial(object n)
     {
-        long v = ToLong(n);
-        if (v < 0) throw new ArgumentException("math domain error");
+        long v = TypeCoercion.ToLong(n);
+        if (v < 0) throw PythonException.ValueError("factorial() not defined for negative values");
+        if (v > 20922789888000) throw PythonException.OverflowError("factorial() result too large");
+
         long result = 1;
         for (long i = 2; i <= v; i++) result *= i;
         return result;
     }
 
+    /// <summary>math.gcd(a, b) — returns the greatest common divisor of a and b.</summary>
     public long gcd(object a, object b)
     {
-        long x = Math.Abs(ToLong(a));
-        long y = Math.Abs(ToLong(b));
+        long x = Math.Abs(TypeCoercion.ToLong(a));
+        long y = Math.Abs(TypeCoercion.ToLong(b));
         while (y != 0) { long t = y; y = x % y; x = t; }
         return x;
     }
 
-    public bool isfinite(object x)  => double.IsFinite(ToDouble(x));
-    public bool isinf(object x)     => double.IsInfinity(ToDouble(x));
-    public bool isnan(object x)     => double.IsNaN(ToDouble(x));
+    public bool isfinite(object x)  => double.IsFinite(TypeCoercion.ToDouble(x));
+    public bool isinf(object x)     => double.IsInfinity(TypeCoercion.ToDouble(x));
+    public bool isnan(object x)     => double.IsNaN(TypeCoercion.ToDouble(x));
 
-    public double hypot(object x, object y) => Math.Sqrt(ToDouble(x) * ToDouble(x) + ToDouble(y) * ToDouble(y));
-    public double copysign(object x, object y) => Math.CopySign(ToDouble(x), ToDouble(y));
-    public double remainder(object x, object y) => Math.IEEERemainder(ToDouble(x), ToDouble(y));
+    public double hypot(object x, object y) => Math.Sqrt(TypeCoercion.ToDouble(x) * TypeCoercion.ToDouble(x) + TypeCoercion.ToDouble(y) * TypeCoercion.ToDouble(y));
+    public double copysign(object x, object y) => Math.CopySign(TypeCoercion.ToDouble(x), TypeCoercion.ToDouble(y));
+    public double remainder(object x, object y) => Math.IEEERemainder(TypeCoercion.ToDouble(x), TypeCoercion.ToDouble(y));
 
     // ── Combinatorics ─────────────────────────────────────────────────────────
     public double comb(object n, object k)
     {
-        long nv = ToLong(n);
-        long kv = ToLong(k);
+        long nv = TypeCoercion.ToLong(n);
+        long kv = TypeCoercion.ToLong(k);
         if (kv < 0 || kv > nv) return 0;
         if (kv == 0 || kv == nv) return 1;
         kv = Math.Min(kv, nv - kv);
@@ -86,29 +133,11 @@ public sealed class NajaMath
 
     public double perm(object n, object k)
     {
-        long nv = ToLong(n);
-        long kv = ToLong(k);
+        long nv = TypeCoercion.ToLong(n);
+        long kv = TypeCoercion.ToLong(k);
         if (kv < 0 || kv > nv) return 0;
         double result = 1;
         for (long i = nv - kv + 1; i <= nv; i++) result *= i;
         return result;
     }
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
-    private static double ToDouble(object o) => o switch
-    {
-        double d => d,
-        long l   => (double)l,
-        int i    => (double)i,
-        float f  => (double)f,
-        _        => Convert.ToDouble(o)
-    };
-
-    private static long ToLong(object o) => o switch
-    {
-        long l   => l,
-        int i    => (long)i,
-        double d => (long)d,
-        _        => Convert.ToInt64(o)
-    };
 }
