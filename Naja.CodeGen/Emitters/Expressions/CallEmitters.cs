@@ -203,7 +203,7 @@ public sealed class CallEmitters : ExpressionEmitterBase
             {
                 _mainEmitter.Emit(e.Func);
                 IL.Emit(OpCodes.Castclass, typeof(Type));
-                var typeLocal = _ctx.Locals.Declare($"__dotnet_t_{e.Line}", typeof(Type));
+                var typeLocal = _ctx.Locals.Declare($"__dotnet_t_{e.Line}_{e.Column}", typeof(Type));
                 IL.Emit(OpCodes.Stloc, typeLocal);
 
                 IL.Emit(OpCodes.Ldc_I4, e.Args.Count);
@@ -217,7 +217,7 @@ public sealed class CallEmitters : ExpressionEmitterBase
                     IL.Emit(OpCodes.Stelem_Ref);
                 }
 
-                var ctorArgs = _ctx.Locals.Declare($"__dotnet_args_{e.Line}", typeof(object[]));
+                var ctorArgs = _ctx.Locals.Declare($"__dotnet_args_{e.Line}_{e.Column}", typeof(object[]));
                 IL.Emit(OpCodes.Stloc, ctorArgs);
 
                 IL.Emit(OpCodes.Ldloc, typeLocal);
@@ -251,7 +251,7 @@ public sealed class CallEmitters : ExpressionEmitterBase
                     IL.Emit(OpCodes.Stelem_Ref);
                 }
 
-                var ctorArgs = _ctx.Locals.Declare($"__dotnet_args_{e.Line}", typeof(object[]));
+                var ctorArgs = _ctx.Locals.Declare($"__dotnet_args_{e.Line}_{e.Column}", typeof(object[]));
                 IL.Emit(OpCodes.Stloc, ctorArgs);
 
                 IL.Emit(OpCodes.Ldtoken, resolvedType);
