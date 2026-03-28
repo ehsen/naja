@@ -42,12 +42,14 @@ public class AssignmentEmitters : StatementEmitterBase
     {
         // Special-case: .NET event subscription/unsubscription
         //   exit_item.Click += self.handle_exit
-        // Emit: NajaBuiltins.AddEventHandler(exit_item, "Click", self, "handle_exit")
+        //   exit_item.Click += lambda s, e: ...
+        // Emit: NajaBuiltins.AddEventHandler(exit_item, "Click", <handler>, "<method>")
         if ((s.Op == BinaryOp.Add || s.Op == BinaryOp.Sub) && s.Target is AttributeExpr evAttr)
         {
-            // Only handle simple method references on RHS (self.method or function name)
+            // Try to detect event handler subscription patterns
             string? handlerMethod = null;
             Expression? handlerTarget = null;
+            bool isLambda = false;
 
             if (s.Value is AttributeExpr { Object: var ht, Attribute: var hm })
             {
@@ -57,7 +59,13 @@ public class AssignmentEmitters : StatementEmitterBase
             else if (s.Value is NameExpr { Name: var n })
             {
                 handlerMethod = n;
-                handlerTarget = null;
+                // handlerTarget = null means module-level function — emit the function value itself
+                // so AddEventHandler can detect NajaFunction and use it directly
+            }
+            else
+            {
+                // Lambda, closure result, CallExpr, etc. — emit the value and pass as callable handler
+                isLambda = true;
             }
 
             if (handlerMethod is not null)
@@ -72,12 +80,31 @@ public class AssignmentEmitters : StatementEmitterBase
                 }
                 else
                 {
-                    // Module-level function: emit the module Type token instead of null
-                    // This allows NajaBuiltins to look up the static method on the module type
-                    IL.Emit(OpCodes.Ldtoken, _ctx.TypeBuilder);
-                    IL.Emit(OpCodes.Call, typeof(Type).GetMethod("GetTypeFromHandle")!);
+                    // Module-level function: emit the NajaFunction wrapper object directly
+                    // (stored in a static field with the function's name)
+                    var valType = _exprEmitter.Emit(s.Value);
+                    TypeMapper.EmitBox(IL, valType);
                 }
                 IL.Emit(OpCodes.Ldstr, handlerMethod);
+
+                var evMethod = s.Op == BinaryOp.Add
+                    ? NajaBuiltinsMethodCache.AddEventHandler_Method
+                    : NajaBuiltinsMethodCache.RemoveEventHandler_Method;
+                IL.Emit(OpCodes.Call, evMethod);
+                return;
+            }
+            else if (isLambda)
+            {
+                // Emit lambda as NajaFunction, then use it as handler
+                var objType = _exprEmitter.Emit(evAttr.Object);
+                TypeMapper.EmitBox(IL, objType);
+                IL.Emit(OpCodes.Ldstr, evAttr.Attribute);
+                
+                // Emit the lambda expression (produces a NajaFunction on the stack)
+                var lambdaType = _exprEmitter.Emit(s.Value);
+                TypeMapper.EmitBox(IL, lambdaType);
+                
+                IL.Emit(OpCodes.Ldstr, "");  // handlerMethodName (empty for lambda)
 
                 var evMethod = s.Op == BinaryOp.Add
                     ? NajaBuiltinsMethodCache.AddEventHandler_Method
