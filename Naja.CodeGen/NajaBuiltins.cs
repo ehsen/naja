@@ -739,6 +739,34 @@ public static class NajaBuiltins
         var handlerType = ev.EventHandlerType
             ?? throw new Exception($"AttributeError: event '{eventName}' on '{t.Name}' has no handler type");
 
+        // Handle NajaFunction (module-level function wrapper)
+        if (handlerTarget is NajaFunction najaFunc)
+        {
+            var invokeMethod = handlerType.GetMethod("Invoke")!;
+            var invokeParams2 = invokeMethod.GetParameters();
+            var paramExprs2 = invokeParams2
+                .Select(p => System.Linq.Expressions.Expression.Parameter(p.ParameterType, p.Name))
+                .ToArray();
+
+            var argsArray2 = System.Linq.Expressions.Expression.NewArrayInit(
+                typeof(object),
+                paramExprs2.Select(p => System.Linq.Expressions.Expression.Convert(p, typeof(object))));
+
+            var callMethod = typeof(NajaFunction).GetMethod("__call__")!;
+            var call2 = System.Linq.Expressions.Expression.Call(
+                System.Linq.Expressions.Expression.Constant(najaFunc),
+                callMethod,
+                argsArray2);
+
+            var body2 = invokeMethod.ReturnType == typeof(void)
+                ? System.Linq.Expressions.Expression.Block(call2, System.Linq.Expressions.Expression.Empty())
+                : (System.Linq.Expressions.Expression)call2;
+
+            var delegateFromFunc = System.Linq.Expressions.Expression.Lambda(handlerType, body2, paramExprs2).Compile();
+            ev.AddEventHandler(target, delegateFromFunc);
+            return;
+        }
+
         // Handle module-level static methods (handlerTarget is Type)
         object? resolvedTarget = handlerTarget;
         System.Reflection.MethodInfo? methodToCallOverride = null;
@@ -857,6 +885,34 @@ public static class NajaBuiltins
 
         var handlerType = ev.EventHandlerType
             ?? throw new Exception($"AttributeError: event '{eventName}' on '{t.Name}' has no handler type");
+
+        // Handle NajaFunction (module-level function wrapper)
+        if (handlerTarget is NajaFunction najaFuncRemove)
+        {
+            var invokeMethod3 = handlerType.GetMethod("Invoke")!;
+            var invokeParams3 = invokeMethod3.GetParameters();
+            var paramExprs3 = invokeParams3
+                .Select(p => System.Linq.Expressions.Expression.Parameter(p.ParameterType, p.Name))
+                .ToArray();
+
+            var argsArray3 = System.Linq.Expressions.Expression.NewArrayInit(
+                typeof(object),
+                paramExprs3.Select(p => System.Linq.Expressions.Expression.Convert(p, typeof(object))));
+
+            var callMethod3 = typeof(NajaFunction).GetMethod("__call__")!;
+            var call3 = System.Linq.Expressions.Expression.Call(
+                System.Linq.Expressions.Expression.Constant(najaFuncRemove),
+                callMethod3,
+                argsArray3);
+
+            var body3 = invokeMethod3.ReturnType == typeof(void)
+                ? System.Linq.Expressions.Expression.Block(call3, System.Linq.Expressions.Expression.Empty())
+                : (System.Linq.Expressions.Expression)call3;
+
+            var delegateFromFunc2 = System.Linq.Expressions.Expression.Lambda(handlerType, body3, paramExprs3).Compile();
+            ev.RemoveEventHandler(target, delegateFromFunc2);
+            return;
+        }
 
         // Handle module-level static methods (handlerTarget is Type)
         object? resolvedTarget = handlerTarget;
@@ -2533,6 +2589,20 @@ public static class NajaBuiltins
         if (args.Length == 0) throw new System.ArgumentException("classmethod() requires 1 argument");
         return new NajaClassMethod(args[0]!);
     }
+
+    /// <summary>
+    /// Writes a full exception trace to naja.error.log next to the running executable.
+    /// Called from emitted IL catch blocks in GUI profiles (no console available).
+    /// </summary>
+    public static void WriteErrorLog(string message)
+    {
+        try
+        {
+            var path = System.IO.Path.Combine(AppContext.BaseDirectory, "naja.error.log");
+            System.IO.File.WriteAllText(path, message);
+        }
+        catch { /* best-effort — never let logging crash the app */ }
+    }
 }
 
 /// <summary>Runtime representation of Python staticmethod() descriptor wrapper.</summary>
@@ -2616,7 +2686,7 @@ public sealed class NajaGeneratorIterator
 
 /// <summary>
 /// Thread-based coroutine generator implementing full Python generator semantics:
-/// lazy evaluation, send(), return value via StopIteration.value.
+/// lazy evaluation, send(), return value via StopIteration.
 ///
 /// The generator body runs on a background thread. MoveNext() / Send() rendezvous
 /// with the body via a pair of SemaphoreSlim(0,1) signals, giving true coroutine
