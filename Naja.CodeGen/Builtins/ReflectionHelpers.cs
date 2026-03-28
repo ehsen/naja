@@ -377,6 +377,44 @@ public static class ReflectionHelpers
             return arr[idx];
         }
 
+        // Support .NET IList collections (WinForms ControlCollection, ObjectCollection, etc.)
+        // Only use integer indexing — string keys must fall through to the Item property indexer below
+        // (e.g. DataGridViewCellCollection["Name"] uses the string-keyed overload, not IList[int]).
+        if (obj is System.Collections.IList ilist && (key is long || key is int || key is short || key is byte))
+        {
+            int idx = SafeToInt32(key);
+            if (idx < 0) idx += ilist.Count;
+            if (idx < 0 || idx >= ilist.Count) throw new Exception($"IndexError: list index out of range");
+            return ilist[idx];
+        }
+
+        // Check for DefaultMember / Item property indexer — try all overloads in turn
+        // so that types with both int and string indexers (e.g. DataGridViewCellCollection) work.
+        var t2 = obj.GetType();
+        var defaultMemberAttr = t2.GetCustomAttributes(typeof(System.Reflection.DefaultMemberAttribute), true)
+                                  .OfType<System.Reflection.DefaultMemberAttribute>()
+                                  .FirstOrDefault();
+        string indexerName = defaultMemberAttr?.MemberName ?? "Item";
+        var indexerCandidates = t2.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                                  .Where(p => p.Name == indexerName && p.GetIndexParameters().Length == 1);
+        foreach (var prop in indexerCandidates)
+        {
+            try
+            {
+                var convertedKey = TypeSystem.CoerceValue(key, prop.GetIndexParameters()[0].ParameterType);
+                return prop.GetValue(obj, new object?[] { convertedKey });
+            }
+            catch (Exception ex) when (ex is not TargetInvocationException)
+            {
+                continue; // wrong overload — try next
+            }
+            catch (TargetInvocationException tie) when (tie.InnerException is not null)
+            {
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(tie.InnerException).Throw();
+                throw;
+            }
+        }
+
         var getitemMethod = obj.GetType().GetMethod("__getitem__",
             BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
         if (getitemMethod is not null)
@@ -410,6 +448,43 @@ public static class ReflectionHelpers
         {
             d[key] = value;
             return;
+        }
+
+        // Support .NET IList collections — only for integer keys
+        if (obj is System.Collections.IList ilist && !ilist.IsReadOnly && (key is long || key is int || key is short || key is byte))
+        {
+            int idx = SafeToInt32(key);
+            if (idx < 0) idx += ilist.Count;
+            if (idx < 0 || idx >= ilist.Count) throw new Exception($"IndexError: list assignment index out of range");
+            ilist[idx] = value;
+            return;
+        }
+
+        // Check for settable Item property indexer — try all overloads
+        var t3 = obj.GetType();
+        var defaultMemberAttr2 = t3.GetCustomAttributes(typeof(System.Reflection.DefaultMemberAttribute), true)
+                                   .OfType<System.Reflection.DefaultMemberAttribute>()
+                                   .FirstOrDefault();
+        string indexerName2 = defaultMemberAttr2?.MemberName ?? "Item";
+        var setIndexerCandidates = t3.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                                     .Where(p => p.Name == indexerName2 && p.CanWrite && p.GetIndexParameters().Length == 1);
+        foreach (var prop in setIndexerCandidates)
+        {
+            try
+            {
+                var convertedKey = TypeSystem.CoerceValue(key, prop.GetIndexParameters()[0].ParameterType);
+                prop.SetValue(obj, value, new object?[] { convertedKey });
+                return;
+            }
+            catch (Exception ex) when (ex is not TargetInvocationException)
+            {
+                continue;
+            }
+            catch (TargetInvocationException tie) when (tie.InnerException is not null)
+            {
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(tie.InnerException).Throw();
+                throw;
+            }
         }
 
         var setitemMethod = obj.GetType().GetMethod("__setitem__",
@@ -555,10 +630,13 @@ public static class ReflectionHelpers
     /// <summary>Subscribe a handler method to an event on a .NET object.</summary>
     public static void AddEventHandler(object target, string eventName, object? handlerTarget, string handlerMethodName)
     {
-        if (target is null) return;
+        if (target is null)
+            throw new Exception($"EventError: target is null");
+
         var t = target.GetType();
         var evt = t.GetEvent(eventName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-        if (evt is null) throw new Exception($"EventError: type '{t.Name}' has no event '{eventName}'");
+        if (evt is null)
+            throw new Exception($"EventError: type '{t.Name}' has no event '{eventName}'");
 
         var handlerType = evt.EventHandlerType!;
         var invoke = handlerType.GetMethod("Invoke")!;
@@ -567,6 +645,11 @@ public static class ReflectionHelpers
         if (handlerTarget is Delegate d)
         {
             del = d;
+        }
+        else if (handlerTarget is NajaFunction najaFunc)
+        {
+            // Module-level function wrapped in NajaFunction — create a delegate that calls __call__
+            del = CreateEventDelegateFromNajaFunction(handlerType, invoke, najaFunc);
         }
         else if (handlerTarget is null)
         {
@@ -600,6 +683,11 @@ public static class ReflectionHelpers
         {
             del = d;
         }
+        else if (handlerTarget is NajaFunction najaFunc)
+        {
+            var invoke = handlerType.GetMethod("Invoke")!;
+            del = CreateEventDelegateFromNajaFunction(handlerType, invoke, najaFunc);
+        }
         else if (handlerTarget is null)
         {
             throw new Exception($"EventError: handler is null");
@@ -620,6 +708,35 @@ public static class ReflectionHelpers
     }
 
     // ── Helper methods ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Create a delegate from a NajaFunction wrapper (module-level Python function).
+    /// </summary>
+    public static Delegate CreateEventDelegateFromNajaFunction(Type handlerType, MethodInfo invoke, NajaFunction najaFunc)
+    {
+        var invokeParams = invoke.GetParameters();
+        var paramExprs = invokeParams
+            .Select(p => System.Linq.Expressions.Expression.Parameter(p.ParameterType, p.Name))
+            .ToArray();
+
+        // Build array of event arguments to pass to najaFunc.__call__
+        var argsArray = System.Linq.Expressions.Expression.NewArrayInit(
+            typeof(object),
+            paramExprs.Select(p => System.Linq.Expressions.Expression.Convert(p, typeof(object))));
+
+        // Call najaFunc.__call__(args)
+        var callMethod = typeof(NajaFunction).GetMethod("__call__")!;
+        var call = System.Linq.Expressions.Expression.Call(
+            System.Linq.Expressions.Expression.Constant(najaFunc),
+            callMethod,
+            argsArray);
+
+        var body = invoke.ReturnType == typeof(void)
+            ? System.Linq.Expressions.Expression.Block(call, System.Linq.Expressions.Expression.Empty())
+            : (System.Linq.Expressions.Expression)call;
+
+        return System.Linq.Expressions.Expression.Lambda(handlerType, body, paramExprs).Compile();
+    }
 
     /// <summary>
     /// Create a delegate of <paramref name="handlerType"/> that calls <paramref name="handlerMethod"/>
