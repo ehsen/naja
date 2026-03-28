@@ -345,6 +345,15 @@ public sealed partial class AssemblyEmitter
 
         var mainIL = mainBuilder.GetILGenerator();
 
+        // For GUI profiles wrap the entire Main body in a try-catch that calls
+        // MessageBox.Show on unhandled exceptions.  Without this, any crash
+        // (e.g. a missing runtime DLL) dies completely silently: WindowsGui
+        // apps have no console, so the CLR's default exception text goes nowhere.
+        bool isGuiMain = profile is CompilationProfile.WinForms or CompilationProfile.Wpf;
+        System.Reflection.Emit.Label guiExBlockEnd = default;
+        if (isGuiMain)
+            guiExBlockEnd = mainIL.BeginExceptionBlock();
+
         // WinForms preamble IL — emitted once here; StatementEmitter skips these
         // calls when it walks the Python source (double-emit prevention).
         if (profile == CompilationProfile.WinForms)
@@ -408,6 +417,48 @@ public sealed partial class AssemblyEmitter
         {
             if (stmt is FunctionDef or ClassDef) continue;
             stmtEmitter.Emit(stmt);
+        }
+
+        if (isGuiMain)
+        {
+            // Exit the try block cleanly.
+            mainIL.Emit(OpCodes.Leave, guiExBlockEnd);
+
+            // catch (Exception ex) — ex is on the evaluation stack.
+            mainIL.BeginCatchBlock(typeof(Exception));
+
+            // Use Dup so we can call ex.ToString() twice (once for the log file and once
+            // for the MessageBox) without needing a local variable.  PersistedAssemblyBuilder
+            // has known quirks with Stloc/Ldloc in catch blocks; Dup avoids them entirely.
+            //
+            // Stack before Dup: [ex]
+            // After Dup:        [ex, ex]
+            mainIL.Emit(OpCodes.Dup);
+            mainIL.Emit(OpCodes.Callvirt, typeof(object).GetMethod("ToString")!);     // [ex, exString]
+
+            // ── Write full trace to <exe-dir>/naja.error.log ──────────────────────
+            // NajaBuiltins.WriteErrorLog lives in Naja.CodeGen.dll which is always copied
+            // alongside the generated exe; no new assembly references needed.
+            var writeErrorLog = typeof(NajaBuiltins).GetMethod("WriteErrorLog", [typeof(string)])!;
+            mainIL.Emit(OpCodes.Call, writeErrorLog);                                 // [ex]
+
+            // ── MessageBox with the same full text ────────────────────────────────
+            mainIL.Emit(OpCodes.Callvirt, typeof(object).GetMethod("ToString")!);     // [exString]
+            var msgBoxType = Type.GetType("System.Windows.Forms.MessageBox, System.Windows.Forms");
+            var showMethod = msgBoxType?.GetMethod("Show", [typeof(string), typeof(string)]);
+            if (showMethod != null)
+            {
+                mainIL.Emit(OpCodes.Ldstr, "Naja Application Error");
+                mainIL.Emit(OpCodes.Call, showMethod);
+                mainIL.Emit(OpCodes.Pop); // discard DialogResult
+            }
+            else
+            {
+                mainIL.Emit(OpCodes.Pop); // discard exString — no MessageBox available
+            }
+
+            mainIL.Emit(OpCodes.Leave, guiExBlockEnd);
+            mainIL.EndExceptionBlock();
         }
 
         mainIL.Emit(OpCodes.Ret);
