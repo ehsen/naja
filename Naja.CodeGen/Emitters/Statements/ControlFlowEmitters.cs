@@ -203,6 +203,8 @@ public class ControlFlowEmitters : StatementEmitterBase
                         TypeMapper.EmitBox(IL, valueType);
                     else if (staticField.FieldType.IsValueType && valueType is UnknownType)
                         IL.Emit(OpCodes.Unbox_Any, staticField.FieldType);
+                    else if (staticField.FieldType == typeof(string) && valueType is UnknownType)
+                        IL.Emit(OpCodes.Castclass, typeof(string));
                     IL.Emit(OpCodes.Stsfld, staticField);
                 }
                 else

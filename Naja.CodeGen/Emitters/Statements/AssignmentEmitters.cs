@@ -62,9 +62,10 @@ public class AssignmentEmitters : StatementEmitterBase
                 // handlerTarget = null means module-level function — emit the function value itself
                 // so AddEventHandler can detect NajaFunction and use it directly
             }
-            else
+            else if (s.Value is LambdaExpr or CallExpr)
             {
-                // Lambda, closure result, CallExpr, etc. — emit the value and pass as callable handler
+                // Only genuine callable expressions (lambda or call result) count as event handlers.
+                // Numeric/string literals and other non-callable values fall through to regular +=.
                 isLambda = true;
             }
 
@@ -394,6 +395,10 @@ public class AssignmentEmitters : StatementEmitterBase
                     else if (staticField.FieldType.IsValueType && valueType is UnknownType)
                     {
                         IL.Emit(OpCodes.Unbox_Any, staticField.FieldType);
+                    }
+                    else if (staticField.FieldType == typeof(string) && valueType is UnknownType)
+                    {
+                        IL.Emit(OpCodes.Castclass, typeof(string));
                     }
                     IL.Emit(OpCodes.Stsfld, staticField);
 

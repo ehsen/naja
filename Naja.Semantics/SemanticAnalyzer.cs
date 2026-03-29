@@ -675,7 +675,10 @@ public sealed class SemanticAnalyzer
                 (ListType l, ListType) => l,
                 _                     => NajaTypes.Unknown
             },
-        BinaryOp.Sub or BinaryOp.Mul or BinaryOp.Mod =>
+        BinaryOp.Sub or BinaryOp.Mod =>
+            (left is FloatType || right is FloatType) ? NajaTypes.Float : NajaTypes.Int,
+        BinaryOp.Mul =>
+            (left is StrType || right is StrType) ? NajaTypes.Str :
             (left is FloatType || right is FloatType) ? NajaTypes.Float : NajaTypes.Int,
         BinaryOp.Div    => NajaTypes.Float,   // always float in Python 3
         BinaryOp.FloorDiv => NajaTypes.Int,
