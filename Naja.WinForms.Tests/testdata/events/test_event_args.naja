@@ -3,7 +3,7 @@
 # Risk: Naja fails to read properties off .NET event payloads
 # passed back into Python callbacks (unmanaged → managed boundary).
 
-from System.Windows.Forms import TreeView, TreeNode, CheckBox, TextBox, NumericUpDown
+from System.Windows.Forms import TreeView, TreeNode, CheckBox, TextBox, NumericUpDown, Form
 
 # --- TreeView.AfterSelect: TreeViewEventArgs.Node.Text ---
 tree = TreeView()
@@ -11,6 +11,15 @@ node_root = TreeNode("Root")
 node_child = TreeNode("Child")
 node_root.Nodes.Add(node_child)
 tree.Nodes.Add(node_root)
+
+# TreeView.SelectedNode only fires AfterSelect/BeforeSelect when the native control
+# has a handle with a parent window that can reflect WM_NOTIFY back to the tree.
+# Create the form's handle first, then force the tree's handle (parented to form).
+_tree_host = Form()
+_tree_host.Controls.Add(tree)
+tree.Visible = True
+_ = _tree_host.Handle  # Creates form's HWND first
+_ = tree.Handle        # Creates tree's HWND with form as parent for WM_NOTIFY reflection
 
 received_node_text = [None]
 
