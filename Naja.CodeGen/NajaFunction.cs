@@ -24,6 +24,14 @@ public sealed class NajaFunction
         _defaults = defaults ?? System.Array.Empty<object?>();
     }
 
+    /// <summary>The underlying delegate — exposed so the event subsystem can key the
+    /// delegate cache on the compiled method rather than on the NajaFunction instance.</summary>
+    internal Delegate UnderlyingDelegate => _target;
+
+    /// <summary>True when this function has no captured values or parameter defaults,
+    /// meaning the underlying MethodInfo alone identifies the logical handler.</summary>
+    internal bool HasNoCaptures => _defaults.Length == 0;
+
     // Python-style call entry: receives positional args as object[]
     public object? __call__(object[] args)
     {
@@ -46,6 +54,16 @@ public sealed class NajaFunction
         }
         
         // Invoke delegate with merged argument list
-        return _target.DynamicInvoke(finalArgs);
+        try
+        {
+            return _target.DynamicInvoke(finalArgs);
+        }
+        catch (System.Reflection.TargetInvocationException tie) when (tie.InnerException is not null)
+        {
+            // DynamicInvoke wraps exceptions — unwrap so the original exception type
+            // (e.g. ValueError from a Naja event handler) propagates correctly.
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(tie.InnerException).Throw();
+            throw; // unreachable
+        }
     }
 }
