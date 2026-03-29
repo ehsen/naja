@@ -258,6 +258,10 @@ public sealed partial class AssemblyEmitter
             var moduleAssigned = StatementAnalyzer.CollectAssignedNames(module.Body);
             foreach (var r in moduleNestedRefs.Intersect(moduleAssigned))
             {
+                // Don't hoist names that are resolved via the import map — they are .NET types,
+                // not module-level variables. Creating a null static field would shadow the ImportMap
+                // lookup in NameEmitters and cause ldsfld to push null instead of the Type object.
+                if (importMap.ContainsKey(r) || namespaceImports.ContainsKey(r)) continue;
                 if (!fields.ContainsKey(r))
                     fields[r] = typeBuilder.DefineField(r, typeof(object),
                         FieldAttributes.Public | FieldAttributes.Static);
