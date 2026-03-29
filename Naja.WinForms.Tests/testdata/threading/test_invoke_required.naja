@@ -64,24 +64,24 @@ labels = [Label() for _ in range(3)]
 for i, l in enumerate(labels):
     l.Text = f"Label{i}"
 
-completed = [0]
+completed = [0, 0, 0]
 results = [None, None, None]
 
 # Update each label from a separate thread using captured index
 def thread_func_0():
     labels[0].Text = "Updated0"
     results[0] = "Updated0"
-    completed[0] += 1
+    completed[0] = 1
 
 def thread_func_1():
     labels[1].Text = "Updated1"
     results[1] = "Updated1"
-    completed[0] += 1
+    completed[1] = 1
 
 def thread_func_2():
     labels[2].Text = "Updated2"
     results[2] = "Updated2"
-    completed[0] += 1
+    completed[2] = 1
 
 threads = [Thread(thread_func_0), Thread(thread_func_1), Thread(thread_func_2)]
 for t in threads:
@@ -89,7 +89,7 @@ for t in threads:
 for t in threads:
     t.Join()
 
-assert completed[0] == 3, "All 3 threads should complete"
+assert completed[0] + completed[1] + completed[2] == 3, "All 3 threads should complete"
 for i, l in enumerate(labels):
     assert l.Text == f"Updated{i}", f"Label{i} should be 'Updated{i}'"
 
