@@ -17,6 +17,13 @@ public static class TypeSystem
     {
         if (value is null) return null;
         if (targetType.IsAssignableFrom(value.GetType())) return value;
+
+        // CRITICAL: Convert NajaFunction to delegate if target expects a delegate
+        if (value is NajaFunction najaFunc && typeof(Delegate).IsAssignableFrom(targetType))
+        {
+            return WrapNajaFunctionAsDelegate(najaFunc, targetType);
+        }
+
         if (TryConvertArg(value, targetType, false, out var converted, out _)) return converted;
 
         // Allow explicit coercion to string for attribute assignment: Python semantics
@@ -175,7 +182,7 @@ public static class TypeSystem
             }
             else if (targetType == typeof(long))
             {
-                if (long.TryParse(str, out var longVal)) { result = longVal; return true; }
+                if (long.TryParse(str, out var strLong)) { result = strLong; return true; }
             }
             else if (targetType == typeof(double))
             {
@@ -185,6 +192,65 @@ public static class TypeSystem
             {
                 if (bool.TryParse(str, out var bVal)) { result = bVal; return true; }
             }
+            // String to DateTime
+            else if (targetType == typeof(System.DateTime))
+            {
+                try { result = System.DateTime.Parse(str); return true; }
+                catch { }
+            }
+            // String to DateOnly
+            else if (targetType.FullName == "System.DateOnly")
+            {
+                try
+                {
+                    var strDt = System.DateTime.Parse(str);
+                    var fromDtMethod = targetType.GetMethod("FromDateTime",
+                        System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public);
+                    if (fromDtMethod != null)
+                    {
+                        result = fromDtMethod.Invoke(null, new object?[] { strDt });
+                        return true;
+                    }
+                }
+                catch { }
+            }
+            // String to FontFamily
+            else if (targetType.FullName == "System.Drawing.FontFamily")
+            {
+                try
+                {
+                    var ctor = targetType.GetConstructor(new[] { typeof(string) });
+                    if (ctor != null)
+                    {
+                        result = ctor.Invoke(new object[] { str });
+                        return true;
+                    }
+                }
+                catch { }
+            }
+        }
+
+        // Long to DateTime
+        if (value is long longTicks && targetType == typeof(System.DateTime))
+        {
+            try { result = new System.DateTime(longTicks); return true; }
+            catch { }
+        }
+
+        // DateTime to DateOnly
+        if (value is System.DateTime dtValue && targetType.FullName == "System.DateOnly")
+        {
+            try
+            {
+                var fromDtMethod2 = targetType.GetMethod("FromDateTime",
+                    System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public);
+                if (fromDtMethod2 != null)
+                {
+                    result = fromDtMethod2.Invoke(null, new object?[] { dtValue });
+                    return true;
+                }
+            }
+            catch { }
         }
 
         error = $"Cannot convert {valueType.Name} to {targetType.Name}";
@@ -299,6 +365,77 @@ public static class TypeSystem
 
         throw new InvalidCastException(
             $"exec() argument must be a string, not '{code?.GetType().Name}'");
+    }
+
+    /// <summary>
+    /// Wraps a NajaFunction as a .NET delegate by extracting its underlying delegate
+    /// and creating a compatible wrapper. Handles ThreadStart, EventHandler, and other delegate types.
+    /// </summary>
+    private static object? WrapNajaFunctionAsDelegate(NajaFunction najaFunc, Type delegateType)
+    {
+        // Get the underlying delegate from the NajaFunction
+        // Use reflection to access the private _target field
+        var targetField = typeof(NajaFunction).GetField("_target", 
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+        if (targetField == null)
+            throw new InvalidOperationException("Cannot access NajaFunction._target");
+
+        var underlyingDelegate = targetField.GetValue(najaFunc) as Delegate;
+        if (underlyingDelegate == null)
+            throw new InvalidOperationException("NajaFunction._target is null");
+
+        // If the delegate is already the right type, return it directly
+        if (delegateType.IsAssignableFrom(underlyingDelegate.GetType()))
+            return underlyingDelegate;
+
+        // Create a wrapper delegate of the correct type
+        try
+        {
+            // Get the invoke method of the target delegate type
+            var delegateInvoke = delegateType.GetMethod("Invoke");
+            if (delegateInvoke == null)
+                throw new InvalidOperationException($"Cannot find Invoke on {delegateType.Name}");
+
+            var delegateParams = delegateInvoke.GetParameters();
+            var delegateReturnType = delegateInvoke.ReturnType;
+
+            // Create a wrapper that converts the delegate signature
+            if (delegateParams.Length == 0 && delegateReturnType == typeof(void))
+            {
+                // ThreadStart: void() - common pattern
+                Action wrapper = () => underlyingDelegate.DynamicInvoke();
+                return Delegate.CreateDelegate(delegateType, wrapper.Target, wrapper.Method);
+            }
+            else if (delegateParams.Length == 1 && delegateReturnType == typeof(void))
+            {
+                // EventHandler-like: void(object) - common pattern
+                var paramType = delegateParams[0].ParameterType;
+                if (paramType == typeof(object) || paramType.Name == "EventArgs")
+                {
+                    Action<object> wrapper = (obj) => underlyingDelegate.DynamicInvoke(obj);
+                    return Delegate.CreateDelegate(delegateType, wrapper.Target, wrapper.Method);
+                }
+            }
+
+            // Fall back to dynamic invocation with parameter matching
+            var wrapper2 = new Func<object?[], object?>(args => 
+            {
+                try { return underlyingDelegate.DynamicInvoke(args); }
+                catch (TargetInvocationException tie) when (tie.InnerException != null)
+                {
+                    System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(tie.InnerException).Throw();
+                    return null;
+                }
+            });
+
+            return Delegate.CreateDelegate(delegateType, wrapper2.Target, wrapper2.Method);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidCastException(
+                $"Cannot convert NajaFunction to {delegateType.Name}: {ex.Message}", ex);
+        }
     }
 }
 

@@ -14,6 +14,16 @@ public static class ReflectionHelpers
     // Dynamic attribute table for Type objects (e.g. decorated classes: C.extra = 'Hello').
     // ConditionalWeakTable does not prevent GC of the key Type, keeping memory clean.
     private static readonly ConditionalWeakTable<Type, Dictionary<string, object?>> _typeAttrs = new();
+
+    // Delegate cache: ensures the same NajaFunction always produces the same delegate instance
+    // for a given event handler type, so that -= can find and remove the correct delegate.
+    private static readonly ConditionalWeakTable<NajaFunction, Dictionary<Type, Delegate>> _eventDelegateCache = new();
+
+    // Secondary cache keyed on (underlying MethodInfo, handlerType): handles the case where
+    // NameEmitters creates a fresh NajaFunction wrapper on each reference to a module-level
+    // function name, so the same logical handler always yields the same compiled delegate.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(MethodInfo, Type), Delegate>
+        _eventDelegateByMethodCache = new();
     /// <summary>Get a static attribute (property, field, or enum value) from a .NET type.</summary>
     public static object? GetStaticAttr(Type type, string name)
     {
@@ -711,9 +721,37 @@ public static class ReflectionHelpers
 
     /// <summary>
     /// Create a delegate from a NajaFunction wrapper (module-level Python function).
+    /// The result is cached so that the same logical handler always returns the same
+    /// delegate instance, enabling correct unsubscription via -=.
+    ///
+    /// Two-level cache:
+    ///  1. Instance cache (ConditionalWeakTable): covers lambdas / closures where the
+    ///     NajaFunction IS the stable identity.
+    ///  2. Method cache (ConcurrentDictionary): covers module-level functions where
+    ///     NameEmitters creates a fresh NajaFunction wrapper on every reference but
+    ///     the underlying compiled MethodInfo is always the same.
     /// </summary>
     public static Delegate CreateEventDelegateFromNajaFunction(Type handlerType, MethodInfo invoke, NajaFunction najaFunc)
     {
+        // 1. Instance cache — fast path for lambdas and repeated references to same instance.
+        var instanceCache = _eventDelegateCache.GetOrCreateValue(najaFunc);
+        if (instanceCache.TryGetValue(handlerType, out var cached))
+            return cached;
+
+        // 2. Method cache — handles module-level functions that produce a new NajaFunction
+        //    wrapper on each name-reference but always compile to the same MethodInfo.
+        //    Only safe when there are no captured defaults; closures with different captured
+        //    values compile to the same method but must not share a delegate.
+        if (najaFunc.HasNoCaptures)
+        {
+            var methodKey = (najaFunc.UnderlyingDelegate.Method, handlerType);
+            if (_eventDelegateByMethodCache.TryGetValue(methodKey, out var methodCached))
+            {
+                instanceCache[handlerType] = methodCached;
+                return methodCached;
+            }
+        }
+
         var invokeParams = invoke.GetParameters();
         var paramExprs = invokeParams
             .Select(p => System.Linq.Expressions.Expression.Parameter(p.ParameterType, p.Name))
@@ -735,7 +773,13 @@ public static class ReflectionHelpers
             ? System.Linq.Expressions.Expression.Block(call, System.Linq.Expressions.Expression.Empty())
             : (System.Linq.Expressions.Expression)call;
 
-        return System.Linq.Expressions.Expression.Lambda(handlerType, body, paramExprs).Compile();
+        var del = System.Linq.Expressions.Expression.Lambda(handlerType, body, paramExprs).Compile();
+
+        // Populate both caches.
+        instanceCache[handlerType] = del;
+        if (najaFunc.HasNoCaptures)
+            _eventDelegateByMethodCache.TryAdd((najaFunc.UnderlyingDelegate.Method, handlerType), del);
+        return del;
     }
 
     /// <summary>
@@ -1057,18 +1101,37 @@ public static class ReflectionHelpers
                 }
             }
 
-            // Use first and try coercion
-            if (exact.Count > 0)
+            // Try each exact-count candidate with coercion + post-coercion assignability check
+            foreach (var mb in exact)
             {
-                var mb = exact[0];
                 var ps = mb.GetParameters();
                 var bound = new object?[ps.Length];
+                bool ok = true;
                 for (int i = 0; i < ps.Length; i++)
-                    bound[i] = TypeSystem.CoerceValue(args[i], ps[i].ParameterType);
-
-                method = mb;
-                boundArgs = bound;
-                return true;
+                {
+                    try
+                    {
+                        bound[i] = TypeSystem.CoerceValue(args[i], ps[i].ParameterType);
+                        // Verify the coerced value is actually assignable (CoerceValue may return the
+                        // original value unchanged for incompatible types instead of throwing)
+                        if (bound[i] != null && !ps[i].ParameterType.IsAssignableFrom(bound[i]!.GetType()))
+                        {
+                            ok = false;
+                            break;
+                        }
+                    }
+                    catch
+                    {
+                        ok = false;
+                        break;
+                    }
+                }
+                if (ok)
+                {
+                    method = mb;
+                    boundArgs = bound!;
+                    return true;
+                }
             }
         }
 
@@ -1086,6 +1149,11 @@ public static class ReflectionHelpers
                 try
                 {
                     bound[i] = TypeSystem.CoerceValue(args[i], ps[i].ParameterType);
+                    if (bound[i] != null && !ps[i].ParameterType.IsAssignableFrom(bound[i]!.GetType()))
+                    {
+                        ok = false;
+                        break;
+                    }
                 }
                 catch
                 {
