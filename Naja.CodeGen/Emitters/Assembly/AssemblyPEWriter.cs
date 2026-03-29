@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Reflection.Metadata;
@@ -31,24 +32,29 @@ internal static class AssemblyPEWriter
         var peBlob = new BlobBuilder();
         peBuilder.Serialize(peBlob);
 
-        using (var fs = new FileStream(outputPath, FileMode.Create, FileAccess.Write))
+        // For executables, write the managed assembly as .dll and place a native
+        // apphost at the .exe path.  The apphost is a small native PE that the OS
+        // can directly execute: it bootstraps the .NET runtime and loads the .dll.
+        // Without this, `myapp.exe` is a managed-only PE that only the `dotnet`
+        // CLI can load — double-clicking or running it from a shell fails silently.
+        var managedPath = needsExe ? Path.ChangeExtension(outputPath, ".dll") : outputPath;
+
+        using (var fs = new FileStream(managedPath, FileMode.Create, FileAccess.Write))
             peBlob.WriteContentTo(fs);
 
-        // Write sidecar files (runtimeconfig.json, deps.json)
-        WriteRuntimeConfig(outputPath, profile);
-        WriteDepsJson(outputPath);
+        // Sidecar files always sit next to the managed .dll.
+        WriteRuntimeConfig(managedPath, profile);
+        WriteDepsJson(managedPath);
 
-        // Copy Naja runtime DLLs next to the generated exe.
-        //
-        // Root cause of the "WinForms fails silently" bug:
-        //   The generated IL calls NajaBuiltins.* / DynamicOperators.* which live in
-        //   Naja.CodeGen.dll.  That DLL (and its Naja.* transitive deps) are never
-        //   placed in the output directory by `naja compile`, so the CLR throws
-        //   FileNotFoundException on the very first call into the runtime helpers.
-        //   Because the PE subsystem is WindowsGui there is no console to display
-        //   the error on — the process exits silently.
         if (needsExe)
-            CopyRuntimeDependencies(outputPath);
+        {
+            // Copy Naja runtime DLLs so the generated exe can resolve them.
+            CopyRuntimeDependencies(managedPath);
+
+            // Create the native apphost wrapper at the .exe path.
+            bool isGui = profile is CompilationProfile.WinForms or CompilationProfile.Wpf;
+            CreateAppHostExe(outputPath, managedPath, isGui);
+        }
     }
 
     // Duplicate minimal implementations from AssemblyEmitter (kept local to avoid access changes)
@@ -171,17 +177,11 @@ internal static class AssemblyPEWriter
 
     /// <summary>
     /// Copies every Naja runtime DLL from the compiler's own directory into the
-    /// directory that contains <paramref name="outputExePath"/>.
-    ///
-    /// This is the fix for the WinForms (and any exe) silent-failure bug:
-    ///   naja compile emits an exe whose IL calls NajaBuiltins / DynamicOperators
-    ///   from Naja.CodeGen.dll, but nothing copies that DLL to the output folder.
-    ///   The CLR throws FileNotFoundException at Main() entry — silently on
-    ///   WindowsGui subsystem because there is no console to write to.
+    /// directory that contains <paramref name="managedDllPath"/>.
     /// </summary>
-    private static void CopyRuntimeDependencies(string outputExePath)
+    private static void CopyRuntimeDependencies(string managedDllPath)
     {
-        var outputDir = Path.GetDirectoryName(Path.GetFullPath(outputExePath)) ?? ".";
+        var outputDir = Path.GetDirectoryName(Path.GetFullPath(managedDllPath)) ?? ".";
         var compilerDir = AppContext.BaseDirectory;
 
         foreach (var dll in _najaRuntimeDlls)
@@ -190,8 +190,135 @@ internal static class AssemblyPEWriter
             if (!File.Exists(src)) continue;
 
             var dst = Path.Combine(outputDir, dll);
-            // Overwrite — the compiler is authoritative for its own runtime version.
             File.Copy(src, dst, overwrite: true);
         }
+    }
+
+    // ── Native apphost creation ───────────────────────────────────────────────
+
+    // The .NET SDK embeds a 1024-byte placeholder in apphost.exe.
+    // The first bytes spell out this ASCII string; the rest are zeroes.
+    // Patching replaces the entire 1024-byte region with the actual
+    // managed DLL name (UTF-8, null-terminated, zero-padded).
+    private static readonly byte[] _appHostPlaceholder =
+        System.Text.Encoding.ASCII.GetBytes("c3ab8ff13720e8ad9047dd39466b3c8974e592c2fa383d4a3960714caef0c4f2");
+    private const int AppHostPlaceholderRegionLength = 1024;
+
+    /// <summary>
+    /// Creates a native apphost executable at <paramref name="exePath"/> that
+    /// bootstraps the .NET runtime and loads the managed <paramref name="dllPath"/>.
+    /// This is required so the compiled exe can be launched directly by the OS
+    /// without invoking the <c>dotnet</c> CLI.
+    /// </summary>
+    private static void CreateAppHostExe(string exePath, string dllPath, bool isGui)
+    {
+        var templatePath = FindAppHostTemplate();
+        if (templatePath == null)
+        {
+            // No SDK apphost template found — fall back to the managed dll so
+            // `dotnet myapp.exe` continues to work, and warn the user.
+            File.Copy(dllPath, exePath, overwrite: true);
+            Console.Error.WriteLine(
+                "warning: .NET SDK apphost template not found; '" + Path.GetFileName(exePath) +
+                "' requires `dotnet` to run. Install the .NET SDK or set DOTNET_ROOT.");
+            return;
+        }
+
+        var template = File.ReadAllBytes(templatePath);
+
+        PatchAppHostBinaryName(template, Path.GetFileName(dllPath));
+
+        if (isGui)
+            PatchWindowsGuiSubsystem(template);
+
+        File.WriteAllBytes(exePath, template);
+    }
+
+    /// <summary>
+    /// Replaces the 1024-byte placeholder region in the apphost template with
+    /// the actual managed DLL filename (UTF-8, null-terminated, zero-padded).
+    /// </summary>
+    private static void PatchAppHostBinaryName(byte[] template, string dllFileName)
+    {
+        var idx = IndexOfBytes(template, _appHostPlaceholder);
+        if (idx < 0)
+            throw new InvalidOperationException(
+                "Apphost template: app binary placeholder not found. " +
+                "The .NET SDK may have changed the template format.");
+
+        var nameBytes = System.Text.Encoding.UTF8.GetBytes(dllFileName);
+        if (nameBytes.Length >= AppHostPlaceholderRegionLength)
+            throw new ArgumentException(
+                $"Managed assembly name '{dllFileName}' exceeds the {AppHostPlaceholderRegionLength}-byte apphost limit.");
+
+        // Clear the region, then write the filename (null terminator provided by Array.Clear).
+        Array.Clear(template, idx, AppHostPlaceholderRegionLength);
+        nameBytes.CopyTo(template, idx);
+    }
+
+    /// <summary>
+    /// Patches the PE subsystem field in the apphost template from
+    /// <c>IMAGE_SUBSYSTEM_WINDOWS_CUI (3)</c> to
+    /// <c>IMAGE_SUBSYSTEM_WINDOWS_GUI (2)</c> so WinForms apps run
+    /// without a console window.
+    /// </summary>
+    private static void PatchWindowsGuiSubsystem(byte[] template)
+    {
+        if (template.Length < 0x40) return;
+        var peOffset = BitConverter.ToInt32(template, 0x3C);
+        var subsystemOffset = peOffset + 0x5C;
+        if (subsystemOffset + 2 > template.Length) return;
+        // 0x0002 = IMAGE_SUBSYSTEM_WINDOWS_GUI (little-endian)
+        template[subsystemOffset]     = 0x02;
+        template[subsystemOffset + 1] = 0x00;
+    }
+
+    /// <summary>
+    /// Locates the <c>apphost.exe</c> template shipped with the .NET SDK.
+    /// Searches <c>DOTNET_ROOT</c>, then the <c>PATH</c> for <c>dotnet.exe</c>.
+    /// Returns <c>null</c> when no template can be found.
+    /// </summary>
+    private static string? FindAppHostTemplate()
+    {
+        var dotnetRoot = Environment.GetEnvironmentVariable("DOTNET_ROOT");
+
+        if (dotnetRoot == null)
+        {
+            var pathEnv = Environment.GetEnvironmentVariable("PATH") ?? "";
+            foreach (var dir in pathEnv.Split(Path.PathSeparator))
+            {
+                if (File.Exists(Path.Combine(dir, "dotnet.exe")))
+                {
+                    dotnetRoot = dir;
+                    break;
+                }
+            }
+        }
+
+        if (dotnetRoot == null) return null;
+
+        // Pick the highest SDK version that ships an AppHostTemplate.
+        var sdkDir = Path.Combine(dotnetRoot, "sdk");
+        if (!Directory.Exists(sdkDir)) return null;
+
+        return Directory.GetDirectories(sdkDir)
+            .OrderByDescending(d => d, StringComparer.OrdinalIgnoreCase)
+            .Select(d => Path.Combine(d, "AppHostTemplate", "apphost.exe"))
+            .FirstOrDefault(File.Exists);
+    }
+
+    /// <summary>Simple byte-sequence search (naive scan — apphost templates are small).</summary>
+    private static int IndexOfBytes(byte[] haystack, byte[] needle)
+    {
+        for (int i = 0; i <= haystack.Length - needle.Length; i++)
+        {
+            bool match = true;
+            for (int j = 0; j < needle.Length; j++)
+            {
+                if (haystack[i + j] != needle[j]) { match = false; break; }
+            }
+            if (match) return i;
+        }
+        return -1;
     }
 }
