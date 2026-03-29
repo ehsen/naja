@@ -183,21 +183,66 @@ public static class TypeCoercion
         // Handle common .NET type coercions
         if (targetType == typeof(int))
             return (int)ToLong(value);
-        
+
         if (targetType == typeof(long))
             return ToLong(value);
-        
+
         if (targetType == typeof(double))
             return ToDouble(value);
-        
+
         if (targetType == typeof(float))
             return (float)ToDouble(value);
-        
+
         if (targetType == typeof(bool))
             return ToBool(value);
-        
+
         if (targetType == typeof(string))
             return ToStr(value);
+
+        // Handle System.DateTime - for DateTimePicker.MinDate/MaxDate properties
+        if (targetType == typeof(System.DateTime))
+        {
+            if (value is System.DateTime dt)
+                return dt;
+            if (value is long ticks)
+                return new System.DateTime(ticks);
+            if (value is string dateStr)
+                return System.DateTime.Parse(dateStr);
+            throw new System.InvalidCastException(
+                $"Cannot convert {value.GetType().Name} to DateTime");
+        }
+
+        // Handle System.DateOnly (for newer .NET versions that have it)
+        if (targetType.FullName == "System.DateOnly")
+        {
+            if (value is System.DateTime dt)
+                return System.DateOnly.FromDateTime(dt);
+            if (value is string dateStr)
+            {
+                var dt2 = System.DateTime.Parse(dateStr);
+                return System.DateOnly.FromDateTime(dt2);
+            }
+            throw new System.InvalidCastException(
+                $"Cannot convert {value.GetType().Name} to DateOnly");
+        }
+
+        // Handle System.Drawing.FontFamily - for Font construction
+        if (targetType.FullName == "System.Drawing.FontFamily")
+        {
+            if (value is string fontName)
+            {
+                var asm = System.Reflection.Assembly.Load("System.Drawing");
+                var fontFamilyType = asm.GetType("System.Drawing.FontFamily");
+                if (fontFamilyType != null)
+                {
+                    var ctor = fontFamilyType.GetConstructor(new[] { typeof(string) });
+                    if (ctor != null)
+                        return ctor.Invoke(new[] { fontName })!;
+                }
+            }
+            throw new System.InvalidCastException(
+                $"Cannot convert {value.GetType().Name} to FontFamily");
+        }
 
         // For other types, try the target type's constructor or cast
         try
