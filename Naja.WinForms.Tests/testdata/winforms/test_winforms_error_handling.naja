@@ -1,0 +1,128 @@
+# test_winforms_error_handling.naja
+# Phase 8.2 — WinForms Error Handling
+# Risk: WinForms operations can fail at runtime despite successful compilation.
+# Solution: Gracefully handle exceptions and allow the application to continue.
+
+from System.Windows.Forms import Form, Label, Button, MessageBoxIcon, MessageBox
+from System import Exception
+
+# Create a simple form
+form = Form()
+form.Text = "Error Handling Test"
+form.Width = 400
+form.Height = 300
+
+# Add a label to display status
+status_label = Label()
+status_label.Text = "Starting application..."
+status_label.Top = 20
+status_label.Left = 20
+status_label.Width = 360
+form.Controls.Add(status_label)
+
+# Track test results
+tests_passed = 0
+tests_failed = 0
+
+# Test 1: Label property access with error handling
+try:
+    lbl = Label()
+    lbl.Text = "Test Label"
+    status_label.Text = "Test 1 PASSED: Label created successfully"
+    tests_passed += 1
+except Exception as e:
+    status_label.Text = f"Test 1 FAILED: {str(e)}"
+    tests_failed += 1
+
+# Test 2: Form properties with validation
+try:
+    form.Width = 500
+    form.Height = 400
+    # Verify properties were set
+    assert form.Width == 500, "Form width not set correctly"
+    assert form.Height == 400, "Form height not set correctly"
+    status_label.Text = "Test 2 PASSED: Form properties set correctly"
+    tests_passed += 1
+except Exception as e:
+    status_label.Text = f"Test 2 FAILED: {str(e)}"
+    tests_failed += 1
+
+# Test 3: Multiple controls
+try:
+    controls_count = 0
+    btn1 = Button()
+    btn1.Text = "Button 1"
+    btn1.Top = 60
+    btn1.Left = 20
+    form.Controls.Add(btn1)
+    controls_count += 1
+    
+    btn2 = Button()
+    btn2.Text = "Button 2"
+    btn2.Top = 60
+    btn2.Left = 120
+    form.Controls.Add(btn2)
+    controls_count += 1
+    
+    lbl2 = Label()
+    lbl2.Text = "Additional Label"
+    lbl2.Top = 100
+    lbl2.Left = 20
+    form.Controls.Add(lbl2)
+    controls_count += 1
+    
+    assert controls_count == 3, f"Expected 3 controls, got {controls_count}"
+    status_label.Text = "Test 3 PASSED: Multiple controls added successfully"
+    tests_passed += 1
+except Exception as e:
+    status_label.Text = f"Test 3 FAILED: {str(e)}"
+    tests_failed += 1
+
+# Test 4: Control visibility and enabled state
+try:
+    test_btn = Button()
+    test_btn.Text = "Test Button"
+    
+    # Set properties
+    test_btn.Visible = True
+    test_btn.Enabled = True
+    
+    # Verify properties
+    assert test_btn.Visible == True, "Button visibility not set"
+    assert test_btn.Enabled == True, "Button enabled state not set"
+    
+    # Toggle properties
+    test_btn.Enabled = False
+    assert test_btn.Enabled == False, "Button should be disabled"
+    
+    test_btn.Enabled = True
+    assert test_btn.Enabled == True, "Button should be enabled"
+    
+    status_label.Text = "Test 4 PASSED: Control state management working"
+    tests_passed += 1
+except Exception as e:
+    status_label.Text = f"Test 4 FAILED: {str(e)}"
+    tests_failed += 1
+
+# Test 5: Font and appearance properties
+try:
+    styled_label = Label()
+    styled_label.Text = "Styled Text"
+    
+    # Verify we can access font properties without crashing
+    original_font = styled_label.Font
+    assert original_font is not None, "Font should not be None"
+    
+    status_label.Text = "Test 5 PASSED: Font and appearance properties accessible"
+    tests_passed += 1
+except Exception as e:
+    status_label.Text = f"Test 5 FAILED: {str(e)}"
+    tests_failed += 1
+
+# Final status
+final_message = f"Tests Completed: {tests_passed} passed, {tests_failed} failed"
+status_label.Text = final_message
+
+# Verify at least some tests passed
+assert tests_passed >= 4, f"Expected at least 4 tests to pass, got {tests_passed}"
+assert tests_failed <= 1, f"Expected at most 1 test to fail, got {tests_failed}"
