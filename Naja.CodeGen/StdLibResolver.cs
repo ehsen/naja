@@ -44,6 +44,9 @@ public static class StdLibResolver
 
             // ── IO streams: io ───────────────────────────────────────────────
             ["io"] = ("Naja.StdLib.NajaIo", "Naja.StdLib", "IO"),
+
+            // ── Windows-specific: _winapi ────────────────────────────────────
+            ["_winapi"] = ("Naja.StdLib.NajaWinapi", "Naja.StdLib", "IO"),
         };
 
     /// <summary>
