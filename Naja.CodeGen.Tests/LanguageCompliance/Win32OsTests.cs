@@ -10,17 +10,16 @@ namespace Naja.CodeGen.Tests.LanguageCompliance;
 /// Compiles and runs testdata/os_windows/test_os_windows.py through NajaEngine.
 /// Skips silently on non-Windows platforms (Linux, macOS CI agents).
 ///
-/// ACTIVE (test our implementations):
+/// Test classes (all active):
 ///   Win32ListdirTests   – os.listdir with normal and extended \\?\ paths
+///   Win32ListdriveTests – os.listdrives / os.listvolumes / os.listmounts
+///   Win32SymlinkTests   – os.symlink / os.readlink / os.lstat / os.path.islink
+///                         (auto-skips when symlink privilege is absent)
+///   Win32JunctionTests  – _winapi.CreateJunction / os.readlink / os.path.islink
 ///   Win32FileOpsTests   – mkdir/makedirs/rmdir/remove/unlink/rename/chdir
 ///   Win32StatTests      – os.stat st_size and st_mtime
 ///   Win32EnvTests       – os.environ, os.getenv, os.putenv
 ///   Win32PathTests      – os.path with Windows-style paths
-///
-/// DEFERRED (setUp calls self.skipTest — documented, not yet executable):
-///   Win32ListdriveTests – os.listdrives/listvolumes/listmounts not yet impl
-///   Win32SymlinkTests   – os.symlink/readlink/lstat/islink not yet impl
-///   Win32JunctionTests  – _winapi.CreateJunction not yet impl
 ///
 /// Test data: testdata/os_windows/test_os_windows.py
 /// </summary>

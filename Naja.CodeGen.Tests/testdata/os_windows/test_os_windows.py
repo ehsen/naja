@@ -1,22 +1,21 @@
 """Windows-specific os module tests for Naja stdlib.
 
 Mirrors CPython Lib/test/test_os.py Windows test classes but depends only on
-modules available in the Naja compiler (os, sys, unittest).  No CPython test
-infrastructure (test.support), no shutil, no tempfile, no uuid.
+modules available in the Naja compiler (os, sys, unittest, subprocess,
+_winapi).  No CPython test infrastructure (test.support), no shutil, no
+tempfile, no uuid.
 
-Implemented test classes
-------------------------
+All test classes
+----------------
 Win32ListdirTests   – os.listdir with normal and extended \\\\?\\ paths
+Win32ListdriveTests – os.listdrives / os.listvolumes / os.listmounts
+Win32SymlinkTests   – os.symlink / os.readlink / os.lstat / os.path.islink
+                      (skips automatically when symlink privilege is absent)
+Win32JunctionTests  – _winapi.CreateJunction / os.readlink / os.path.islink
 Win32FileOpsTests   – mkdir/makedirs/rmdir/remove/unlink/rename/chdir/getcwd
 Win32StatTests      – os.stat st_size and st_mtime
 Win32EnvTests       – os.environ, os.getenv, os.putenv
 Win32PathTests      – os.path operations with Windows-style paths
-
-Deferred (setUp calls self.skipTest — structure mirrors CPython originals)
---------------------------------------------------------------------------
-Win32ListdriveTests – os.listdrives/listvolumes/listmounts not yet in Naja stdlib
-Win32SymlinkTests   – os.symlink/readlink/lstat/islink not yet in Naja stdlib
-Win32JunctionTests  – _winapi.CreateJunction not yet in Naja stdlib
 """
 
 import sys
@@ -100,93 +99,187 @@ class Win32ListdirTests(unittest.TestCase):
             pass
 
 
-# ── Win32ListdriveTests (deferred — not yet implemented) ──────────────────────
+# ── Win32ListdriveTests ───────────────────────────────────────────────────────
 
 class Win32ListdriveTests(unittest.TestCase):
     """Test os.listdrives, os.listvolumes and os.listmounts on Windows.
 
     Mirrors CPython test_os.Win32ListdriveTests.
-    Deferred: os.listdrives / os.listvolumes / os.listmounts not yet
-    implemented in Naja stdlib.
     """
 
     def setUp(self):
-        self.skipTest("os.listdrives/listvolumes/listmounts not yet implemented in Naja stdlib")
+        import subprocess
+        out = subprocess.check_output(
+            ["fsutil.exe", "volume", "list"],
+            cwd=os.path.join(os.getenv("SystemRoot", "C:\\Windows"), "System32"),
+        )
+        lines = out.decode("mbcs", "ignore").splitlines()
+        self.known_volumes = [l for l in lines if l.startswith("\\\\?\\")]
+        self.known_drives  = [l for l in lines if len(l) >= 3 and l[1:] == ":\\"]
+        self.known_mounts  = [l for l in lines if len(l) >= 3 and l[1:3] == ":\\"]
 
     def test_listdrives(self):
         drives = os.listdrives()
         self.assertIsInstance(drives, list)
         self.assertGreater(len(drives), 0)
+        for d in self.known_drives:
+            self.assertIn(d, drives)
 
     def test_listvolumes(self):
         volumes = os.listvolumes()
         self.assertIsInstance(volumes, list)
+        self.assertGreater(len(volumes), 0)
+        for v in self.known_volumes:
+            self.assertIn(v, volumes)
 
     def test_listmounts(self):
-        for vol in os.listvolumes():
+        for volume in os.listvolumes():
             try:
-                mounts = os.listmounts(vol)
+                mounts = os.listmounts(volume)
                 self.assertIsInstance(mounts, list)
+                for m in mounts:
+                    self.assertIn(m, self.known_mounts)
             except OSError:
-                pass
+                pass  # some volumes may be inaccessible
 
 
-# ── Win32SymlinkTests (deferred — not yet implemented) ────────────────────────
+# ── Win32SymlinkTests ─────────────────────────────────────────────────────────
 
 class Win32SymlinkTests(unittest.TestCase):
     """Test os.symlink, os.readlink and os.lstat on Windows.
 
     Mirrors CPython test_os.Win32SymlinkTests.
-    Deferred: os.symlink / os.readlink / os.lstat / os.path.islink not yet
-    implemented in Naja stdlib.
+    Requires 'Create symbolic links' privilege or Developer Mode.
     """
 
     def setUp(self):
-        self.skipTest("os.symlink/readlink/lstat/path.islink not yet implemented in Naja stdlib")
+        self.testdir = _make_temp_dir()
+        # Create real targets inside the temp dir so __file__ is not needed.
+        self.filelink_target = os.path.join(self.testdir, "target_file.txt")
+        f = open(self.filelink_target, "w")
+        f.write("symlink target")
+        f.close()
+        self.dirlink_target = os.path.join(self.testdir, "target_dir")
+        os.makedirs(self.dirlink_target)
+        self.filelink = os.path.join(self.testdir, "filelinktest")
+        self.dirlink  = os.path.join(self.testdir, "dirlinktest")
+        # Probe for symlink privilege; skip the whole class if not available.
+        probe = os.path.join(self.testdir, "_probe_link")
+        try:
+            os.symlink(self.dirlink_target, probe)
+            os.rmdir(probe)
+        except OSError:
+            self.skipTest("Cannot create symlinks (requires admin or Developer Mode)")
+
+    def tearDown(self):
+        _rmtree(self.testdir)
 
     def test_directory_link(self):
-        pass
+        os.symlink(self.dirlink_target, self.dirlink)
+        self.assertTrue(os.path.exists(self.dirlink))
+        self.assertTrue(os.path.isdir(self.dirlink))
+        self.assertTrue(os.path.islink(self.dirlink))
 
     def test_file_link(self):
-        pass
-
-    def test_remove_directory_link_to_missing_target(self):
-        pass
-
-    def test_isdir_on_directory_link_to_missing_target(self):
-        pass
-
-    def test_rmdir_on_directory_link_to_missing_target(self):
-        pass
+        os.symlink(self.filelink_target, self.filelink)
+        self.assertTrue(os.path.exists(self.filelink))
+        self.assertTrue(os.path.isfile(self.filelink))
+        self.assertTrue(os.path.islink(self.filelink))
 
     def test_stat_vs_lstat(self):
-        pass
+        os.symlink(self.filelink_target, self.filelink)
+        self.assertEqual(os.stat(self.filelink), os.stat(self.filelink_target))
+        self.assertNotEqual(os.lstat(self.filelink), os.stat(self.filelink))
+
+    def test_remove_directory_link_to_missing_target(self):
+        target = os.path.join(self.testdir, "missing_target_xyz")
+        os.symlink(target, self.dirlink, True)
+        os.remove(self.dirlink)
+        self.assertFalse(os.path.lexists(self.dirlink))
+
+    def test_isdir_on_directory_link_to_missing_target(self):
+        target = os.path.join(self.testdir, "missing_target_xyz")
+        os.symlink(target, self.dirlink, True)
+        self.assertFalse(os.path.isdir(self.dirlink))
+
+    def test_rmdir_on_directory_link_to_missing_target(self):
+        target = os.path.join(self.testdir, "missing_target_xyz")
+        os.symlink(target, self.dirlink, True)
+        os.rmdir(self.dirlink)
 
     def test_buffer_overflow(self):
-        pass
+        # Very long paths should raise FileNotFoundError rather than crash.
+        segment = "X" * 27
+        parts = []
+        for i in range(10):
+            parts.append(segment)
+        path = os.path.join(parts[0], parts[1], parts[2], parts[3], parts[4],
+                            parts[5], parts[6], parts[7], parts[8], parts[9])
+        test_cases = [
+            ("\\" + path, segment),
+            (segment, path),
+            (path[:180], path[:180]),
+        ]
+        for src, dest in test_cases:
+            try:
+                os.symlink(src, dest)
+            except OSError:
+                pass
+            else:
+                try:
+                    os.remove(dest)
+                except OSError:
+                    pass
 
-    def test_appexeclink(self):
-        pass
+    def test_29248(self):
+        all_users = "C:\\Users\\All Users"
+        program_data = "C:\\ProgramData"
+        if not os.path.lexists(all_users) or not os.path.exists(program_data):
+            self.skipTest("Test directories not found")
+        target = os.readlink(all_users)
+        self.assertTrue(os.path.samefile(target, program_data))
 
 
-# ── Win32JunctionTests (deferred — not yet implemented) ───────────────────────
+# ── Win32JunctionTests ────────────────────────────────────────────────────────
 
 class Win32JunctionTests(unittest.TestCase):
     """Test NTFS junctions via _winapi.CreateJunction.
 
     Mirrors CPython test_os.Win32JunctionTests.
-    Deferred: _winapi module / os.readlink / os.path.islink not yet
-    implemented in Naja stdlib.
     """
 
     def setUp(self):
-        self.skipTest("_winapi.CreateJunction / os.readlink not yet implemented in Naja stdlib")
+        self.testdir = _make_temp_dir()
+        self.junction = os.path.join(self.testdir, "junctiontest")
+        self.junction_target = self.testdir
+
+    def tearDown(self):
+        if os.path.lexists(self.junction):
+            os.unlink(self.junction)
+        _rmtree(self.testdir)
 
     def test_create_junction(self):
-        pass
+        import _winapi
+        _winapi.CreateJunction(self.junction_target, self.junction)
+        self.assertTrue(os.path.lexists(self.junction))
+        self.assertTrue(os.path.exists(self.junction))
+        self.assertTrue(os.path.isdir(self.junction))
+        # bpo-37834: Junctions are NOT treated as symbolic links.
+        self.assertFalse(os.path.islink(self.junction))
+        # readlink returns a path resolving to the junction target.
+        link_path = os.readlink(self.junction)
+        if link_path.startswith("\\\\?\\"):
+            link_path = link_path[4:]
+        self.assertEqual(
+            os.path.normcase(os.path.normpath(link_path)),
+            os.path.normcase(os.path.normpath(self.junction_target)))
 
     def test_unlink_removes_junction(self):
-        pass
+        import _winapi
+        _winapi.CreateJunction(self.junction_target, self.junction)
+        self.assertTrue(os.path.exists(self.junction))
+        os.unlink(self.junction)
+        self.assertFalse(os.path.exists(self.junction))
 
 
 # ── Win32FileOpsTests ─────────────────────────────────────────────────────────
