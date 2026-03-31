@@ -6,7 +6,7 @@ namespace Naja.StdLib;
 /// <summary>
 /// Python '_winapi' module emulation.
 /// Exposes Windows-specific APIs used by CPython's test suite and stdlib.
-/// Only CreateJunction is implemented; other _winapi functions are deferred.
+/// Includes CreateJunction, GetCurrentProcess, GetProcessHandleCount.
 /// </summary>
 public sealed class NajaWinapi
 {
@@ -26,6 +26,44 @@ public sealed class NajaWinapi
     /// </summary>
     public void CreateJunction(object sourcePath, object junctionPath)
         => CreateJunctionCore(sourcePath?.ToString() ?? "", junctionPath?.ToString() ?? "");
+
+    // ── Process handle management ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Get a pseudo-handle to the current process.
+    /// Returns a special value (-1) that can be used with other process functions.
+    /// Mirrors CPython _winapi.GetCurrentProcess().
+    /// </summary>
+    public IntPtr GetCurrentProcess()
+    {
+        // Return the special process handle (same as Windows API)
+        return System.Diagnostics.Process.GetCurrentProcess().Handle;
+    }
+
+    /// <summary>
+    /// Get the number of open handles in a process.
+    /// Used to detect handle leaks in tests.
+    /// Mirrors CPython _winapi.GetProcessHandleCount(handle).
+    /// </summary>
+    public int GetProcessHandleCount(object processHandle)
+    {
+        if (!OperatingSystem.IsWindows())
+            throw new PlatformNotSupportedException("GetProcessHandleCount is Windows-only");
+
+        try
+        {
+            var handle = Convert.ToInt64(processHandle);
+            if (!GetProcessHandleCount_Internal(new IntPtr(handle), out int count))
+            {
+                throw new SystemError($"GetProcessHandleCount failed: error {Marshal.GetLastWin32Error()}");
+            }
+            return count;
+        }
+        catch (Exception ex)
+        {
+            throw new SystemError($"GetProcessHandleCount error: {ex.Message}", ex);
+        }
+    }
 
     // ── P/Invoke declarations ─────────────────────────────────────────────────
 
@@ -57,7 +95,19 @@ public sealed class NajaWinapi
         IntPtr lpOutBuffer, int nOutBufferSize,
         out int lpBytesReturned, IntPtr lpOverlapped);
 
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetProcessHandleCount(
+        IntPtr hProcess, out int pdwHandleCount);
+
     // ── Core implementation ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// Internal P/Invoke wrapper for GetProcessHandleCount
+    /// </summary>
+    private static bool GetProcessHandleCount_Internal(IntPtr hProcess, out int count)
+    {
+        return GetProcessHandleCount(hProcess, out count);
+    }
 
     private static void CreateJunctionCore(string sourcePath, string junctionPath)
     {
@@ -137,5 +187,16 @@ public sealed class NajaWinapi
             finally { gcHandle.Free(); }
         }
         finally { CloseHandle(hDir); }
+    }
+
+    // ── Exception types ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Custom exception for _winapi errors
+    /// </summary>
+    public sealed class SystemError : Exception
+    {
+        public SystemError(string message) : base(message) { }
+        public SystemError(string message, Exception inner) : base(message, inner) { }
     }
 }
