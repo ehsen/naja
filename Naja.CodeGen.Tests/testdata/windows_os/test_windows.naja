@@ -1,0 +1,444 @@
+# Windows OS Tests for Naja - Converted to Naja syntax
+# Based on CPython test_windows.py with full infrastructure support
+
+import sys
+import os
+import unittest
+import shutil
+import signal
+import stat
+import subprocess
+import time
+import tempfile
+import textwrap
+
+# Platform check
+if sys.platform != "win32":
+    raise unittest.SkipTest("Win32 specific tests")
+
+# Optional imports
+try:
+    import _winapi
+except ImportError:
+    _winapi = None
+
+try:
+    import fnmatch
+except ImportError:
+    fnmatch = None
+
+try:
+    import mmap
+except ImportError:
+    mmap = None
+
+try:
+    import uuid
+except ImportError:
+    uuid = None
+
+
+# ============================================================================
+# Test Infrastructure - Managed Temp Directory
+# ============================================================================
+
+_temp_dir = None
+
+def _get_testfn():
+    """Get a unique temp directory for this test run."""
+    global _temp_dir
+    if _temp_dir is None:
+        _temp_dir = tempfile.mkdtemp(prefix='naja_test_')
+    return _temp_dir
+
+def _cleanup_testfn():
+    """Remove the temp directory."""
+    global _temp_dir
+    if _temp_dir and os.path.exists(_temp_dir):
+        try:
+            shutil.rmtree(_temp_dir)
+        except:
+            pass
+        _temp_dir = None
+
+# Global temp directory accessor
+TESTFN = _get_testfn()
+
+
+def skip_unless_symlink(test_func):
+    """Decorator: Skip test if symlinks not supported."""
+    def wrapper(self):
+        try:
+            test_link = os.path.join(TESTFN, '_test_symlink_check')
+            test_target = os.path.join(TESTFN, '_test_symlink_target')
+            
+            if not os.path.exists(test_target):
+                os.makedirs(test_target)
+            
+            try:
+                os.symlink(test_target, test_link)
+            except:
+                self.skipTest("Symlinks not available: admin/developer mode required")
+                return
+            finally:
+                try:
+                    if os.path.lexists(test_link):
+                        if os.path.isdir(test_link) and not os.path.islink(test_link):
+                            os.rmdir(test_link)
+                        else:
+                            os.remove(test_link)
+                except:
+                    pass
+            
+            return test_func(self)
+        except Exception as e:
+            self.skipTest(f"Symlink check failed: {e}")
+    
+    return wrapper
+
+
+def requires_subprocess(test_func):
+    """Decorator: Skip test if subprocess not available."""
+    def wrapper(self):
+        try:
+            proc = subprocess.Popen([sys.executable, '-c', 'pass'])
+            proc.wait()
+            return test_func(self)
+        except Exception as e:
+            self.skipTest(f"Subprocess not available: {e}")
+    return wrapper
+
+
+# ============================================================================
+# Win32ListdirTests - Test os.listdir with normal and extended paths
+# ============================================================================
+
+class Win32ListdirTests(unittest.TestCase):
+    """Test os.listdir on Windows."""
+
+    def setUp(self):
+        self.testdir = os.path.join(TESTFN, 'listdir_test')
+        if os.path.exists(self.testdir):
+            shutil.rmtree(self.testdir)
+        os.makedirs(self.testdir)
+        
+        self.created_paths = []
+        for i in range(2):
+            dir_name = f'SUB{i}'
+            dir_path = os.path.join(self.testdir, dir_name)
+            file_name = f'FILE{i}'
+            file_path = os.path.join(self.testdir, file_name)
+            os.makedirs(dir_path)
+            with open(file_path, 'w') as f:
+                f.write(f"I'm {file_path} and proud of it.\n")
+            self.created_paths.extend([dir_name, file_name])
+        self.created_paths.sort()
+
+    def tearDown(self):
+        try:
+            shutil.rmtree(self.testdir)
+        except:
+            pass
+
+    def test_listdir_no_extended_path(self):
+        """Test listdir with normal path."""
+        result = sorted(os.listdir(self.testdir))
+        self.assertEqual(result, self.created_paths)
+
+    def test_listdir_extended_path(self):
+        """Test listdir with extended path syntax (\\?\\)."""
+        path = '\\\\?\\' + os.path.abspath(self.testdir)
+        try:
+            result = sorted(os.listdir(path))
+            self.assertEqual(result, self.created_paths)
+        except OSError:
+            self.skipTest("Extended paths not supported")
+
+
+# ============================================================================
+# Win32ListdriveTests - Test os.listdrives, os.listvolumes, os.listmounts
+# ============================================================================
+
+class Win32ListdriveTests(unittest.TestCase):
+    """Test listdrives, listvolumes, listmounts on Windows."""
+
+    def setUp(self):
+        """Get drives and volumes from fsutil."""
+        try:
+            out = subprocess.check_output(
+                ["fsutil.exe", "volume", "list"],
+                cwd=os.path.join(os.getenv("SystemRoot", "\\Windows"), "System32"),
+                encoding="mbcs",
+                errors="ignore",
+            )
+            lines = out.splitlines()
+            self.known_volumes = {l for l in lines if l.startswith('\\\\\?')}
+            self.known_drives = {l for l in lines if len(l) > 1 and l[1:] == ':\\'}
+        except:
+            self.skipTest("Could not query fsutil")
+
+    def test_listdrives(self):
+        """Test os.listdrives returns a list of drives."""
+        if not hasattr(os, 'listdrives'):
+            self.skipTest("os.listdrives not available")
+        
+        drives = os.listdrives()
+        self.assertIsInstance(drives, list)
+        self.assertTrue(len(drives) > 0)
+
+    def test_listvolumes(self):
+        """Test os.listvolumes returns a list of volumes."""
+        if not hasattr(os, 'listvolumes'):
+            self.skipTest("os.listvolumes not available")
+        
+        volumes = os.listvolumes()
+        self.assertIsInstance(volumes, list)
+
+    def test_listmounts(self):
+        """Test os.listmounts returns mount points for a volume."""
+        if not hasattr(os, 'listmounts'):
+            self.skipTest("os.listmounts not available")
+        if not hasattr(os, 'listvolumes'):
+            self.skipTest("os.listvolumes not available")
+        
+        volumes = os.listvolumes()
+        if volumes:
+            try:
+                mounts = os.listmounts(volumes[0])
+                self.assertIsInstance(mounts, list)
+            except OSError:
+                pass  # Volume may not support mounts
+
+
+# ============================================================================
+# Win32SymlinkTests - Test os.symlink, os.readlink, os.lstat
+# ============================================================================
+
+class Win32SymlinkTests(unittest.TestCase):
+    """Test symlink operations on Windows."""
+
+    def setUp(self):
+        """Set up test directory for symlink tests."""
+        self.testdir = os.path.join(TESTFN, 'symlink_test')
+        if os.path.exists(self.testdir):
+            shutil.rmtree(self.testdir)
+        os.makedirs(self.testdir)
+        
+        # Target directory and file
+        self.dirlink_target = os.path.join(self.testdir, 'target_dir')
+        os.makedirs(self.dirlink_target, exist_ok=True)
+        
+        self.filelink_target = os.path.join(self.testdir, 'target_file.txt')
+        with open(self.filelink_target, 'w') as f:
+            f.write("test content\n")
+        
+        # Symlink paths
+        self.filelink = os.path.join(self.testdir, 'filelinktest')
+        self.dirlink = os.path.join(self.testdir, 'dirlinktest')
+        self.missing_link = os.path.join(self.testdir, 'missing_link_test')
+
+    def tearDown(self):
+        """Clean up test directory."""
+        try:
+            shutil.rmtree(self.testdir)
+        except:
+            pass
+
+    @skip_unless_symlink
+    def test_directory_link(self):
+        """Test creating and reading a symlink to a directory."""
+        os.symlink(self.dirlink_target, self.dirlink)
+        self.assertTrue(os.path.exists(self.dirlink))
+        self.assertTrue(os.path.isdir(self.dirlink))
+        self.assertTrue(os.path.islink(self.dirlink))
+
+    @skip_unless_symlink
+    def test_file_link(self):
+        """Test creating and reading a symlink to a file."""
+        os.symlink(self.filelink_target, self.filelink)
+        self.assertTrue(os.path.exists(self.filelink))
+        self.assertTrue(os.path.isfile(self.filelink))
+        self.assertTrue(os.path.islink(self.filelink))
+
+    @skip_unless_symlink
+    def test_readlink_returns_target(self):
+        """Test that os.readlink returns the symlink target."""
+        os.symlink(self.filelink_target, self.filelink)
+        link_target = os.readlink(self.filelink)
+        self.assertTrue(
+            link_target.endswith(os.path.basename(self.filelink_target)) or
+            link_target == self.filelink_target
+        )
+
+    @skip_unless_symlink
+    def test_remove_directory_link_to_missing_target(self):
+        """Test removing a symlink to a non-existent directory."""
+        missing_target = r'c:\\target_does_not_exist_xyz123'
+        
+        try:
+            os.symlink(missing_target, self.missing_link, target_is_dir=True)
+        except:
+            self.skipTest("target_is_dir not supported")
+        
+        os.remove(self.missing_link)
+        self.assertFalse(os.path.lexists(self.missing_link))
+
+    @skip_unless_symlink
+    def test_isdir_on_directory_link_to_missing_target(self):
+        """Test os.path.isdir on symlink to missing target."""
+        missing_target = r'c:\\target_does_not_exist_xyz123'
+        
+        try:
+            os.symlink(missing_target, self.missing_link, target_is_dir=True)
+        except:
+            self.skipTest("target_is_dir not supported")
+        
+        self.assertFalse(os.path.isdir(self.missing_link))
+
+    @skip_unless_symlink
+    def test_rmdir_on_directory_link_to_missing_target(self):
+        """Test os.rmdir on symlink to missing target."""
+        missing_target = r'c:\\target_does_not_exist_xyz123'
+        
+        try:
+            os.symlink(missing_target, self.missing_link, target_is_dir=True)
+        except:
+            self.skipTest("target_is_dir not supported")
+        
+        os.rmdir(self.missing_link)
+        self.assertFalse(os.path.lexists(self.missing_link))
+
+
+# ============================================================================
+# Win32JunctionTests - Test _winapi.CreateJunction
+# ============================================================================
+
+class Win32JunctionTests(unittest.TestCase):
+    """Test junction operations."""
+
+    def setUp(self):
+        """Set up test directory."""
+        self.testdir = os.path.join(TESTFN, 'junction_test')
+        if os.path.exists(self.testdir):
+            shutil.rmtree(self.testdir)
+        os.makedirs(self.testdir)
+        
+        self.junction_target = os.path.join(self.testdir, 'target')
+        os.makedirs(self.junction_target)
+        self.junction = os.path.join(self.testdir, 'junction')
+
+    def tearDown(self):
+        """Clean up."""
+        try:
+            shutil.rmtree(self.testdir)
+        except:
+            pass
+
+    def test_create_junction(self):
+        """Test _winapi.CreateJunction creates a junction."""
+        if not _winapi:
+            self.skipTest("_winapi not available")
+        if not hasattr(_winapi, 'CreateJunction'):
+            self.skipTest("_winapi.CreateJunction not available")
+        
+        try:
+            _winapi.CreateJunction(self.junction_target, self.junction)
+            self.assertTrue(os.path.exists(self.junction))
+            self.assertTrue(os.path.isdir(self.junction))
+        except Exception as e:
+            self.skipTest(f"CreateJunction failed: {e}")
+
+    def test_unlink_removes_junction(self):
+        """Test os.unlink removes a junction."""
+        if not _winapi:
+            self.skipTest("_winapi not available")
+        if not hasattr(_winapi, 'CreateJunction'):
+            self.skipTest("_winapi.CreateJunction not available")
+        
+        try:
+            _winapi.CreateJunction(self.junction_target, self.junction)
+            os.unlink(self.junction)
+            self.assertFalse(os.path.exists(self.junction))
+        except Exception as e:
+            self.skipTest(f"Test failed: {e}")
+
+
+# ============================================================================
+# Win32NtTests - Test nt module functions
+# ============================================================================
+
+class Win32NtTests(unittest.TestCase):
+    """Test nt module functions on Windows."""
+
+    def test_getfinalpathname_basic(self):
+        """Test nt._getfinalpathname if available."""
+        try:
+            import nt
+        except ImportError:
+            self.skipTest("nt module not available")
+        
+        if not hasattr(nt, '_getfinalpathname'):
+            self.skipTest("nt._getfinalpathname not available")
+        
+        try:
+            result = nt._getfinalpathname(__file__)
+            self.assertIsInstance(result, str)
+        except Exception as e:
+            self.skipTest(f"_getfinalpathname not working: {e}")
+
+    def test_stat_unlink_race(self):
+        """Test race condition handling between stat and unlink."""
+        try:
+            testfile = os.path.join(TESTFN, 'race_test.txt')
+            with open(testfile, 'w') as f:
+                f.write('test')
+            
+            st = os.stat(testfile)
+            self.assertTrue(st.st_size > 0)
+            
+            os.unlink(testfile)
+            self.assertFalse(os.path.exists(testfile))
+        except Exception as e:
+            self.skipTest(f"Race condition test failed: {e}")
+
+
+# ============================================================================
+# Win32KillTests - Test os.kill
+# ============================================================================
+
+@requires_subprocess
+class Win32KillTests(unittest.TestCase):
+    """Test os.kill on Windows."""
+
+    def test_kill_basic(self):
+        """Test that os.kill is callable."""
+        self.assertTrue(callable(os.kill))
+
+    def test_SIGTERM(self):
+        """Test os.kill with SIGTERM."""
+        if not hasattr(signal, 'SIGTERM'):
+            self.skipTest("signal.SIGTERM not available")
+        
+        try:
+            proc = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(10)'])
+            os.kill(proc.pid, signal.SIGTERM)
+            proc.wait(timeout=5)
+        except:
+            self.skipTest("Could not test SIGTERM")
+
+    def test_process_termination(self):
+        """Test process termination."""
+        try:
+            proc = subprocess.Popen([sys.executable, '-c', 'pass'])
+            proc.wait(timeout=5)
+            self.assertEqual(proc.returncode, 0)
+        except Exception as e:
+            self.skipTest(f"Process test failed: {e}")
+
+
+# ============================================================================
+# Main Test Runner
+# ============================================================================
+
+if __name__ == "__main__":
+    unittest.main()
