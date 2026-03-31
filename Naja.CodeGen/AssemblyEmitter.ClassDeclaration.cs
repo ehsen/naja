@@ -72,10 +72,15 @@ public sealed partial class AssemblyEmitter
             && attrBase.Object is NameExpr attrNsExpr)
         {
             // Attribute-qualified base class: e.g. unittest.TestCase
-            // Check if the namespace was imported via `import X`
-            bool nsWasImported = namespaceImports is not null
-                ? namespaceImports.ContainsKey(attrNsExpr.Name)
-                : moduleBody.OfType<ImportStatement>()
+            // Check THREE places where the namespace could have been imported:
+            // 1. importMap (for stdlib modules like "import unittest")
+            // 2. namespaceImports (for "import System" style .NET namespace imports)
+            // 3. moduleBody imports (fallback scan)
+
+            bool nsWasImported = 
+                importMap.ContainsKey(attrNsExpr.Name) ||
+                (namespaceImports is not null && namespaceImports.ContainsKey(attrNsExpr.Name)) ||
+                moduleBody.OfType<ImportStatement>()
                     .Any(s => s.Names.Any(a => (a.Alias ?? a.Name.Split('.')[0]) == attrNsExpr.Name));
 
             if (nsWasImported)
