@@ -21,10 +21,11 @@ public static class StdLibResolver
     private static readonly Dictionary<string, (string TypeName, string AssemblyName, string Category)> StdLibMap = 
         new()
         {
-            // ── CORE module: sys, math, unittest ──────────────────────────────
+            // ── CORE module: sys, math, unittest, signal ──────────────────────
             ["sys"] = ("Naja.StdLib.NajaSys", "Naja.StdLib", "Core"),
             ["math"] = ("Naja.StdLib.NajaMath", "Naja.StdLib", "Core"),
             ["unittest"] = ("Naja.StdLib.NajaUnittest", "Naja.StdLib", "Core"),
+            ["signal"] = ("Naja.StdLib.NajaSignal", "Naja.StdLib", "Core"),
             
             // ── TIME module: datetime ─────────────────────────────────────────
             ["datetime"] = ("Naja.StdLib.NajaDateTime", "Naja.StdLib", "Time"),
@@ -45,8 +46,27 @@ public static class StdLibResolver
             // ── IO streams: io ───────────────────────────────────────────────
             ["io"] = ("Naja.StdLib.NajaIo", "Naja.StdLib", "IO"),
 
+            // ── Process management: subprocess ───────────────────────────────
+            ["subprocess"] = ("Naja.StdLib.NajaSubprocess", "Naja.StdLib", "IO"),
+
             // ── Windows-specific: _winapi ────────────────────────────────────
             ["_winapi"] = ("Naja.StdLib.NajaWinapi", "Naja.StdLib", "IO"),
+
+            // ── Phase 2 additions: mmap, uuid, fnmatch, msvcrt, stat ──────────
+            ["mmap"] = ("Naja.StdLib.NajaMmap", "Naja.StdLib", "IO"),
+            ["uuid"] = ("Naja.StdLib.NajaUuid", "Naja.StdLib", "IO"),
+            ["fnmatch"] = ("Naja.StdLib.NajaFnmatch", "Naja.StdLib", "IO"),
+            ["msvcrt"] = ("Naja.StdLib.NajaMsvcrt", "Naja.StdLib", "Core"),
+            ["stat"] = ("Naja.StdLib.NajaStat", "Naja.StdLib", "Core"),
+
+            // ── Phase 3 additions: shutil, textwrap, ctypes, test.support ──────
+            ["shutil"] = ("Naja.StdLib.NajaShutil", "Naja.StdLib", "IO"),
+            ["textwrap"] = ("Naja.StdLib.NajaTextwrap", "Naja.StdLib", "Text"),
+            ["tempfile"] = ("Naja.StdLib.NajaTempfile", "Naja.StdLib", "IO"),
+            ["ctypes"] = ("Naja.StdLib.NajaCTypesModule", "Naja.StdLib", "Core"),
+            ["test.support"] = ("Naja.StdLib.NajaTestSupport", "Naja.StdLib", "Core"),
+            ["test.support.os_helper"] = ("Naja.StdLib.NajaOsHelper", "Naja.StdLib", "Core"),
+            ["test.support.import_helper"] = ("Naja.StdLib.NajaImportHelper", "Naja.StdLib", "Core"),
         };
 
     /// <summary>
@@ -142,8 +162,13 @@ public static class StdLibResolver
     /// </summary>
     public static bool IsImplemented(string moduleName)
     {
-        // Real implementations
-        var implemented = new[] { "sys", "math", "unittest", "datetime", "os" };
+        // Real implementations (Phase 1: sys, math, unittest, signal, subprocess, datetime, os)
+        // Phase 2: mmap, uuid, fnmatch, msvcrt, stat
+        var implemented = new[] 
+        { 
+            "sys", "math", "unittest", "signal", "subprocess", "datetime", "os",
+            "mmap", "uuid", "fnmatch", "msvcrt", "stat", "_winapi"
+        };
         return implemented.Contains(moduleName);
     }
 
