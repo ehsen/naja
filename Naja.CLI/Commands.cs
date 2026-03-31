@@ -16,16 +16,17 @@ public static class Commands
     // ── Public entry points ───────────────────────────────────────────────────
 
     /// <summary>
-    /// naja compile file1.naja [file2.naja ...] -o output.dll -t type
+    /// naja compile file1.naja [file2.naja ...] [file.py ...] -o output.dll -t type
     /// Called directly by MSBuild via CoreCompile in Sdk.targets.
     /// Only job: Lex → Parse → Analyse → EmitToFile. Exit 0 or 1.
+    /// Supports both native .naja syntax and Python .py files.
     /// </summary>
     public static int Compile(string[] args)
     {
         if (args.Length == 0)
         {
             Console.Error.WriteLine("error: no input files specified");
-            Console.Error.WriteLine("usage: naja compile <file.naja> [file2.naja ...] [-o output] [-t type]");
+            Console.Error.WriteLine("usage: naja compile <file.naja | file.py> [file2.naja ...] [-o output] [-t type]");
             return 1;
         }
 
@@ -36,16 +37,17 @@ public static class Commands
     }
 
     /// <summary>
-    /// naja run &lt;file.naja&gt; [options]
+    /// naja run &lt;file.naja | file.py&gt; [options]
     /// Compiles to memory and executes immediately in-process.
     /// Fast inner loop — no MSBuild involved.
+    /// Supports both native .naja syntax and Python .py files.
     /// </summary>
     public static int Run(string[] args)
     {
         if (args.Length == 0)
         {
             Console.Error.WriteLine("error: no input file specified");
-            Console.Error.WriteLine("usage: naja run <file.naja> [-v]");
+            Console.Error.WriteLine("usage: naja run <file.naja | file.py> [-v]");
             return 1;
         }
 
@@ -511,10 +513,13 @@ public static class Commands
                     verbose = true;
                     break;
                 default:
-                    if (args[i].EndsWith(".naja", StringComparison.OrdinalIgnoreCase))
+                    // Accept both .naja and .py files
+                    var isValidFile = args[i].EndsWith(".naja", StringComparison.OrdinalIgnoreCase) ||
+                                      args[i].EndsWith(".py", StringComparison.OrdinalIgnoreCase);
+                    if (isValidFile)
                         inputs.Add(args[i]);
                     else
-                    { Console.Error.WriteLine($"error: unexpected argument '{args[i]}'"); return null; }
+                    { Console.Error.WriteLine($"error: unexpected argument '{args[i]}' (expected .naja or .py file)"); return null; }
                     break;
             }
         }
@@ -555,6 +560,15 @@ public static class Commands
 
         if (input is null) { Console.Error.WriteLine("error: no input file"); return null; }
         if (!File.Exists(input)) { Console.Error.WriteLine($"error: file not found: '{input}'"); return null; }
+
+        // Accept both .naja and .py files
+        var isValidExtension = input.EndsWith(".naja", StringComparison.OrdinalIgnoreCase) ||
+                               input.EndsWith(".py", StringComparison.OrdinalIgnoreCase);
+        if (!isValidExtension) 
+        { 
+            Console.Error.WriteLine($"error: file '{input}' must be .naja or .py");
+            return null;
+        }
 
         return new RunOptions(input, verbose);
     }

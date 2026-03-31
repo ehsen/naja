@@ -33,11 +33,11 @@ static int PrintHelp()
             naja <command> [options]
 
         COMMANDS:
-            compile <file.naja> [file2.naja ...]   Compile .naja source to IL (called by MSBuild)
-            run     <file.naja>                    Compile to memory and execute immediately
-            publish <file.naja | project.najaproj> Publish a self-contained single-file exe
-            version                                Print version info
-            help                                   Show this help
+            compile <file.naja | file.py> [file2 ...]     Compile .naja or .py source to IL
+            run     <file.naja | file.py>                  Compile to memory and execute
+            publish <file.naja | project.najaproj>         Publish a self-contained single-file exe
+            version                                        Print version info
+            help                                           Show this help
 
         COMPILE OPTIONS:
             -o, --output <path>           Output .dll or .exe path
@@ -55,13 +55,20 @@ static int PrintHelp()
             -v, --verbose                 Show compilation stages and MSBuild output
 
         EXAMPLES:
+            # Native Naja syntax
             naja run hello.naja
             naja run hello.naja -v
+
+            # Python files (automatically compiled to .NET IL)
+            naja run test_windows.py
+            naja run test_windows.py -v
+
+            # Publishing
             naja publish hello.najaproj
             naja publish hello.naja -t winexe -r win-x64 -o dist/
 
             # MSBuild calls compile directly — you rarely need this manually:
-            naja compile main.naja utils.naja -o obj/hello.dll -t exe
+            naja compile main.naja utils.py -o obj/hello.dll -t exe
         """);
     return 0;
 }
