@@ -125,6 +125,29 @@ public sealed partial class AssemblyEmitter
             }
         }
 
+        // ── Deep scan: imports nested inside try/if/for/while/with bodies ──────
+        // The CPython optional-import pattern (`try: import _winapi
+        // except ImportError: _winapi = None`) binds module names inside control
+        // flow that the top-level walk above never sees. Register those the same
+        // way so every scope resolves them identically.
+        foreach (var (moduleName, localName) in
+                 Emitters.Statements.StatementAnalyzer.CollectImportBindings(module.Body))
+        {
+            if (importMap.ContainsKey(localName) || namespaceImports.ContainsKey(localName))
+                continue;   // already registered from the top-level walk
+            var baseName2 = moduleName.Split('.')[0];
+            if (StdLibResolver.TryResolve(baseName2, out var stdLibModule2))
+            {
+                importMap[localName] = (stdLibModule2.TypeName, stdLibModule2.AssemblyName);
+                usedStdLibAssemblies.Add(stdLibModule2.AssemblyName);
+                namespaceImports[localName] = "";
+            }
+            else
+            {
+                namespaceImports[localName] = "";
+            }
+        }
+
         // Store used stdlib assemblies for smart reference injection
         // (only the assemblies actually imported get referenced in the generated code)
         var usedAssemblies = usedStdLibAssemblies.ToList();

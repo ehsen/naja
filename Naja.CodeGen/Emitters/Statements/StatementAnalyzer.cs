@@ -45,11 +45,70 @@ public static class StatementAnalyzer
                     foreach (var (_, b) in ifs.Elifs) foreach (var s in b) foreach (var n in CollectAssignedNames(new[] { s })) names.Add(n);
                     foreach (var s in ifs.Else) foreach (var n in CollectAssignedNames(new[] { s })) names.Add(n);
                     break;
+                case TryStatement ts:
+                    foreach (var s in ts.Body) foreach (var n in CollectAssignedNames(new[] { s })) names.Add(n);
+                    foreach (var h in ts.Handlers) foreach (var s in h.Body) foreach (var n in CollectAssignedNames(new[] { s })) names.Add(n);
+                    foreach (var s in ts.Else) foreach (var n in CollectAssignedNames(new[] { s })) names.Add(n);
+                    foreach (var s in ts.Finally) foreach (var n in CollectAssignedNames(new[] { s })) names.Add(n);
+                    break;
+                case WhileStatement ws:
+                    foreach (var s in ws.Body) foreach (var n in CollectAssignedNames(new[] { s })) names.Add(n);
+                    foreach (var s in ws.Else) foreach (var n in CollectAssignedNames(new[] { s })) names.Add(n);
+                    break;
+                case WithStatement wts:
+                    foreach (var s in wts.Body) foreach (var n in CollectAssignedNames(new[] { s })) names.Add(n);
+                    break;
                 default:
                     break;
             }
         }
         return names;
+    }
+
+    /// <summary>
+    /// Deep-scan for `import X` statements ANYWHERE in the module (inside try, if,
+    /// for, while, with bodies — the CPython optional-import pattern lives in
+    /// `try: import x / except ImportError: x = None`). Emits the same list the
+    /// top-level EmitModule pre-pass consumes, so imports nested in control flow
+    /// resolve identically to top-level ones in every scope.
+    /// </summary>
+    public static List<(string ModuleName, string LocalName)> CollectImportBindings(
+        IReadOnlyList<Statement> body)
+    {
+        var bindings = new List<(string, string)>();
+        foreach (var stmt in body)
+        {
+            switch (stmt)
+            {
+                case ImportStatement im:
+                    foreach (var n in im.Names)
+                        bindings.Add((n.Name, n.Alias ?? n.Name.Split('.')[0]));
+                    break;
+                case IfStatement ifs:
+                    bindings.AddRange(CollectImportBindings(ifs.Then));
+                    foreach (var (_, b) in ifs.Elifs) bindings.AddRange(CollectImportBindings(b));
+                    bindings.AddRange(CollectImportBindings(ifs.Else));
+                    break;
+                case TryStatement ts:
+                    bindings.AddRange(CollectImportBindings(ts.Body));
+                    foreach (var h in ts.Handlers) bindings.AddRange(CollectImportBindings(h.Body));
+                    bindings.AddRange(CollectImportBindings(ts.Else));
+                    bindings.AddRange(CollectImportBindings(ts.Finally));
+                    break;
+                case ForStatement fs:
+                    bindings.AddRange(CollectImportBindings(fs.Body));
+                    bindings.AddRange(CollectImportBindings(fs.Else));
+                    break;
+                case WhileStatement ws:
+                    bindings.AddRange(CollectImportBindings(ws.Body));
+                    bindings.AddRange(CollectImportBindings(ws.Else));
+                    break;
+                case WithStatement wts:
+                    bindings.AddRange(CollectImportBindings(wts.Body));
+                    break;
+            }
+        }
+        return bindings;
     }
 
     /// <summary>

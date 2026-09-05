@@ -29,6 +29,39 @@ public static class ReflectionHelpers
     {
         if (type is null) return null;
 
+        // 0. Instance methods on stdlib singleton shapes: the ImportMap attribute
+        // path resolves module names to Types, but singleton modules (os, sys, ...)
+        // hold their methods on the Instance. `os.kill` used as a VALUE must return a
+        // bound-method wrapper — same as GetAttr's instance path — so callable()
+        // and first-class use work identically for every module shape.
+        try
+        {
+            var instFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+            var iMethod = type.GetMethod(name, instFlags);
+            if (iMethod is not null && type.GetField("Instance",
+                    BindingFlags.Public | BindingFlags.Static) is { } instField
+                && instField.GetValue(null) is { } singleton)
+            {
+                var methods = type.GetMethods(instFlags)
+                    .Where(m => string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+                var capturedObj = singleton;
+                var wrapper = new Func<object[], object?>(args =>
+                {
+                    var m = methods.FirstOrDefault(x => x.GetParameters().Length == args.Length)
+                         ?? methods[0];
+                    try { return m.Invoke(capturedObj, args); }
+                    catch (System.Reflection.TargetInvocationException tie) when (tie.InnerException is not null)
+                    {
+                        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(tie.InnerException).Throw();
+                        throw;
+                    }
+                });
+                return new NajaFunction(wrapper, System.Array.Empty<object>());
+            }
+        }
+        catch { }
+
         // 1. Static property (Color.White, SystemInformation.WorkingArea, etc.)
         var prop = type.GetProperty(name,
             BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);

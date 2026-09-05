@@ -59,4 +59,21 @@ public sealed class NajaSlice
             return Math.Max(-1, Math.Min(idx, len - 1));
         return Math.Max(0, Math.Min(idx, len));
     }
+
+    /// <summary>
+    /// Dynamic dispatch for slicing an object whose compile-time type is unknown
+    /// (e.g. hoisted comprehension loop variables, dynamic call results).
+    /// Inspects the RUNTIME type — the same rule NameEmitters/EmitSubscript apply
+    /// for statically-known types, so slicing behaves identically everywhere.
+    /// </summary>
+    public object Apply(object target) => target switch
+    {
+        string s            => ApplyToString(s),
+        System.Collections.Generic.List<object> l => ApplyToList(l),
+        object[] arr        => ApplyToList(arr.ToList()),
+        byte[] b            => System.Text.Encoding.UTF8.GetBytes(ApplyToString(System.Text.Encoding.UTF8.GetString(b))),
+        null => throw new NullReferenceException($"TypeError: cannot slice None"),
+        _ => throw new InvalidOperationException(
+                 $"TypeError: '{target.GetType().Name}' object is not sliceable")
+    };
 }

@@ -173,6 +173,71 @@ public class NajaTestCase
             Fail($"{Format(a)} not less than or equal to {Format(b)}", msg);
     }
 
+    // ── Type checks ─────────────────────────────────────────────────────────────
+
+    /// <summary>assertIsInstance(obj, cls) — Python type classes arrive as Type objects
+    /// (int, str, list, ...), Naja user classes resolve by name, tuples of types allowed.</summary>
+    public void assertIsInstance(object? obj, object? cls)
+        => assertIsInstance(obj, cls, null);
+
+    public void assertIsInstance(object? obj, object? cls, object? msg)
+    {
+        if (!CheckIsInstance(obj, cls))
+            Fail($"{Format(obj)} is not an instance of {Format(cls)}", msg);
+    }
+
+    public void assertNotIsInstance(object? obj, object? cls)
+        => assertNotIsInstance(obj, cls, null);
+
+    public void assertNotIsInstance(object? obj, object? cls, object? msg)
+    {
+        if (CheckIsInstance(obj, cls))
+            Fail($"{Format(obj)} is an instance of {Format(cls)}", msg);
+    }
+
+    private static bool CheckIsInstance(object? obj, object? cls)
+    {
+        if (cls is object[] tuple)
+        {
+            foreach (var t in tuple)
+                if (CheckIsInstance(obj, t)) return true;
+            return false;
+        }
+
+        if (obj is null) return false;
+
+        // Runtime instance check for .NET Type objects (Python builtins).
+        if (cls is System.Type ty)
+        {
+            var expected = ty;
+            // Python str == System.String, list == List<object>, etc.
+            return IsPythonInstance(obj, expected);
+        }
+
+        // Naja user classes arrive as strings (IL type name like "C_L42").
+        var typeName = cls?.ToString() ?? "";
+        return string.Equals(obj.GetType().Name, typeName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsPythonInstance(object obj, System.Type expected)
+    {
+        var actual = obj.GetType();
+
+        // Exact or assignable match (covers user classes subclassing .NET bases)
+        if (expected.IsAssignableFrom(actual)) return true;
+
+        // Python-semantics mappings for builtin type checks
+        if (expected == typeof(string))  return actual == typeof(string);
+        if (expected == typeof(long) || expected == typeof(int)) return actual == typeof(long) || actual == typeof(int);
+        if (expected == typeof(double))  return actual == typeof(double) || actual == typeof(float);
+        if (expected == typeof(bool))    return actual == typeof(bool);
+        if (expected == typeof(System.Collections.Generic.List<object>))
+            return actual == typeof(System.Collections.Generic.List<object>);
+        if (expected == typeof(object))  return true;  // everything is an instance of object
+
+        return expected.IsInstanceOfType(obj);
+    }
+
     // ── String / sequence ─────────────────────────────────────────────────────
     public void assertAlmostEqual(object? first, object? second) =>
         assertAlmostEqual(first, second, null, null);

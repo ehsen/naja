@@ -78,6 +78,39 @@ public static class StdLibResolver
     }
 
     /// <summary>
+    /// Resolve the CLR Type for a stdlib module at COMPILE time (emitter-side helper).
+    /// Single source of truth shared by NameEmitters, StatementEmitter import binding,
+    /// and DynamicCall — one resolution rule for every stdlib module access.
+    /// </summary>
+    public static System.Type? ResolveModuleType(string moduleName)
+    {
+        if (!StdLibMap.TryGetValue(moduleName, out var res))
+            return null;
+
+        return AppDomain.CurrentDomain.GetAssemblies()
+                   .Select(a => a.GetType(res.TypeName, throwOnError: false))
+                   .FirstOrDefault(t => t is not null)
+               ?? System.Type.GetType($"{res.TypeName}, {res.AssemblyName}", throwOnError: false)
+               ?? System.Type.GetType(res.TypeName, throwOnError: false);
+    }
+
+    /// <summary>
+    /// Resolve the runtime VALUE bound to a stdlib module import:
+    /// the singleton Instance when present (os, sys, signal, ...), else the Type
+    /// itself for static-only modules (tempfile, test.support). Returns null when
+    /// the module's CLR type cannot be loaded — callers treat that as ImportError.
+    /// </summary>
+    public static object? ResolveModuleValue(string moduleName)
+    {
+        var t = ResolveModuleType(moduleName);
+        if (t is null) return null;
+        return t.GetField("Instance",
+                   System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+               ?.GetValue(null)
+               ?? (object)t;
+    }
+
+    /// <summary>
     /// Resolve a stdlib module to its type information.
     /// Returns true if found, false if not a stdlib module.
     /// </summary>

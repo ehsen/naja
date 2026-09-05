@@ -1086,6 +1086,18 @@ public static class NajaBuiltins
         return null;
     }
 
+    /// <summary>
+    /// Runtime import binding for stdlib modules — returns the module VALUE
+    /// (singleton Instance or Type for static-only modules) or throws
+    /// ImportError (TypeLoadException) when the module cannot be loaded.
+    /// Used by the ImportStatement emitter for try/except ImportError patterns.
+    /// </summary>
+    public static object ImportModule(string moduleName)
+    {
+        return StdLibResolver.ResolveModuleValue(moduleName)
+            ?? throw new TypeLoadException($"ImportError: No module named '{moduleName}'");
+    }
+
     public static object? GetAttr(object obj, string name)
     {
         if (obj is null) return null;
@@ -2106,9 +2118,32 @@ public static class NajaBuiltins
                t.GetMethod(n) is not null;
     }
 
-    public static bool Callable(object obj) =>
-        obj?.GetType().GetMethod("Invoke") is not null ||
-        obj?.GetType().GetMethod("__call__") is not null;
+    public static bool Callable(object obj)
+    {
+        if (obj is null) return false;
+
+        // Module singletons (os, sys, ...) and module Types: Python treats any
+        // module attribute access as potentially callable — a module is never
+        // itself callable, but os.kill etc. must report callable() == True.
+        // For Type objects (static-only modules like tempfile), their static
+        // methods are callable too.
+        if (obj is Type) return true;
+
+        // Delegates (NajaFunction, lambdas, first-class methods) — Invoke present
+        if (obj is System.Delegate) return true;
+
+        var t = obj.GetType();
+        if (t.GetMethod("Invoke") is not null) return true;      // delegate shape
+        if (t.GetMethod("__call__") is not null) return true;    // Python callable object
+
+        // Method groups: instance singletons expose public methods that the
+        // dynamic dispatch layer (DynamicCall) can bind — treat as callable.
+        if (t.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+             .Any(m => m.Name != "ToString" && m.Name != "Equals" && m.Name != "GetHashCode"))
+            return true;
+
+        return false;
+    }
 
     // ── vars() / dir() ────────────────────────────────────────────────────────
 

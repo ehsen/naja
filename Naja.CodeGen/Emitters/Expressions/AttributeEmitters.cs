@@ -287,13 +287,22 @@ public sealed class AttributeEmitters : ExpressionEmitterBase
                 IL.Emit(OpCodes.Call, applyStr);
                 return NajaTypes.Str;
             }
-            else
+            else if (objType2 is ListType)
             {
                 IL.Emit(OpCodes.Ldloc, objLocal);
                 IL.Emit(OpCodes.Castclass, typeof(System.Collections.Generic.List<object>));  // stack: [NajaSlice, List]
                 var applyList = typeof(NajaSlice).GetMethod("ApplyToList")!;
                 IL.Emit(OpCodes.Call, applyList);
                 return new ListType(NajaTypes.Unknown);
+            }
+            else
+            {
+                // Unknown compile-time type (hoisted comprehension vars, dynamic results):
+                // dispatch on the RUNTIME type — same semantics as the typed fast paths.
+                IL.Emit(OpCodes.Ldloc, objLocal);  // stack: [NajaSlice, object]
+                var applyDyn = typeof(NajaSlice).GetMethod("Apply")!;
+                IL.Emit(OpCodes.Call, applyDyn);
+                return NajaTypes.Unknown;
             }
         }
 

@@ -83,7 +83,25 @@ public sealed class StatementEmitter
                 // Register locally-imported module names so NameEmitters can resolve them
                 // (e.g. `import sys` inside a method body makes `sys` available as a name).
                 foreach (var alias in s.Names)
-                    _ctx.NamespaceImports[alias.Alias ?? alias.Name] = "";
+                {
+                    var localName = alias.Alias ?? alias.Name;
+                    _ctx.NamespaceImports[localName] = "";
+
+                    // Bind the module VALUE at runtime — same rule as `with...as`:
+                    // NameEmitters reads FIELDS before locals/namespaceImports, so when
+                    // Pass 1 hoisted this name to a field (e.g. `_winapi = None` fallback
+                    // in an except block), the field must hold the module value, else
+                    // every read returns null. ImportModule raises ImportError (TypeLoad-
+                    // Exception) when the module can't load — feeding try/except properly.
+                    var baseName = alias.Name.Split('.')[0];
+                    if (localName != baseName) continue;       // aliased: no field expected
+                    if (!StdLibResolver.IsStdLib(baseName)) continue;
+                    if (!_ctx.Fields.TryGetValue(localName, out var fb)) continue;
+
+                    IL.Emit(OpCodes.Ldstr, baseName);
+                    IL.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.ImportModule))!);
+                    IL.Emit(OpCodes.Stsfld, fb);
+                }
                 break;
             case FromImportStatement _: break;
             case GlobalStatement s:

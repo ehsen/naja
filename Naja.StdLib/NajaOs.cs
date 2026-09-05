@@ -248,6 +248,15 @@ public sealed class NajaOsPath
         => string.Equals(Path.GetFullPath(S(path1)), Path.GetFullPath(S(path2)),
                          StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>Normalize a path: lowercase + / → \ on Windows (ntpath.normcase).</summary>
+    public string normcase(object path)
+    {
+        var p = S(path);
+        if (OperatingSystem.IsWindows())
+            return p.Replace('/', '\\').ToLowerInvariant();
+        return p;
+    }
+
     private static string S(object o) => o?.ToString() ?? "";
 }
 
@@ -373,6 +382,29 @@ public sealed class NajaOs
 
     // ── Process ───────────────────────────────────────────────────────────────
     public long getpid() => System.Diagnostics.Process.GetCurrentProcess().Id;
+
+    /// <summary>
+    /// os.kill(pid, sig) — send a signal to a process. On Windows, CPython
+    /// supports sig = 0 (existence check), CTRL_C_EVENT, CTRL_BREAK_EVENT and
+    /// SIGTERM-equivalent termination (TerminateProcess). We mirror the
+    /// practical subset: 0 probes, anything else terminates the process.
+    /// </summary>
+    public void kill(object pid, object sig)
+    {
+        var pidValue = Convert.ToInt64(pid);
+        var sigValue = Convert.ToInt64(sig);
+        try
+        {
+            var proc = System.Diagnostics.Process.GetProcessById((int)pidValue);
+            if (sigValue == 0) return;               // existence probe only
+            proc.Kill(entireProcessTree: true);
+        }
+        catch (System.ArgumentException)
+        {
+            throw new System.IO.IOException(
+                $"[Errno 3] No such process: {pidValue}");
+        }
+    }
     public long getppid() => 0L; // not reliably available cross-platform
 
     public long system(object cmd)
