@@ -634,17 +634,25 @@ public sealed class NajaUnittest
                 try
                 {
                     instance = (NajaTestCase)Activator.CreateInstance(cls)!;
-                    instance.setUp();
+                    // setUp / tearDown dispatched via reflection on the CONCRETE class rather
+                    // than virtual dispatch: Naja compiles Python defs as `object m(object self)`,
+                    // which does NOT signature-match the base `void setUp()`, so virtual calls
+                    // through a NajaTestCase reference silently hit the empty base. Look up the
+                    // method on the concrete (compiled) type first, fall back to the base.
+                    InvokeLifecycle(instance, "setUp");
                     method.Invoke(instance, null);
-                    instance.tearDown();
+                    InvokeLifecycle(instance, "tearDown");
                     passed++;
                     Console.Error.Write(".");
                 }
-                catch (SkipTestException ex)
+                catch (System.Reflection.TargetInvocationException tie)
+                    when (tie.InnerException is SkipTestException)
                 {
+                    // Invoke wraps exceptions in TargetInvocationException — skips must be
+                    // unwrapped BEFORE the generic handler, or they count as errors.
                     skipped++;
                     Console.Error.Write("s");
-                    _ = ex;
+                    try { InvokeLifecycle(instance, "tearDown"); } catch { }
                 }
                 catch (System.Reflection.TargetInvocationException tie)
                     when (tie.InnerException is AssertionException ae)
@@ -652,7 +660,13 @@ public sealed class NajaUnittest
                     failed++;
                     failures.Add($"FAIL: {cls.Name}.{method.Name}\n  AssertionError: {ae.Message}");
                     Console.Error.Write("F");
-                    try { instance?.tearDown(); } catch { }
+                    try { InvokeLifecycle(instance, "tearDown"); } catch { }
+                }
+                catch (Exception ex) when (ex is SkipTestException)
+                {
+                    skipped++;
+                    Console.Error.Write("s");
+                    try { InvokeLifecycle(instance, "tearDown"); } catch { }
                 }
                 catch (Exception ex)
                 {
@@ -660,7 +674,7 @@ public sealed class NajaUnittest
                     var inner = ex is System.Reflection.TargetInvocationException tie2 ? tie2.InnerException ?? ex : ex;
                     failures.Add($"ERROR: {cls.Name}.{method.Name}\n  {inner.GetType().Name}: {inner.Message}");
                     Console.Error.Write("E");
-                    try { instance?.tearDown(); } catch { }
+                    try { InvokeLifecycle(instance, "tearDown"); } catch { }
                 }
             }
         }
@@ -686,5 +700,26 @@ public sealed class NajaUnittest
             throw new AssertionException(
                 $"{failed} test(s) failed, {errors} error(s).\n" +
                 string.Join("\n", failures));
+    }
+
+    /// <summary>
+    /// Invoke a lifecycle hook (setUp/tearDown) on a Naja-compiled test instance.
+    /// Python classes compile methods as `object method(object self)` — the returned
+    /// `object` is the value, and `self` is passed as arg 0. We search the concrete
+    /// (compiled) class first for the 1-arg Python shape, fall back to the 0-arg CLR
+    /// shape on the base for classes that don't define the hook.
+    /// </summary>
+    private static void InvokeLifecycle(NajaTestCase instance, string name)
+    {
+        // Naja emits Python `def setUp(self):` as `object setUp()` (self is ldarg.0,
+        // not a formal parameter). Base NajaTestCase declares `void setUp()`. The
+        // return-type mismatch means the Python method is NOT a virtual override —
+        // virtual dispatch silently hits the empty base. Resolve the method on the
+        // concrete (compiled) type explicitly by name, then invoke.
+        var m = instance.GetType().GetMethod(name,
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance,
+            null, System.Type.EmptyTypes, null);
+        // Only skip when nothing exists at all — Invoke handles the base empty case fine.
+        m?.Invoke(instance, null);
     }
 }

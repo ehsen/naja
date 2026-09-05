@@ -519,7 +519,39 @@ public static class ReflectionHelpers
 
         // .NET static call: obj is System.Type → invoke static method
         if (obj is Type type)
-            return StaticCall(type, method, args);
+        {
+            // Uniform stdlib-module dispatch. Modules come in three shapes:
+            //   1. singleton + instance methods (os, sys, math, ...) → has static Instance field
+            //   2. static-only methods (tempfile, test.support, ...) → no Instance
+            //   3. instance methods w/o singleton (shutil, textwrap) → parameterless ctor
+            // The generated code may hand us the raw Type for ANY of these (function/class
+            // scopes resolve imports to the Type). Dispatch consistently: try static first
+            // (keeps .NET interop semantics for real static classes), then the singleton
+            // instance, then a lazily-created instance — so every module shape behaves the
+            // same no matter where in the source the call appears.
+            var staticFlags0 = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.IgnoreCase;
+            var hasStatic = type.GetMethods(staticFlags0)
+                .Any(m => string.Equals(m.Name, method, StringComparison.OrdinalIgnoreCase));
+            if (hasStatic)
+                return StaticCall(type, method, args);
+
+            if (type.GetField("Instance", BindingFlags.Public | BindingFlags.Static) is { } instField
+                && instField.GetValue(null) is { } singleton)
+            {
+                obj = singleton;
+            }
+            else if (type.GetConstructor(Type.EmptyTypes) is { } defaultCtor
+                     && type.Namespace is not null && type.Namespace.StartsWith("Naja.StdLib", StringComparison.Ordinal))
+            {
+                // Plain-instance stdlib module without a singleton — create one on demand.
+                obj = defaultCtor.Invoke(null);
+            }
+            else
+            {
+                // Real .NET type (interop): report the static-method miss as before.
+                return StaticCall(type, method, args);
+            }
+        }
 
         string? bridgeName = null;
         Type? bridgeClass = null;

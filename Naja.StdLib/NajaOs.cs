@@ -284,7 +284,16 @@ public sealed class NajaOs
 
     public List<object> listdir(object p)
     {
-        return Directory.GetFileSystemEntries(S(p))
+        // \\\\?\\ extended-length prefix: managed System.IO accepts long paths natively
+        // on .NET 10 (LongPathAware enabled by default), so strip the prefix and use
+        // the regular managed path — same entries returned, no Win32 limit reached here.
+        var raw = S(p);
+        var path = raw.StartsWith(@"\\?\", StringComparison.Ordinal)
+            ? raw[4..].StartsWith(@"UNC\", StringComparison.Ordinal)
+                ? @"\\" + raw[7..]          // \\?\UNC\server\share → \\server\share
+                : raw[4..]
+            : raw;
+        return Directory.GetFileSystemEntries(path)
                         .Select(e => (object)Path.GetFileName(e))
                         .ToList();
     }
@@ -307,6 +316,15 @@ public sealed class NajaOs
     public void rmdir(object path)   => Directory.Delete(S(path));
     public void removedirs(object p) => Directory.Delete(S(p), recursive: true);
 
+    /// <summary>Normalize a path: lowercase + / → \ on Windows (ntpath.normcase).</summary>
+    public string normcase(object path)
+    {
+        var p = S(path);
+        if (OperatingSystem.IsWindows())
+            return p.Replace('/', '\\').ToLowerInvariant();
+        return p;
+    }
+
     // ── File operations ───────────────────────────────────────────────────────
     public void remove(object path)
     {
@@ -327,6 +345,8 @@ public sealed class NajaOs
             }
             catch { }
         }
+        if (!File.Exists(p))
+            throw new FileNotFoundException($"[Errno 2] No such file or directory: '{p}'");
         File.Delete(p);
     }
 

@@ -603,6 +603,7 @@ public sealed class CallEmitters : ExpressionEmitterBase
         "splitlines" => NajaBuiltinsMethodCache.StrSplitLines_Method,
         "title" => NajaBuiltinsMethodCache.StrTitle_Method,
         "encode" => NajaBuiltinsMethodCache.StrEncode_Method,
+        "decode" => typeof(Naja.CodeGen.Builtins.StringFunctions).GetMethod("StrDecode")!,
         "format" => NajaBuiltinsMethodCache.StrFormat_Method,
         _ => null
     };

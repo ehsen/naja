@@ -340,6 +340,26 @@ public sealed class NameEmitters : ExpressionEmitterBase
                 return NajaTypes.Unknown;
             }
 
+            // Stdlib module WITHOUT a singleton Instance field (e.g. tempfile with
+            // static-only methods): push the module's Type object instead of null.
+            // DynamicCall/StaticCall then dispatch uniformly — calling a method on
+            // any stdlib module works the same whether the module is singleton-based,
+            // static-only, or plain-instance.
+            if (StdLibResolver.TryResolve(e.Name, out var stdRes))
+            {
+                var modType =
+                    AppDomain.CurrentDomain.GetAssemblies()
+                        .Select(a => a.GetType(stdRes.TypeName, throwOnError: false))
+                        .FirstOrDefault(t => t is not null)
+                    ?? Type.GetType($"{stdRes.TypeName}, {stdRes.AssemblyName}", throwOnError: false);
+                if (modType is not null)
+                {
+                    IL.Emit(OpCodes.Ldtoken, modType);
+                    IL.Emit(OpCodes.Call, typeof(Type).GetMethod("GetTypeFromHandle")!);
+                    return NajaTypes.Unknown;
+                }
+            }
+
             // Namespace used as a value (e.g., passed to a function) - return null
             // The actual type resolution happens in EmitAttribute when accessing System.DateTime
             IL.Emit(OpCodes.Ldnull);
@@ -451,27 +471,16 @@ public sealed class NameEmitters : ExpressionEmitterBase
     /// </summary>
     private static FieldInfo? GetStdLibField(string moduleName)
     {
-        var moduleTypeMap = new Dictionary<string, (string TypeName, string Assembly)>
-        {
-            ["re"]       = ("Naja.StdLib.NajaRe",           "Naja.StdLib"),
-            ["io"]       = ("Naja.StdLib.NajaIo",           "Naja.StdLib"),
-            ["json"]     = ("Naja.StdLib.NajaJson",          "Naja.StdLib"),
-            ["math"]     = ("Naja.StdLib.NajaMath",          "Naja.StdLib"),
-            ["sys"]      = ("Naja.StdLib.NajaSys",           "Naja.StdLib"),
-            ["os"]       = ("Naja.StdLib.NajaOs",            "Naja.StdLib"),
-            ["datetime"] = ("Naja.StdLib.NajaDateTime",      "Naja.StdLib"),
-            ["unittest"] = ("Naja.StdLib.NajaUnittest",      "Naja.StdLib"),
-        };
-
-        if (!moduleTypeMap.TryGetValue(moduleName, out var entry))
+        // StdLibResolver is the single source of truth for module→type mapping.
+        if (!StdLibResolver.TryResolve(moduleName, out var res))
             return null;
 
         // Search already-loaded assemblies first (avoids partial assembly name issues)
         var moduleType =
             AppDomain.CurrentDomain.GetAssemblies()
-                .Select(a => a.GetType(entry.TypeName, throwOnError: false))
+                .Select(a => a.GetType(res.TypeName, throwOnError: false))
                 .FirstOrDefault(t => t is not null)
-            ?? Type.GetType($"{entry.TypeName}, {entry.Assembly}", throwOnError: false);
+            ?? Type.GetType($"{res.TypeName}, {res.AssemblyName}", throwOnError: false);
 
         return moduleType?.GetField("Instance",
             System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);

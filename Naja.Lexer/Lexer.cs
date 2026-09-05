@@ -340,10 +340,27 @@ public sealed class Lexer
                         Advance(); // skip \n if present
                     continue;
                 }
-                // Regular escape sequence
-                content.Append(Advance()); // backslash
+                // Regular escape sequence — decode to the actual character
+                Advance(); // consume backslash
                 if (_pos < _source.Length)
-                    content.Append(Advance()); // escaped char
+                {
+                    char esc = Advance();
+                    content.Append(esc switch
+                    {
+                        'n' => '\n',
+                        't' => '\t',
+                        'r' => '\r',
+                        '0' => '\0',
+                        'b' => '\b',
+                        'f' => '\f',
+                        'v' => '\v',
+                        '\'' => '\'',
+                        '"' => '"',
+                        '\\' => '\\',
+                        '\n' => '\0', // consumed line continuation inside string — drop
+                        _ => esc      // unknown escape: Python keeps the char as-is
+                    });
+                }
                 continue;
             }
 

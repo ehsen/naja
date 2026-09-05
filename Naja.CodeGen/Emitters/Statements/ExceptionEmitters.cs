@@ -358,9 +358,20 @@ public class ExceptionEmitters : StatementEmitterBase
 
             if (item.Target is NameExpr n)
             {
-                if (!_ctx.Locals.Contains(n.Name))
-                    _ctx.Locals.Declare(n.Name, typeof(object));
-                _ctx.Locals.EmitStore(n.Name);
+                // Route the binding through the SAME resolution order as EmitName:
+                // if Pass 1 hoisted this name to a static field (module-level var or
+                // closure capture), NameEmitters loads fields BEFORE locals — storing
+                // to a local here would leave the field null (store/load mismatch).
+                if (_ctx.Fields.TryGetValue(n.Name, out var withField))
+                {
+                    IL.Emit(OpCodes.Stsfld, withField);
+                }
+                else
+                {
+                    if (!_ctx.Locals.Contains(n.Name))
+                        _ctx.Locals.Declare(n.Name, typeof(object));
+                    _ctx.Locals.EmitStore(n.Name);
+                }
             }
             else
             {

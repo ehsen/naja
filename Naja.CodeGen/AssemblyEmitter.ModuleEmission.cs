@@ -106,6 +106,15 @@ public sealed partial class AssemblyEmitter
                         // Python stdlib module: create a mapping to the singleton instance
                         importMap[localName] = (stdLibModule.TypeName, stdLibModule.AssemblyName);
                         usedStdLibAssemblies.Add(stdLibModule.AssemblyName);
+
+                        // ALSO register in namespaceImports so Pass 3 (function/class bodies)
+                        // resolves the import identically to Pass 2 (Main). StatementEmitter's
+                        // ImportStatement arm adds ALL plain imports to NamespaceImports at
+                        // statement-emit time; without this, module-level code resolves stdlib
+                        // names via the NamespaceImports→singleton-instance path while function
+                        // bodies fall through to the ImportMap→Type-object path, breaking
+                        // instance-method dispatch (e.g. os.getcwd() inside a def).
+                        namespaceImports[localName] = "";
                     }
                     else
                     {

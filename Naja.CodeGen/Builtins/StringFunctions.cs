@@ -121,6 +121,30 @@ public static class StringFunctions
         };
     }
 
+    /// <summary>
+    /// Decode bytes (or a string passthrough) to a string — data.decode(encoding, errors).
+    /// Mirrors bytes.decode(); accepting a string receiver keeps the bridge uniform
+    /// with the other Str* helpers (subprocess.check_output returns a string).
+    /// errors is accepted and ignored (decoder always uses fallback replacement).
+    /// </summary>
+    public static string StrDecode(object s, object encoding = null!, object errors = null!)
+    {
+        var enc = encoding is null ? "utf-8" : TypeConversion.ToStr(encoding).ToLower();
+        var encodingObj = enc switch
+        {
+            "utf-8" or "utf8" => System.Text.Encoding.UTF8,
+            "latin-1" or "latin1" or "iso-8859-1" => System.Text.Encoding.GetEncoding("iso-8859-1"),
+            "ascii" => System.Text.Encoding.ASCII,
+            "mbcs" => System.Text.Encoding.Default,
+            _ => throw new Exception($"LookupError: unknown encoding: {enc}")
+        };
+        return s switch
+        {
+            byte[] b => encodingObj.GetString(b),
+            _ => TypeConversion.ToStr(s) // already a string — no-op; Naja check_output returns str
+        };
+    }
+
     /// <summary>String format method: "template".format(*args) with {!r} and {!s} conversion support.</summary>
     public static string StrFormat(object self, object[] args)
     {

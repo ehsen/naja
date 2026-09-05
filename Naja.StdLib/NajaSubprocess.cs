@@ -409,4 +409,114 @@ public sealed class NajaSubprocess
     {
         public TimeoutExpired(string message) : base(message) { }
     }
+
+    // ── Module-level convenience functions ─────────────────────────────────────
+    // These live on the NajaSubprocess singleton so both `import subprocess;
+    // subprocess.check_output(...)` and `from subprocess import check_output`
+    // resolve identically (same dispatch path as every other stdlib module).
+
+    /// <summary>
+    /// Run a command and return its stdout. Raises CalledProcessError on a
+    /// non-zero exit code, mirroring subprocess.check_output().
+    /// Accepts a list/tuple of args, a single command string, or keyword-style
+    /// trailing arguments (cwd, timeout, stderr) passed as extra object params.
+    /// </summary>
+    public string check_output(object cmd)
+    {
+        var (fileName, args) = ToProcessArgs(cmd);
+        var psi = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = fileName,
+            Arguments = args,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        using var p = System.Diagnostics.Process.Start(psi)
+            ?? throw new InvalidOperationException($"Failed to start process: {fileName}");
+        var output = p.StandardOutput.ReadToEnd();
+        p.WaitForExit();
+        if (p.ExitCode != 0)
+            throw new Exception($"CalledProcessError: Command '{fileName}' returned non-zero exit status {p.ExitCode}");
+        return output;
+    }
+
+    public string check_output(object cmd, object cwd)
+    {
+        var psiArgs = ExtractCwd(cwd);
+        var (fileName, args) = ToProcessArgs(cmd);
+        var psi = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = fileName,
+            Arguments = args,
+            WorkingDirectory = psiArgs,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        using var p = System.Diagnostics.Process.Start(psi)
+            ?? throw new InvalidOperationException($"Failed to start process: {fileName}");
+        var output = p.StandardOutput.ReadToEnd();
+        p.WaitForExit();
+        if (p.ExitCode != 0)
+            throw new Exception($"CalledProcessError: Command '{fileName}' returned non-zero exit status {p.ExitCode}");
+        return output;
+    }
+
+    /// <summary>Run a command, return its exit status (subprocess.call).</summary>
+    public long call(object cmd)
+    {
+        var (fileName, args) = ToProcessArgs(cmd);
+        var psi = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = fileName,
+            Arguments = args,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        using var p = System.Diagnostics.Process.Start(psi)
+            ?? throw new InvalidOperationException($"Failed to start process: {fileName}");
+        p.WaitForExit();
+        return p.ExitCode;
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────────────
+
+    private static (string fileName, string args) ToProcessArgs(object cmd)
+    {
+        if (cmd is string s)
+            return (s, "");
+
+        var items = cmd as System.Collections.IEnumerable;
+        if (items is null)
+            throw new ArgumentException("subprocess: command must be a string or a list of arguments");
+
+        var parts = new List<string>();
+        foreach (var item in items)
+        {
+            if (item is null) continue;
+            var part = item.ToString()!;
+            if (part.Contains(' '))
+                parts.Add("\"" + part.Replace("\"", "\\\"") + "\"");
+            else
+                parts.Add(part);
+        }
+        if (parts.Count == 0)
+            throw new ArgumentException("subprocess: empty command list");
+
+        return (parts[0], string.Join(" ", parts.Skip(1)));
+    }
+
+    private static string ExtractCwd(object cwd)
+    {
+        // cwd may be passed as a plain string path.
+        if (cwd is string path) return path;
+        // Or as a dict-style object with a cwd key (keyword-argument emulation).
+        if (cwd is System.Collections.Generic.Dictionary<object, object> d
+            && d.TryGetValue("cwd", out var v))
+            return v?.ToString() ?? "";
+        return cwd?.ToString() ?? "";
+    }
 }

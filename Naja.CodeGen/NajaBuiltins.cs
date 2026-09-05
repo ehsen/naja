@@ -359,9 +359,36 @@ public static class NajaBuiltins
     {
         if (obj is null) throw new Exception($"AttributeError: NoneType has no method '{method}'");
 
-        // .NET static call: obj is System.Type → invoke static method
+        // .NET static call: obj is System.Type → invoke static method.
+        // If no static method matches, treat the Type as a stdlib module:
+        // use its singleton Instance, or lazily create an instance for
+        // plain-instance modules (shutil, textwrap). Uniform with
+        // ReflectionHelpers.DynamicCall — both must behave identically.
         if (obj is Type type)
-            return StaticCall(type, method, args);
+        {
+            var staticFlags0 = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic
+                | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.IgnoreCase;
+            var hasStatic = type.GetMethods(staticFlags0)
+                .Any(m => string.Equals(m.Name, method, StringComparison.OrdinalIgnoreCase));
+            if (hasStatic)
+                return StaticCall(type, method, args);
+
+            if (type.GetField("Instance",
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static) is { } instField
+                && instField.GetValue(null) is { } singleton)
+            {
+                obj = singleton;
+            }
+            else if (type.GetConstructor(Type.EmptyTypes) is { } defaultCtor
+                     && type.Namespace is not null && type.Namespace.StartsWith("Naja.StdLib", StringComparison.Ordinal))
+            {
+                obj = defaultCtor.Invoke(null);
+            }
+            else
+            {
+                return StaticCall(type, method, args);
+            }
+        }
 
         string? bridgeName = null;
         if (obj is string) bridgeName = "Str" + method;
