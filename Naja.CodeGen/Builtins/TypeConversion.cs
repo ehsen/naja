@@ -24,9 +24,24 @@ public static class TypeConversion
         double d => d,
         long l => (double)l,
         bool b => b ? 1.0 : 0.0,
-        string s => double.Parse(s),
+        // Python float() accepts inf/infinity/nan spellings (any case, optional sign)
+        string s => ParsePythonFloat(s),
         _ => Convert.ToDouble(obj)
     };
+
+    private static double ParsePythonFloat(string s)
+    {
+        var t = s.Trim().ToLowerInvariant();
+        var sign = 1.0;
+        if (t.StartsWith('-')) { sign = -1.0; t = t[1..]; }
+        else if (t.StartsWith('+')) { t = t[1..]; }
+        return t switch
+        {
+            "inf" or "infinity" => sign * double.PositiveInfinity,
+            "nan"              => double.NaN,
+            _ => double.Parse(s.Trim(), System.Globalization.CultureInfo.InvariantCulture)
+        };
+    }
 
     /// <summary>Convert an object to a Python string representation.</summary>
     public static string ToStr(object? obj)

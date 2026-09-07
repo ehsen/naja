@@ -562,7 +562,10 @@ public sealed class CallEmitters : ExpressionEmitterBase
             }
         }
 
-        // Dynamic fallback
+        // Dynamic fallback — carries keyword names so DynamicCallKw can bind
+        // named args to their matching CLR parameter (json.dumps(..., indent=2),
+        // open(..., mode=...) etc.). kwNames[i] is null for positional args.
+        bool hasKw = args.Any(a => a.Keyword is not null);
         TypeMapper.EmitBox(IL, objType);
         IL.Emit(OpCodes.Ldstr, attr.Attribute);
         IL.Emit(OpCodes.Ldc_I4, args.Count);
@@ -574,7 +577,24 @@ public sealed class CallEmitters : ExpressionEmitterBase
             IL.Emit(OpCodes.Stelem_Ref);
         }
 
-        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.DynamicCall_Method);
+        if (hasKw)
+        {
+            IL.Emit(OpCodes.Ldc_I4, args.Count);
+            IL.Emit(OpCodes.Newarr, typeof(string));
+            for (int i = 0; i < args.Count; i++)
+            {
+                IL.Emit(OpCodes.Dup); IL.Emit(OpCodes.Ldc_I4, i);
+                var kw = args[i].Keyword;
+                if (kw is null) IL.Emit(OpCodes.Ldnull);
+                else IL.Emit(OpCodes.Ldstr, kw);
+                IL.Emit(OpCodes.Stelem_Ref);
+            }
+            IL.Emit(OpCodes.Call, typeof(Builtins.ReflectionHelpers).GetMethod(nameof(Builtins.ReflectionHelpers.DynamicCallKw))!);
+        }
+        else
+        {
+            IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.DynamicCall_Method);
+        }
         return NajaTypes.Unknown;
     }
 

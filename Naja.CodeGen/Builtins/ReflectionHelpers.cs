@@ -547,26 +547,32 @@ public static class ReflectionHelpers
 
     /// <summary>Call a method dynamically on a .NET object from Python code.</summary>
     public static object? DynamicCall(object obj, string method, object[] args)
+        => DynamicCallKw(obj, method, args, null);
+
+    /// <summary>
+    /// Dynamic method call with KEYWORD argument support. Python calls like
+    /// `json.dumps(obj, ensure_ascii=False)` bind named args to the matching
+    /// CLR parameter (case-insensitive); positional args fill remaining slots
+    /// in order. Unmatched names fall back to positional binding.
+    /// </summary>
+    public static object? DynamicCallKw(object obj, string method, object[] args, string[]? kwNames)
     {
         if (obj is null) throw new Exception($"AttributeError: NoneType has no method '{method}'");
 
-        // .NET static call: obj is System.Type → invoke static method
+        // Uniform stdlib-module dispatch. Modules come in three shapes:
+        //   1. singleton + instance methods (os, sys, math, ...) -> static Instance field
+        //   2. static-only methods (tempfile, test.support, ...) -> no Instance
+        //   3. instance methods w/o singleton (shutil, textwrap) -> parameterless ctor
+        // Generated code may hand us the raw Type for ANY shape (function/class scopes
+        // resolve imports to the Type). Dispatch consistently: try static first, then
+        // the singleton instance, then a lazily-created instance - one rule everywhere.
         if (obj is Type type)
         {
-            // Uniform stdlib-module dispatch. Modules come in three shapes:
-            //   1. singleton + instance methods (os, sys, math, ...) → has static Instance field
-            //   2. static-only methods (tempfile, test.support, ...) → no Instance
-            //   3. instance methods w/o singleton (shutil, textwrap) → parameterless ctor
-            // The generated code may hand us the raw Type for ANY of these (function/class
-            // scopes resolve imports to the Type). Dispatch consistently: try static first
-            // (keeps .NET interop semantics for real static classes), then the singleton
-            // instance, then a lazily-created instance — so every module shape behaves the
-            // same no matter where in the source the call appears.
             var staticFlags0 = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.IgnoreCase;
             var hasStatic = type.GetMethods(staticFlags0)
                 .Any(m => string.Equals(m.Name, method, StringComparison.OrdinalIgnoreCase));
             if (hasStatic)
-                return StaticCall(type, method, args);
+                return StaticCallKw(type, method, args, kwNames);
 
             if (type.GetField("Instance", BindingFlags.Public | BindingFlags.Static) is { } instField
                 && instField.GetValue(null) is { } singleton)
@@ -576,16 +582,13 @@ public static class ReflectionHelpers
             else if (type.GetConstructor(Type.EmptyTypes) is { } defaultCtor
                      && type.Namespace is not null && type.Namespace.StartsWith("Naja.StdLib", StringComparison.Ordinal))
             {
-                // Plain-instance stdlib module without a singleton — create one on demand.
                 obj = defaultCtor.Invoke(null);
             }
             else
             {
-                // Real .NET type (interop): report the static-method miss as before.
                 return StaticCall(type, method, args);
             }
         }
-
         string? bridgeName = null;
         Type? bridgeClass = null;
         if (obj is string)                                                     { bridgeName = "Str"  + method; bridgeClass = typeof(StringFunctions); }
@@ -650,6 +653,39 @@ public static class ReflectionHelpers
             isStaticFallback = true;
         }
 
+        // Keyword re-binding: positional args fill slots in order; named args
+        // (whose names ride in kwNames) land in their matching parameter slot.
+        // args[i] is positional when kwNames[i] is null.
+        if (kwNames is { Length: > 0 })
+        {
+            var ps = mb.GetParameters();
+            var positionalIdx = 0;
+            var rebound = new object?[boundArgs.Length];
+            for (int i = 0; i < args.Length; i++)
+            {
+                if (kwNames[i] is { } kw && !string.IsNullOrEmpty(kw))
+                {
+                    var pi = Array.FindIndex(ps, p => string.Equals(p.Name, kw, StringComparison.OrdinalIgnoreCase));
+                    if (pi >= 0 && pi < rebound.Length)
+                        rebound[pi] = args[i];
+                    else if (positionalIdx < rebound.Length)
+                        rebound[positionalIdx++] = args[i];   // unknown name: fall back positional
+                }
+                else
+                {
+                    if (positionalIdx < rebound.Length)
+                        rebound[positionalIdx++] = args[i];
+                }
+            }
+            // Fill optional parameters the caller didn't provide
+            for (int i = 0; i < rebound.Length; i++)
+            {
+                if (rebound[i] is null && ps[i].IsOptional)
+                    rebound[i] = ps[i].DefaultValue;
+            }
+            boundArgs = rebound;
+        }
+
         var mi = (MethodInfo)mb;
         try { return mi.Invoke(isStaticFallback ? null : obj, boundArgs); }
         catch (TargetInvocationException tie) when (tie.InnerException is not null)
@@ -661,6 +697,10 @@ public static class ReflectionHelpers
 
     /// <summary>Invoke a static method on a .NET type.</summary>
     public static object? StaticCall(Type type, string methodName, object[] args)
+        => StaticCallKw(type, methodName, args, null);
+
+    /// <summary>Invoke a static method with keyword-argument re-binding (see DynamicCallKw).</summary>
+    public static object? StaticCallKw(Type type, string methodName, object[] args, string[]? kwNames)
     {
         var flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.IgnoreCase;
         var candidates = type.GetMethods(flags)
@@ -690,6 +730,36 @@ public static class ReflectionHelpers
             }
 
             throw new Exception($"AttributeError: type '{type.FullName}' has no static method '{methodName}' matching {args.Length} argument(s)");
+        }
+
+        // Keyword re-binding — identical rule to the instance path
+        if (kwNames is { Length: > 0 })
+        {
+            var ps = method.GetParameters();
+            var positionalIdx = 0;
+            var rebound = new object?[boundArgs.Length];
+            for (int i = 0; i < args.Length; i++)
+            {
+                if (i < kwNames.Length && kwNames[i] is { } kw && !string.IsNullOrEmpty(kw))
+                {
+                    var pi = Array.FindIndex(ps, p => string.Equals(p.Name, kw, StringComparison.OrdinalIgnoreCase));
+                    if (pi >= 0 && pi < rebound.Length)
+                        rebound[pi] = args[i];
+                    else if (positionalIdx < rebound.Length)
+                        rebound[positionalIdx++] = args[i];
+                }
+                else
+                {
+                    if (positionalIdx < rebound.Length)
+                        rebound[positionalIdx++] = args[i];
+                }
+            }
+            for (int i = 0; i < rebound.Length; i++)
+            {
+                if (rebound[i] is null && ps[i].IsOptional)
+                    rebound[i] = ps[i].DefaultValue;
+            }
+            boundArgs = rebound;
         }
 
         try { return method.Invoke(null, boundArgs); }

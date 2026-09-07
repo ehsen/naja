@@ -1094,8 +1094,57 @@ public static class NajaBuiltins
     /// </summary>
     public static object ImportModule(string moduleName)
     {
+        // Placeholder registry entries (pathlib, csv, string) have no backing
+        // CLR type — treat exactly like a missing module: ImportError.
+        if (!StdLibResolver.IsImplemented(moduleName))
+            throw new TypeLoadException($"ImportError: No module named '{moduleName}'");
+
         return StdLibResolver.ResolveModuleValue(moduleName)
             ?? throw new TypeLoadException($"ImportError: No module named '{moduleName}'");
+    }
+
+    /// <summary>
+    /// Bind decorated class methods at class-initialization time (Python semantics:
+    /// `method = decorator(method)` becomes a class attribute). Wraps the raw
+    /// instance method in a bound-method NajaFunction, applies each decorator
+    /// bottom-up, and returns the final callable. Emitted from the class cctor.
+    /// </summary>
+    public static object DecorateClassMethod(Type classType, string methodName, object[] decorators)
+    {
+        var flags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic
+                  | System.Reflection.BindingFlags.Instance;
+        var methods = classType.GetMethods(flags)
+            .Where(m => string.Equals(m.Name, methodName, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (methods.Length == 0)
+            throw new Exception($"AttributeError: type '{classType.Name}' has no method '{methodName}'");
+
+        // Bound-method wrapper: args[0] = self, rest forwarded to the raw method.
+        // A single wrapper instance is shared — Python bound methods carry self,
+        // and here self arrives as the first call argument.
+        var wrapper = new Func<object[], object?>(args =>
+        {
+            if (args.Length == 0)
+                throw new Exception($"TypeError: {methodName}() missing 1 required positional argument: 'self'");
+            var self = args[0];
+            var rest = args.Skip(1).ToArray();
+            var m = methods.FirstOrDefault(x => x.GetParameters().Length == rest.Length)
+                 ?? methods[0];
+            try { return m.Invoke(self, rest); }
+            catch (System.Reflection.TargetInvocationException tie) when (tie.InnerException is not null)
+            {
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(tie.InnerException).Throw();
+                throw;
+            }
+        });
+
+        var current = (object)new NajaFunction(wrapper, System.Array.Empty<object>());
+        // Apply decorators bottom-to-top (Python: @a @b def f → a(b(f)))
+        for (int d = decorators.Length - 1; d >= 0; d--)
+        {
+            current = CallCallable(decorators[d], new[] { current });
+        }
+        return current;
     }
 
     public static object? GetAttr(object obj, string name)
@@ -1674,9 +1723,24 @@ public static class NajaBuiltins
         double d => d,
         long l => (double)l,
         bool b => b ? 1.0 : 0.0,
-        string s => double.Parse(s),
+        // Python float() accepts inf/infinity/nan spellings (any case, optional sign)
+        string s => ParsePythonFloat(s),
         _ => Convert.ToDouble(obj)
     };
+
+    private static double ParsePythonFloat(string s)
+    {
+        var t = s.Trim().ToLowerInvariant();
+        var sign = 1.0;
+        if (t.StartsWith('-')) { sign = -1.0; t = t[1..]; }
+        else if (t.StartsWith('+')) { t = t[1..]; }
+        return t switch
+        {
+            "inf" or "infinity" => sign * double.PositiveInfinity,
+            "nan"              => double.NaN,
+            _ => double.Parse(s.Trim(), System.Globalization.CultureInfo.InvariantCulture)
+        };
+    }
 
     public static string ToStr(object? obj)
     {

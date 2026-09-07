@@ -29,7 +29,7 @@ public static class StdLibResolver
             
             // ── TIME module: datetime ─────────────────────────────────────────
             ["datetime"] = ("Naja.StdLib.NajaDateTime", "Naja.StdLib", "Time"),
-            ["time"] = ("Naja.StdLib.Time.NajaTime", "Naja.StdLib.Time", "Time"),  // Placeholder for future
+            ["time"] = ("Naja.StdLib.NajaTime", "Naja.StdLib", "Time"),
             
             // ── IO module: os, pathlib ───────────────────────────────────────
             ["os"] = ("Naja.StdLib.NajaOs", "Naja.StdLib", "IO"),
@@ -197,10 +197,13 @@ public static class StdLibResolver
     {
         // Real implementations (Phase 1: sys, math, unittest, signal, subprocess, datetime, os)
         // Phase 2: mmap, uuid, fnmatch, msvcrt, stat
+        // Round 3: time, io, re, json, tempfile, shutil, textwrap + test.support family
         var implemented = new[] 
         { 
             "sys", "math", "unittest", "signal", "subprocess", "datetime", "os",
-            "mmap", "uuid", "fnmatch", "msvcrt", "stat", "_winapi"
+            "mmap", "uuid", "fnmatch", "msvcrt", "stat", "_winapi",
+            "time", "io", "re", "json", "tempfile", "shutil", "textwrap",
+            "test.support", "test.support.os_helper", "test.support.import_helper"
         };
         return implemented.Contains(moduleName);
     }

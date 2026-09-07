@@ -256,8 +256,25 @@ public sealed partial class AssemblyEmitter
         }
 
         // ── Emit static constructor for class-level variable initialization ──────
-        if (_classStaticFieldBuilders.TryGetValue(classKey, out var staticFBs) && staticFBs.Count > 0)
+        // Extended: also binds DECORATED methods. Python applies method decorators
+        // at class-creation time (`method = decorator(method)` as a class attribute).
+        // We emit a `__dec_<name>` static field per decorated method and initialize
+        // it in the class cctor via the runtime helper, which wraps the raw method
+        // and applies the decorator callables. Attribute access resolves the
+        // decorated value through the class static-field lookup (GetStaticAttr),
+        // so self.method / Cls.method / unittest discovery all see the wrapper.
+        var decoratedMethods = cls.Body.OfType<FunctionDef>()
+            .Where(f => f.Decorators.Count > 0 &&
+                        f.Decorators.Any(d => !(d is NameExpr { Name: "staticmethod" or "classmethod" or "property" }) &&
+                                              !(d is AttributeExpr { Attribute: "setter" })))
+            .ToList();
+
+        if ((_classStaticFieldBuilders.TryGetValue(classKey, out var staticFBs0) && staticFBs0.Count > 0)
+            || decoratedMethods.Count > 0)
         {
+            _classStaticFieldBuilders.TryGetValue(classKey, out var staticFBs);
+            staticFBs ??= new Dictionary<string, FieldBuilder>();
+
             var cctorMb = ct.DefineTypeInitializer();
             var cctorIL = cctorMb.GetILGenerator();
             var cctorCtx = new EmitContext(cctorIL, _model, ct, modBuilder, typeof(void), []);
@@ -284,6 +301,48 @@ public sealed partial class AssemblyEmitter
                             cctorIL.Emit(OpCodes.Stsfld, sfb);
                         }
             }
+
+            // Decorated methods: __dec_<name> static field + runtime binding
+            foreach (var fn in decoratedMethods)
+            {
+                var decFieldName = $"__dec_{fn.Name}";
+                FieldBuilder decField;
+                if (staticFBs.TryGetValue(decFieldName, out var existingDecFb))
+                {
+                    decField = existingDecFb;
+                }
+                else
+                {
+                    decField = ct.DefineField(decFieldName, typeof(object),
+                        FieldAttributes.Public | FieldAttributes.Static);
+                    staticFBs[decFieldName] = decField;
+                    _classStaticFieldBuilders[classKey] = staticFBs;
+                }
+
+                // Push: (classType, methodName, decoratorCount, decorators[])
+                cctorIL.Emit(OpCodes.Ldtoken, ct);
+                cctorIL.Emit(OpCodes.Call, typeof(Type).GetMethod("GetTypeFromHandle")!);
+                cctorIL.Emit(OpCodes.Ldstr, fn.Name);
+
+                var nonTrivial = fn.Decorators
+                    .Where(d => !(d is NameExpr { Name: "staticmethod" or "classmethod" or "property" }) &&
+                                !(d is AttributeExpr { Attribute: "setter" }))
+                    .ToList();
+                cctorIL.Emit(OpCodes.Ldc_I4, nonTrivial.Count);
+                cctorIL.Emit(OpCodes.Newarr, typeof(object));
+                for (int d = 0; d < nonTrivial.Count; d++)
+                {
+                    cctorIL.Emit(OpCodes.Dup);
+                    cctorIL.Emit(OpCodes.Ldc_I4, d);
+                    var decType = cctorExpr.Emit(nonTrivial[d]);
+                    TypeMapper.EmitBox(cctorIL, decType);
+                    cctorIL.Emit(OpCodes.Stelem_Ref);
+                }
+
+                cctorIL.Emit(OpCodes.Call, typeof(NajaBuiltins).GetMethod(nameof(NajaBuiltins.DecorateClassMethod))!);
+                cctorIL.Emit(OpCodes.Stsfld, decField);
+            }
+
             cctorIL.Emit(OpCodes.Ret);
         }
 

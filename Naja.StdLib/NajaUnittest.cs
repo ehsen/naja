@@ -691,7 +691,23 @@ public sealed class NajaUnittest
             var testMethods = cls.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
                 .Where(m => m.Name.StartsWith("test") && m.GetParameters().Length == 0
                             && (filterMethod == null || m.Name == filterMethod))
-                .OrderBy(m => m.Name);
+                .OrderBy(m => m.Name)
+                .ToList();
+
+            // Decorated test methods: Python binds decorator wrappers as class
+            // attributes. The emitter stores them in `__dec_<name>` static fields —
+            // prefer the decorated callable over the raw reflected method.
+            var decoratedCallables = new Dictionary<string, object>();
+            foreach (var f in cls.GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static))
+            {
+                if (f.Name.StartsWith("__dec_") && f.Name.Length > 6)
+                {
+                    var bareName = f.Name[6..];
+                    if (testMethods.Any(m => m.Name == bareName) &&
+                        f.GetValue(null) is { } decVal)
+                        decoratedCallables[bareName] = decVal;
+                }
+            }
 
             foreach (var method in testMethods)
             {
@@ -705,7 +721,10 @@ public sealed class NajaUnittest
                     // through a NajaTestCase reference silently hit the empty base. Look up the
                     // method on the concrete (compiled) type first, fall back to the base.
                     InvokeLifecycle(instance, "setUp");
-                    method.Invoke(instance, null);
+                    if (decoratedCallables.TryGetValue(method.Name, out var decorated))
+                        InvokeDecorated(decorated, instance);
+                    else
+                        method.Invoke(instance, null);
                     InvokeLifecycle(instance, "tearDown");
                     passed++;
                     Console.Error.Write(".");
@@ -786,5 +805,29 @@ public sealed class NajaUnittest
             null, System.Type.EmptyTypes, null);
         // Only skip when nothing exists at all — Invoke handles the base empty case fine.
         m?.Invoke(instance, null);
+    }
+
+    /// <summary>
+    /// Invoke a decorated test callable (NajaFunction from Naja.CodeGen or any
+    /// callable object) with the test instance as `self`. Uses reflection so
+    /// Naja.StdLib stays independent of Naja.CodeGen (no assembly reference).
+    /// </summary>
+    private static void InvokeDecorated(object callable, NajaTestCase instance)
+    {
+        // NajaFunction exposes __call__(object[] args)
+        var callMethod = callable.GetType().GetMethod("__call__",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+        if (callMethod is not null)
+        {
+            callMethod.Invoke(callable, new object?[] { new object[] { instance } });
+            return;
+        }
+        // Raw delegates
+        if (callable is System.Delegate del)
+        {
+            del.DynamicInvoke(instance);
+            return;
+        }
+        throw new Exception($"TypeError: decorated test is not callable: {callable.GetType().Name}");
     }
 }

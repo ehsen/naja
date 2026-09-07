@@ -639,6 +639,54 @@ public class DefinitionEmitters : StatementEmitterBase
 
     // ── Yield detection ───────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Apply class decorators for a TOP-LEVEL class definition (Pass 2).
+    /// Python applies decorators at class-creation time, which for top-level
+    /// classes is module-execution order — Pass 2's Main() walk, NOT Pass 3.
+    /// Pass 3 (EmitClassBody) only emits method bodies; decorator application
+    /// never happens there, so top-level decorated classes silently kept their
+    /// undecorated TypeBuilder. This mirrors the nested-class path in
+    /// EmitClassDef: evaluate decorators, resolve the baked type by name,
+    /// call them bottom-up, store the result where the class name resolves.
+    /// </summary>
+    public void EmitTopLevelClassDecorators(ClassDef s, System.Reflection.Emit.TypeBuilder? tb, string typeName)
+    {
+        if (s.Decorators.Count == 0) return;
+
+        var decLocals = new List<LocalBuilder>();
+        for (int d = 0; d < s.Decorators.Count; d++)
+        {
+            var decLocal = _ctx.Locals.Declare($"__cdec_{s.Name}_{d}", typeof(object));
+            TypeMapper.EmitBox(IL, _exprEmitter.Emit(s.Decorators[d]));
+            IL.Emit(OpCodes.Stloc, decLocal);
+            decLocals.Add(decLocal);
+        }
+        IL.Emit(OpCodes.Ldstr, typeName);
+        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ResolveTypeByName_Method);
+        for (int d = s.Decorators.Count - 1; d >= 0; d--)
+        {
+            var tmp = _ctx.Locals.Declare($"__cval_{s.Name}_{d}", typeof(object));
+            IL.Emit(OpCodes.Stloc, tmp);
+            IL.Emit(OpCodes.Ldloc, decLocals[d]);
+            IL.Emit(OpCodes.Ldc_I4_1);
+            IL.Emit(OpCodes.Newarr, typeof(object));
+            IL.Emit(OpCodes.Dup);
+            IL.Emit(OpCodes.Ldc_I4_0);
+            IL.Emit(OpCodes.Ldloc, tmp);
+            IL.Emit(OpCodes.Stelem_Ref);
+            IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.CallCallable_Method);
+        }
+        if (_ctx.Fields.TryGetValue(s.Name, out var staticField))
+        {
+            IL.Emit(OpCodes.Stsfld, staticField);
+        }
+        else
+        {
+            var classLocal = _ctx.Locals.Declare(s.Name, typeof(object));
+            IL.Emit(OpCodes.Stloc, classLocal);
+        }
+    }
+
     /// <summary>Check if a statement list contains any yield expressions (public wrapper for AssemblyEmitter).</summary>
     public static bool ContainsYieldStatic(IReadOnlyList<Statement> statements) => ContainsYield(statements);
 

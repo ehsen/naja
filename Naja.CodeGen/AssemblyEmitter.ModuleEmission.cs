@@ -300,6 +300,26 @@ public sealed partial class AssemblyEmitter
             }
         }
 
+        // Optional-import binding slots: names that are BOTH imported (anywhere,
+        // including inside try blocks) AND assigned (the `except ImportError:
+        // X = None` fallback) are module-level globals in Python. Without a
+        // hoisted field the except-branch store lands in a Main() LOCAL that
+        // shadows the NamespaceImports resolution for every later read —
+        // a store/load mismatch. The ImportStatement emitter binds the module
+        // value into this same field when the import succeeds.
+        {
+            var importedNames = StatementAnalyzer.CollectImportBindings(module.Body)
+                .Select(b => b.LocalName)
+                .ToHashSet();
+            var assignedNames = StatementAnalyzer.CollectAssignedNames(module.Body);
+            foreach (var name in importedNames.Intersect(assignedNames))
+            {
+                if (!fields.ContainsKey(name))
+                    fields[name] = typeBuilder.DefineField(name, typeof(object),
+                        FieldAttributes.Public | FieldAttributes.Static);
+            }
+        }
+
         // ── Pass 1 (nested): declare TypeBuilders for ClassDefs inside function bodies ──
         // Top-level classes were handled above; this covers classes defined inside functions
         // or class methods (e.g. `def test(self): class Foo: ...`).
@@ -451,6 +471,21 @@ public sealed partial class AssemblyEmitter
         var stmtEmitter = new StatementEmitter(mainCtx);
         foreach (var stmt in module.Body)
         {
+            // Top-level decorated classes: decorators apply at class-creation
+            // time (Python semantics) — that is Pass 2 execution order, not
+            // Pass 3. Pass 3 only emits method bodies; without this, decorated
+            // top-level classes (e.g. @skip_unless_symlink) silently kept their
+            // undecorated TypeBuilder.
+            if (stmt is ClassDef decoratedCls &&
+                decoratedCls.Decorators.Count > 0 &&
+                classTypes.TryGetValue(decoratedCls.Name, out var decoratedCt))
+            {
+                var pass2Emitter = new Emitters.Statements.DefinitionEmitters(
+                    mainCtx, new ExpressionEmitter(mainCtx), s => stmtEmitter.Emit(s));
+                pass2Emitter.EmitTopLevelClassDecorators(decoratedCls, decoratedCt, decoratedCt.Name);
+                continue;
+            }
+
             if (stmt is FunctionDef or ClassDef) continue;
             stmtEmitter.Emit(stmt);
         }
