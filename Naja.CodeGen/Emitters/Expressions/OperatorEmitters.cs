@@ -34,6 +34,23 @@ public sealed class OperatorEmitters : ExpressionEmitterBase
                         IL.Emit(OpCodes.Call, concat);
                         return NajaTypes.Str;
                     }
+                    // Lists (and any non-primitive operand): list + list is
+                    // concatenation, NOT raw IL add — 'add' on two reference
+                    // types is pointer arithmetic and crashes the runtime
+                    // (AccessViolationException). Route through DynamicAdd,
+                    // which handles list concat, dunder dispatch and numerics.
+                    if (leftType is ListType || rightType is ListType ||
+                        leftType is TupleType || rightType is TupleType)
+                    {
+                        TypeMapper.EmitBox(IL, rightType);
+                        var tmpR = _ctx.Locals.Declare($"__dynr_{e.Line}", typeof(object));
+                        IL.Emit(OpCodes.Stloc, tmpR);
+                        TypeMapper.EmitBox(IL, leftType);
+                        IL.Emit(OpCodes.Ldloc, tmpR);
+
+                        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.DynamicAdd_Method);
+                        return NajaTypes.Unknown;
+                    }
                     if (leftType is UnknownType || rightType is UnknownType)
                     {
                         TypeMapper.EmitBox(IL, rightType);
@@ -45,6 +62,27 @@ public sealed class OperatorEmitters : ExpressionEmitterBase
                         IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.DynamicAdd_Method);
                         return NajaTypes.Unknown;
                     }
+                    // Mixed int/float arithmetic: widen both operands to double
+                    // (mirrors the Mul pattern below — raw Add on a mixed
+                    // int64/float64 stack produces garbage results).
+                    if (leftType is FloatType && rightType is IntType)
+                    {
+                        var tmpR = _ctx.Locals.Declare($"__addr_{e.Line}", typeof(long));
+                        var tmpL = _ctx.Locals.Declare($"__addl_{e.Line}", typeof(double));
+                        IL.Emit(OpCodes.Stloc, tmpR);
+                        IL.Emit(OpCodes.Stloc, tmpL);
+                        IL.Emit(OpCodes.Ldloc, tmpL);
+                        IL.Emit(OpCodes.Ldloc, tmpR);
+                        IL.Emit(OpCodes.Conv_R8);
+                    }
+                    else if (leftType is IntType && rightType is FloatType)
+                    {
+                        var tmpR = _ctx.Locals.Declare($"__addr_{e.Line}", typeof(double));
+                        IL.Emit(OpCodes.Stloc, tmpR);
+                        IL.Emit(OpCodes.Conv_R8);
+                        IL.Emit(OpCodes.Ldloc, tmpR);
+                    }
+
                     IL.Emit(OpCodes.Add);
                     return (leftType is FloatType || rightType is FloatType)
                         ? NajaTypes.Float : NajaTypes.Int;
@@ -65,6 +103,26 @@ public sealed class OperatorEmitters : ExpressionEmitterBase
                         IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.DynamicSub_Method);
                         return NajaTypes.Unknown;
                     }
+                    // Mixed int/float arithmetic: widen both operands to double
+                    // (see Add above — raw Sub on a mixed stack is invalid IL).
+                    if (l is FloatType && r is IntType)
+                    {
+                        var tmpR = _ctx.Locals.Declare($"__subr_{e.Line}", typeof(long));
+                        var tmpL = _ctx.Locals.Declare($"__subl_{e.Line}", typeof(double));
+                        IL.Emit(OpCodes.Stloc, tmpR);
+                        IL.Emit(OpCodes.Stloc, tmpL);
+                        IL.Emit(OpCodes.Ldloc, tmpL);
+                        IL.Emit(OpCodes.Ldloc, tmpR);
+                        IL.Emit(OpCodes.Conv_R8);
+                    }
+                    else if (l is IntType && r is FloatType)
+                    {
+                        var tmpR = _ctx.Locals.Declare($"__subr_{e.Line}", typeof(double));
+                        IL.Emit(OpCodes.Stloc, tmpR);
+                        IL.Emit(OpCodes.Conv_R8);
+                        IL.Emit(OpCodes.Ldloc, tmpR);
+                    }
+
                     IL.Emit(OpCodes.Sub);
                     return (l is FloatType || r is FloatType) ? NajaTypes.Float : NajaTypes.Int;
                 }
@@ -240,15 +298,27 @@ public sealed class OperatorEmitters : ExpressionEmitterBase
                         IL.Emit(OpCodes.Stloc, tmpR);
 
                         IL.Emit(OpCodes.Ldloc, tmpL);
-                        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ToFloat_Method);
                         IL.Emit(OpCodes.Ldloc, tmpR);
-                        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ToFloat_Method);
+                        // PyPowDynamic handles int**int (BigInteger promotion),
+                        // float/complex, and BigInteger bases exactly.
+                        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.PyPowDynamic_Method);
+                        return NajaTypes.Unknown;
                     }
                     else
                     {
-                        if (l is IntType) IL.Emit(OpCodes.Conv_R8);
-
                         var r = _mainEmitter.Emit(e.Right);
+
+                        if (l is IntType && r is IntType)
+                        {
+                            // Python int**int stays an int (arbitrary precision).
+                            // Stack is [left(long), right(long)] — exactly the
+                            // argument order of PyPow(long, long), which
+                            // promotes to BigInteger on overflow. Result is
+                            // dynamic (long or BigInteger boxed as object).
+                            IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.PyPowLong_Long_Method);
+                            return NajaTypes.Unknown;
+                        }
+
                         if (r is UnknownType)
                         {
                             TypeMapper.EmitBox(IL, r);
@@ -261,6 +331,7 @@ public sealed class OperatorEmitters : ExpressionEmitterBase
                         {
                             if (r is IntType) IL.Emit(OpCodes.Conv_R8);
                         }
+                        if (l is IntType) IL.Emit(OpCodes.Conv_R8);
                     }
 
                     IL.Emit(OpCodes.Call, typeof(Math).GetMethod("Pow", new[] { typeof(double), typeof(double) })!);
@@ -313,19 +384,36 @@ public sealed class OperatorEmitters : ExpressionEmitterBase
         switch (e.Op)
         {
             case UnaryOp.Neg:
+                // Route every negation through PyNeg for Python type semantics:
+                // long/float/complex/BigInteger negate; anything else raises
+                // TypeError (CPython: "bad operand type for unary -").
+                // Statically-known int/float keep the fast Neg opcode path.
                 if (operandType is IntType or FloatType)
-                    IL.Emit(OpCodes.Neg);
-                else
                 {
-                    TypeMapper.EmitBox(IL, operandType);
-                    IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.NegateBigInt_Method);
+                    IL.Emit(OpCodes.Neg);
+                    return operandType;
                 }
-                return operandType;
+                TypeMapper.EmitBox(IL, operandType);
+                IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.PyNeg_Method);
+                return NajaTypes.Unknown;
             case UnaryOp.Pos:
-                return operandType;
+                if (operandType is IntType or FloatType or BoolType)
+                    return operandType;
+                // Runtime type check: TypeError for strings etc. (test_bad_types).
+                TypeMapper.EmitBox(IL, operandType);
+                IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.PyPos_Method);
+                return NajaTypes.Unknown;
             case UnaryOp.Invert:
-                IL.Emit(OpCodes.Not);
-                return NajaTypes.Int;
+                if (operandType is IntType)
+                {
+                    IL.Emit(OpCodes.Not);
+                    return NajaTypes.Int;
+                }
+                // Everything else goes through PyInvert: floats, complex and
+                // strings raise TypeError; BigInteger inverts exactly.
+                TypeMapper.EmitBox(IL, operandType);
+                IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.PyInvert_Method);
+                return NajaTypes.Unknown;
             case UnaryOp.Not:
                 if (operandType is BoolType || operandType is IntType)
                 {
@@ -441,6 +529,56 @@ public sealed class OperatorEmitters : ExpressionEmitterBase
 
         var leftType = _mainEmitter.Emit(left);
         var rightType = _mainEmitter.Emit(right);
+
+        // Mixed numeric comparison (e.g. 5.0 == 5): raw ceq/clt/cgt between an
+        // int64 and a float64 on the stack compares bit patterns and yields
+        // garbage. Normalize both operands to double before comparing.
+        //
+        // NOTE: conv.* converts the TOP of the stack (the right operand).
+        // When the LEFT operand needs widening, stash the right in a local
+        // first, convert, reload.
+        bool leftIsIntLike  = leftType is IntType or BoolType;   // int64 / int32 on stack
+        bool rightIsIntLike = rightType is IntType or BoolType;
+        bool leftIsFloat    = leftType is FloatType;
+        bool rightIsFloat   = rightType is FloatType;
+
+        if ((leftIsFloat && rightIsIntLike) || (leftIsIntLike && rightIsFloat))
+        {
+            if (leftIsIntLike)   // int below, float on top — stash, convert, reload
+            {
+                var tmpR = _ctx.Locals.Declare("__cmp_widen_r", typeof(double));
+                IL.Emit(OpCodes.Stloc, tmpR);
+                IL.Emit(OpCodes.Conv_R8);
+                IL.Emit(OpCodes.Ldloc, tmpR);
+            }
+            else                 // float below, int on top — direct convert
+            {
+                IL.Emit(OpCodes.Conv_R8);
+            }
+            EmitCompareOp(op);
+            return;
+        }
+
+        // bool vs int (True == 1): normalize both to int64. bool is int32 on
+        // the stack; int is int64. Raw ceq happens to work by JIT sign-
+        // extension, but emit it properly.
+        if ((leftType is BoolType && rightType is IntType) ||
+            (leftType is IntType && rightType is BoolType))
+        {
+            if (leftType is BoolType)  // int32 below, int64 on top — stash, convert, reload
+            {
+                var tmpR = _ctx.Locals.Declare("__cmp_widen_i", typeof(long));
+                IL.Emit(OpCodes.Stloc, tmpR);
+                IL.Emit(OpCodes.Conv_I8);
+                IL.Emit(OpCodes.Ldloc, tmpR);
+            }
+            else                      // int64 below, int32 bool on top — direct convert
+            {
+                IL.Emit(OpCodes.Conv_I8);
+            }
+            EmitCompareOp(op);
+            return;
+        }
 
         if ((op == CompareOp.Eq || op == CompareOp.NotEq) && leftType is StrType && rightType is StrType)
         {

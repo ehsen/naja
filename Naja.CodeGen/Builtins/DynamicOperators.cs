@@ -11,12 +11,69 @@ public static class DynamicOperators
     /// <summary>Returns true if the boxed value is an integer type (Python int semantics).</summary>
     private static bool IsIntegerType(object? v) =>
         v is long or int or short or ushort or sbyte or byte or uint or bool;
+
+    /// <summary>Convert a numeric value to BigInteger for arbitrary-precision math.</summary>
+    private static System.Numerics.BigInteger ToBigInt(object v) => v switch
+    {
+        System.Numerics.BigInteger bi => bi,
+        long l   => (System.Numerics.BigInteger)l,
+        int i    => (System.Numerics.BigInteger)i,
+        bool bo  => (System.Numerics.BigInteger)(bo ? 1L : 0L),
+        double d => (System.Numerics.BigInteger)d,
+        _        => (System.Numerics.BigInteger)Convert.ToInt64(v)
+    };
+
+    /// <summary>True if either operand is a BigInteger (Python big int).</summary>
+    private static bool HasBigInt(object? a, object? b) =>
+        a is System.Numerics.BigInteger || b is System.Numerics.BigInteger;
+#pragma warning disable CS0169 // kept for future operators (Mod/FloorDiv big-int paths)
+
+    /// <summary>
+    /// Integer add with Python semantics: exact in long, promoting to
+    /// BigInteger on overflow instead of wrapping.
+    /// </summary>
+    private static object AddIntegers(long la, long lb, object a, object b)
+    {
+        try { return checked(la + lb); }
+        catch (OverflowException) { return ToBigInt(a) + ToBigInt(b); }
+    }
+
+    private static object SubIntegers(long la, long lb, object a, object b)
+    {
+        try { return checked(la - lb); }
+        catch (OverflowException) { return ToBigInt(a) - ToBigInt(b); }
+    }
+
+    private static object MulIntegers(long la, long lb, object a, object b)
+    {
+        try { return checked(la * lb); }
+        catch (OverflowException) { return ToBigInt(a) * ToBigInt(b); }
+    }
     /// <summary>
     /// Dynamic addition: tries __add__ then __radd__ then numeric coercion.
     /// </summary>
     public static object DynamicAdd(object a, object b)
     {
         if (a is string sa && b is string sb) return sa + sb;
+
+        // List concatenation: [1,2] + [3,4] → NEW list (Python never mutates +).
+        if (a is System.Collections.Generic.List<object> la &&
+            b is System.Collections.Generic.List<object> lb)
+        {
+            var result = new System.Collections.Generic.List<object>(la.Count + lb.Count);
+            result.AddRange(la);
+            result.AddRange(lb);
+            return result;
+        }
+
+        // Tuple concatenation: object[] + object[] → new object[].
+        if (a is object[] ta && b is object[] tb)
+        {
+            var result = new object[ta.Length + tb.Length];
+            System.Array.Copy(ta, result, ta.Length);
+            System.Array.Copy(tb, 0, result, ta.Length, tb.Length);
+            return result;
+        }
 
         // Try __add__ on left operand
         var addM = a?.GetType().GetMethod("__add__", BindingFlags.Public | BindingFlags.Instance);
@@ -61,13 +118,16 @@ public static class DynamicOperators
             var ra = new System.Numerics.Complex(Convert.ToDouble(a), 0);
             return ra + cb;
         }
+        if (a is System.Numerics.BigInteger || b is System.Numerics.BigInteger)
+            return ToBigInt(a) + ToBigInt(b);
         if (a is IConvertible && b is IConvertible)
         {
             try
             {
-                // Preserve integer arithmetic: both integer types → return long
+                // Preserve integer arithmetic: both integer types → return long,
+                // promoting to BigInteger on overflow (Python ints never wrap).
                 if (IsIntegerType(a) && IsIntegerType(b))
-                    return Convert.ToInt64(a) + Convert.ToInt64(b);
+                    return AddIntegers(Convert.ToInt64(a), Convert.ToInt64(b), a, b);
                 return Convert.ToDouble(a) + Convert.ToDouble(b);
             }
             catch
@@ -94,12 +154,14 @@ public static class DynamicOperators
             var ra = new System.Numerics.Complex(Convert.ToDouble(a), 0);
             return ra - cb;
         }
+        if (a is System.Numerics.BigInteger || b is System.Numerics.BigInteger)
+            return ToBigInt(a) - ToBigInt(b);
         if ((a is IConvertible) && (b is IConvertible))
         {
             try
             {
                 if (IsIntegerType(a) && IsIntegerType(b))
-                    return Convert.ToInt64(a) - Convert.ToInt64(b);
+                    return SubIntegers(Convert.ToInt64(a), Convert.ToInt64(b), a, b);
                 return Convert.ToDouble(a) - Convert.ToDouble(b);
             }
             catch { throw new TypeError($"unsupported operand type(s) for -: '{a?.GetType().Name}' and '{b?.GetType().Name}'"); }
@@ -112,6 +174,43 @@ public static class DynamicOperators
     /// </summary>
     public static object DynamicMul(object a, object b)
     {
+        // List repetition: [1,2] * 3 → new list [1,2,1,2,1,2] (3 * [1,2] too).
+        if (a is System.Collections.Generic.List<object> lrep && b is IConvertible)
+        {
+            try
+            {
+                var n = Convert.ToInt32(b);
+                var result = new System.Collections.Generic.List<object>(Math.Max(0, lrep.Count * Math.Max(0, n)));
+                for (int i = 0; i < n; i++) result.AddRange(lrep);
+                return result;
+            }
+            catch { }
+        }
+        if (b is System.Collections.Generic.List<object> lrep2 && a is IConvertible)
+        {
+            try
+            {
+                var n = Convert.ToInt32(a);
+                var result = new System.Collections.Generic.List<object>(Math.Max(0, lrep2.Count * Math.Max(0, n)));
+                for (int i = 0; i < n; i++) result.AddRange(lrep2);
+                return result;
+            }
+            catch { }
+        }
+
+        // Tuple repetition: object[] * n → new object[].
+        if (a is object[] trep && b is IConvertible)
+        {
+            try
+            {
+                var n = Convert.ToInt32(b);
+                var result = new object[trep.Length * Math.Max(0, n)];
+                for (int i = 0; i < n; i++) System.Array.Copy(trep, 0, result, i * trep.Length, trep.Length);
+                return result;
+            }
+            catch { }
+        }
+
         // String repetition: "ab" * 3 = "ababab"
         if (a is string s && b is IConvertible)
         {
@@ -140,12 +239,14 @@ public static class DynamicOperators
             catch { }
         }
 
+        if (a is System.Numerics.BigInteger || b is System.Numerics.BigInteger)
+            return ToBigInt(a) * ToBigInt(b);
         if ((a is IConvertible) && (b is IConvertible))
         {
             try
             {
                 if (IsIntegerType(a) && IsIntegerType(b))
-                    return Convert.ToInt64(a) * Convert.ToInt64(b);
+                    return MulIntegers(Convert.ToInt64(a), Convert.ToInt64(b), a, b);
                 return Convert.ToDouble(a) * Convert.ToDouble(b);
             }
             catch { throw new TypeError($"unsupported operand type(s) for *: '{a?.GetType().Name}' and '{b?.GetType().Name}'"); }

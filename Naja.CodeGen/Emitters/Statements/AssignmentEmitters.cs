@@ -134,8 +134,11 @@ public class AssignmentEmitters : StatementEmitterBase
                         new[] { typeof(string), typeof(string) })!);
                     resultType = NajaTypes.Str;
                 }
-                else if (isDyn)
+                else if (isDyn || targetType is ListType || valueType is ListType ||
+                         targetType is TupleType || valueType is TupleType)
                 {
+                    // Lists: x += [...] is concatenation — raw 'add' on two
+                    // references is pointer arithmetic (AccessViolation).
                     TypeMapper.EmitBox(IL, valueType);
                     var tmpR = _ctx.Locals.Declare($"__augr_{s.Line}", typeof(object));
                     IL.Emit(OpCodes.Stloc, tmpR);
@@ -170,8 +173,12 @@ public class AssignmentEmitters : StatementEmitterBase
                 break;
 
             case BinaryOp.Mul:
-                if (isDyn)
+                if (isDyn || targetType is ListType || valueType is ListType ||
+                    targetType is StrType || valueType is StrType ||
+                    targetType is TupleType || valueType is TupleType)
                 {
+                    // Sequence repetition: x *= 2 ("ab"*2, [1,2]*2) — raw 'mul'
+                    // on a reference and an int is pointer arithmetic (AV crash).
                     TypeMapper.EmitBox(IL, valueType);
                     var tmpR = _ctx.Locals.Declare($"__augr_{s.Line}", typeof(object));
                     IL.Emit(OpCodes.Stloc, tmpR);

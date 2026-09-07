@@ -109,6 +109,100 @@ public static class MathFunctions
         return r;
     }
 
+    /// <summary>
+    /// Python integer power: base ** exponent for long operands, promoting to
+    /// BigInteger on overflow (Python ints are arbitrary precision). Negative
+    /// exponents produce a float, matching CPython. Returns object: long for
+    /// results that fit, BigInteger otherwise.
+    /// </summary>
+    public static object PyPow(long b, long e)
+    {
+        if (e < 0)
+            return Math.Pow(b, e);
+        if (e == 0)
+            return 1L;
+
+        // Guard: astronomically large exponents fall back to double (the
+        // result would be astronomically large anyway and a loop would hang).
+        if (e > 1_000_000)
+            return Math.Pow(b, e);
+
+        // Fast path: compute in long with overflow detection.
+        try
+        {
+            long result = 1;
+            for (long i = 0; i < e; i++)
+                result = checked(result * b);
+            return result;
+        }
+        catch (OverflowException)
+        {
+            // Promote to BigInteger for the exact result.
+            var big = System.Numerics.BigInteger.Pow(b, (int)e);
+            if (big >= long.MinValue && big <= long.MaxValue)
+                return (long)big;
+            return big;
+        }
+    }
+
+    /// <summary>Float/complex-aware power used when operands aren't both ints.</summary>
+    public static object PyPowDynamic(object b, object e)
+    {
+        if (b is System.Numerics.BigInteger bi)
+        {
+            var exp = Convert.ToInt64(e);
+            if (exp >= 0 && exp <= int.MaxValue)
+                return System.Numerics.BigInteger.Pow(bi, (int)exp);
+            return Math.Pow((double)bi, exp);
+        }
+        if (e is System.Numerics.BigInteger be)
+            return Math.Pow(Convert.ToDouble(b), (double)be);
+
+        if (b is long lb && e is long le)
+            return PyPow(lb, le);
+
+        return Math.Pow(Convert.ToDouble(b), Convert.ToDouble(e));
+    }
+
+    /// <summary>Python unary minus with type checking. TypeError for str/bytes etc.</summary>
+    public static object PyNeg(object v) => v switch
+    {
+        long l            => (object)(-l),
+        double d          => (object)(-d),
+        System.Numerics.BigInteger bi => (object)(-bi),
+        System.Numerics.Complex c => (object)new System.Numerics.Complex(-c.Real, -c.Imaginary),
+        bool bo           => (object)(bo ? -1L : 0L),   // True == 1
+        int i             => (object)(-(long)i),
+        _ => throw new InvalidCastException(
+            $"TypeError: bad operand type for unary -: '{TypeName(v)}'")
+    };
+
+    /// <summary>Python unary plus with type checking.</summary>
+    public static object PyPos(object v) => v switch
+    {
+        long l            => (object)l,
+        double d          => (object)d,
+        System.Numerics.BigInteger bi => (object)bi,
+        System.Numerics.Complex c => (object)c,
+        bool bo           => (object)(bo ? 1L : 0L),
+        int i             => (object)(long)i,
+        _ => throw new InvalidCastException(
+            $"TypeError: bad operand type for unary +: '{TypeName(v)}'")
+    };
+
+    /// <summary>Python ~ (bitwise invert) with type checking. Float/complex/str → TypeError.</summary>
+    public static object PyInvert(object v) => v switch
+    {
+        long l            => (object)(~l),
+        System.Numerics.BigInteger bi => (object)(~bi),
+        bool bo           => (object)(bo ? -2L : -1L),   // ~True == -2
+        int i             => (object)(~(long)i),
+        _ => throw new InvalidCastException(
+            $"TypeError: bad operand type for unary ~: '{TypeName(v)}'")
+    };
+
+    private static string TypeName(object? v) => v?.GetType().Name ?? "NoneType";
+
     /// <summary>Parse a decimal string into a BigInteger (for literals that overflow long).</summary>
     public static object ParseBigInt(string s) => System.Numerics.BigInteger.Parse(s);
 

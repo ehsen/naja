@@ -45,6 +45,12 @@ public static class ComparisonOperators
         if (a is byte[] bytesA && b is byte[] bytesB)
             return bytesA.SequenceEqual(bytesB);
 
+        // BigInteger equality (arbitrary-precision ints; not IConvertible)
+        if (a is System.Numerics.BigInteger biA)
+            return b is System.Numerics.BigInteger biB ? biA == biB : biA == ToBigIntSafe(b);
+        if (b is System.Numerics.BigInteger biB2)
+            return biB2 == ToBigIntSafe(a);
+
         // Dict equality
         if (a is System.Collections.Generic.Dictionary<object, object> dictA && 
             b is System.Collections.Generic.Dictionary<object, object> dictB)
@@ -131,4 +137,19 @@ public static class ComparisonOperators
     {
         return DynamicGt(a, b) || DynamicEq(a, b);
     }
+
+    /// <summary>
+    /// Convert an integer-like value to BigInteger for exact comparison.
+    /// Returns null when the value is not integer-like.
+    /// </summary>
+    private static System.Numerics.BigInteger? ToBigIntSafe(object? v) => v switch
+    {
+        null               => null,
+        long l             => (System.Numerics.BigInteger)l,
+        int i              => (System.Numerics.BigInteger)i,
+        bool bo            => (System.Numerics.BigInteger)(bo ? 1L : 0L),
+        double d           => (System.Numerics.BigInteger)d,
+        System.Numerics.BigInteger bi => bi,
+        _                  => null
+    };
 }

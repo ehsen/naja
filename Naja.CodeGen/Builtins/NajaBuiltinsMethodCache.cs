@@ -65,6 +65,21 @@ internal static class NajaBuiltinsMethodCache
     public static readonly MethodInfo NegateBigInt_Method =
         typeof(MathFunctions).GetMethod(nameof(MathFunctions.NegateBigInt))!;
 
+    public static readonly MethodInfo PyPowDynamic_Method =
+        typeof(MathFunctions).GetMethod(nameof(MathFunctions.PyPowDynamic))!;
+
+    public static readonly MethodInfo PyPowLong_Long_Method =
+        typeof(MathFunctions).GetMethod(nameof(MathFunctions.PyPow), new[] { typeof(long), typeof(long) })!;
+
+    public static readonly MethodInfo PyNeg_Method =
+        typeof(MathFunctions).GetMethod(nameof(MathFunctions.PyNeg))!;
+
+    public static readonly MethodInfo PyPos_Method =
+        typeof(MathFunctions).GetMethod(nameof(MathFunctions.PyPos))!;
+
+    public static readonly MethodInfo PyInvert_Method =
+        typeof(MathFunctions).GetMethod(nameof(MathFunctions.PyInvert))!;
+
     public static readonly MethodInfo Max_Method = 
         typeof(MathFunctions).GetMethod(nameof(MathFunctions.Max))!;
 
