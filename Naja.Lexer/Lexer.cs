@@ -345,12 +345,46 @@ public sealed class Lexer
                 if (_pos < _source.Length)
                 {
                     char esc = Advance();
+
+                    // Hex/Unicode escapes: \xNN (2 hex digits), \uNNNN (4), \UNNNNNNNN (8).
+                    // Decoded to the code point; for bytes literals the char value
+                    // 0..255 maps 1:1 to a byte via the Latin-1 emission path.
+                    if (esc is 'x' or 'u' or 'U')
+                    {
+                        int digits = esc == 'x' ? 2 : esc == 'u' ? 4 : 8;
+                        if (TryReadHexEscape(digits, out char decoded))
+                        {
+                            content.Append(decoded);
+                        }
+                        else
+                        {
+                            // Malformed escape: keep it literal (Python raises a
+                            // SyntaxError here; Naja is permissive for now).
+                            content.Append('\\').Append(esc);
+                        }
+                        continue;
+                    }
+
+                    // Octal escape: \N, \NN, \NNN (up to 3 octal digits).
+                    if (esc is >= '0' and <= '7')
+                    {
+                        int value = esc - '0';
+                        int count = 1;
+                        while (count < 3 && _pos < _source.Length && Current() is >= '0' and <= '7')
+                        {
+                            value = value * 8 + (Advance() - '0');
+                            count++;
+                        }
+                        content.Append((char)value);
+                        continue;
+                    }
+
                     content.Append(esc switch
                     {
+                        'a' => '\a',
                         'n' => '\n',
                         't' => '\t',
                         'r' => '\r',
-                        '0' => '\0',
                         'b' => '\b',
                         'f' => '\f',
                         'v' => '\v',
@@ -360,6 +394,14 @@ public sealed class Lexer
                         '\n' => '\0', // consumed line continuation inside string — drop
                         _ => esc      // unknown escape: Python keeps the char as-is
                     });
+                    // Unknown escape (e.g. "\П"): Python KEEPS the backslash —
+                    // the literal is backslash + the escaped char. Only the
+                    // recognized single-char escapes above consume the backslash.
+                    if (esc is not ('a' or 'n' or 't' or 'r' or 'b' or 'f' or 'v'
+                                   or '\'' or '"' or '\\' or '\n'))
+                    {
+                        content.Insert(content.Length - 1, '\\');
+                    }
                 }
                 continue;
             }
@@ -390,6 +432,36 @@ public sealed class Lexer
     }
 
     // ── Identifier / keyword scanning ───────────────────────────────────────
+
+    /// <summary>
+    /// Reads up to <paramref name="digits"/> hex digits following a \x, \u or \U
+    /// escape and returns the decoded character. Returns false (without
+    /// consuming digits) when fewer digits are present than required.
+    /// </summary>
+    private bool TryReadHexEscape(int digits, out char decoded)
+    {
+        decoded = '\0';
+        int value = 0;
+        int read = 0;
+
+        while (read < digits && _pos < _source.Length && IsHexDigit(Current()))
+        {
+            int d = Current() <= '9' ? Current() - '0'
+                  : (char.ToLower(Current()) - 'a') + 10;
+            value = value * 16 + d;
+            Advance();
+            read++;
+        }
+
+        if (read < digits)
+            return false;
+
+        decoded = (char)value;
+        return true;
+    }
+
+    private static bool IsHexDigit(char c) =>
+        c is >= '0' and <= '9' or >= 'a' and <= 'f' or >= 'A' and <= 'F';
 
     private Token ScanIdentifierOrKeyword(int start, int startCol)
     {
