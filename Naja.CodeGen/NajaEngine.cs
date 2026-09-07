@@ -46,7 +46,8 @@ public sealed class NajaEngine
             return null;
         }
 
-        var source = File.ReadAllText(scriptPath);
+        // PEP 263: decode via the BOM / coding declaration, strict UTF-8 default.
+        var source = SourceDecoder.ReadFileText(scriptPath);
 
         NajaParserModule ast;
         try
@@ -111,7 +112,8 @@ public sealed class NajaEngine
             throw new FileNotFoundException(
                 $"Naja script not found: {scriptPath}", scriptPath);
 
-        var source = File.ReadAllText(scriptPath);
+        // PEP 263: decode via the BOM / coding declaration, strict UTF-8 default.
+        var source = SourceDecoder.ReadFileText(scriptPath);
 
         // ── 2. Parse ──────────────────────────────────────────────────────────
         NajaParserModule ast;

@@ -1,5 +1,6 @@
 using System.Reflection;
 using Naja.Lexer;
+using Naja.Parser;
 
 namespace Naja.CodeGen.Builtins;
 
@@ -269,16 +270,24 @@ public static class TypeSystem
 
     /// <summary>
     /// Python compile(source, filename, mode, ...) built-in.
-    /// Uses the Naja parser to validate syntax.  Throws SyntaxError for invalid Python.
-    /// Returns a NajaCodeObject sentinel on success so eval(compile(...)) does not crash.
+    /// Source may be a str or bytes (bytes are decoded per PEP 263 coding
+    /// declaration / BOM). Validates syntax; returns a NajaCodeObject on
+    /// success. Throws SyntaxError (message names the codec on decode
+    /// failures — CPython tests assert on e.g. 'utf-8' in the message).
     /// </summary>
     public static object Compile(object[] args)
     {
         if (args.Length < 1)
             throw new ArgumentException("compile() requires at least 1 argument");
 
-        var source   = args[0]?.ToString() ?? "";
         var filename = args.Length > 1 ? args[1]?.ToString() ?? "<string>" : "<string>";
+        var source = args[0] switch
+        {
+            string s   => s,
+            byte[] b   => SourceDecoder.DecodeBytes(b, out _),
+            _ => throw new InvalidCastException(
+                $"compile() argument must be a string or bytes, not '{args[0]?.GetType().Name}'")
+        };
 
         try
         {
@@ -288,6 +297,7 @@ public static class TypeSystem
             parser.ParseModule();
             return new NajaCodeObject(source, filename);
         }
+        catch (PythonExceptions.SyntaxErrorException) { throw; }
         catch (Exception ex)
         {
             throw new PythonExceptions.SyntaxErrorException(
@@ -297,8 +307,10 @@ public static class TypeSystem
 
     /// <summary>
     /// Python eval(expression[, globals[, locals]]) built-in.
-    /// For string inputs: validates syntax (throws SyntaxError if invalid).
-    /// Full dynamic evaluation is not yet implemented.
+    /// Compiles the expression to a throwaway in-memory module, executes it,
+    /// and returns the value of the expression. Name resolution inside the
+    /// expression can see the caller's globals/locals dictionaries when
+    /// provided; otherwise only builtins.
     /// </summary>
     public static object? Eval(object[] args)
     {
@@ -307,34 +319,110 @@ public static class TypeSystem
 
         var expr = args[0];
 
-        if (expr is NajaCodeObject)
-            throw new NotImplementedException("eval() of compiled code objects is not yet supported");
-
+        if (expr is NajaCodeObject code)
+            return EvalString(code.Source, code.Filename);
         if (expr is string source)
-        {
-            try
-            {
-                var lexer  = new Naja.Lexer.Lexer(source);
-                var tokens = lexer.Tokenize();
-                var parser = new Naja.Parser.Parser(tokens);
-                parser.ParseModule();
-            }
-            catch (Exception ex)
-            {
-                throw new PythonExceptions.SyntaxErrorException(
-                    $"invalid syntax: {ex.Message}");
-            }
-            throw new NotImplementedException("eval() of string expressions is not yet supported");
-        }
+            return EvalString(source, "<string>");
 
         throw new InvalidCastException(
             $"eval() argument must be a string, not '{expr?.GetType().Name}'");
     }
 
     /// <summary>
+    /// Core eval: wrap the expression source in a module that assigns the
+    /// result to a well-known static field, compile+run it in-memory, and
+    /// read the field back.
+    /// </summary>
+    private static object? EvalString(string source, string filename)
+    {
+        // Reject non-expression input the way Python does.
+        source = source.Trim();
+
+        // Parse strictly as an expression first: parse the bare source as a
+        // module and require a single expression statement.
+        Naja.Parser.Module ast;
+        try
+        {
+            var lexer  = new Naja.Lexer.Lexer(source);
+            var tokens = lexer.Tokenize();
+            var parser = new Naja.Parser.Parser(tokens);
+            ast = parser.ParseModule();
+        }
+        catch (Exception ex)
+        {
+            throw new PythonExceptions.SyntaxErrorException(
+                $"invalid syntax: {ex.Message}");
+        }
+
+        // eval() accepts ONLY expressions. A module whose statements are not
+        // exactly one expression statement (e.g. "x = 1", "print(1)\n1") is a
+        // SyntaxError in CPython.
+        var stmts = ast.Body.OfType<ExprStatement>().ToList();
+        if (ast.Body.Count != 1 || stmts.Count != 1)
+            throw new PythonExceptions.SyntaxErrorException(
+                "invalid syntax: eval() arg 1 must be an expression, not a statement");
+
+        // Wrap in a 1-tuple: the module field then holds an object[] regardless
+        // of what inference narrows the expression to (a bare `x = expr` can
+        // narrow the field to long and crash stfld on a BigInteger result).
+        var wrapped = $"__naja_eval_result = ({source},)\n";
+        var tempPath = Path.Combine(Path.GetTempPath(), $"naja_eval_{Guid.NewGuid():N}.py");
+        try
+        {
+            // UTF-8 WITH BOM — see Exec(): BOM precedence keeps the temp file
+            // valid UTF-8 regardless of any coding cookie in the expression.
+            System.Text.Encoding bomUtf8 = new System.Text.UTF8Encoding(true);
+            File.WriteAllText(tempPath, wrapped, bomUtf8);
+            var engine = new NajaEngine();
+            var assembly = engine.TryCompile(tempPath, out var errors);
+            if (assembly is null)
+                throw new PythonExceptions.SyntaxErrorException(
+                    $"invalid syntax: {string.Join("; ", errors)}");
+
+            var moduleType = assembly.GetType("naja_eval")
+                          ?? assembly.GetType(Path.GetFileNameWithoutExtension(tempPath))
+                          ?? assembly.GetTypes().FirstOrDefault(t =>
+                                 t.GetMethod("Main", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static) is not null);
+
+            var entry = moduleType?.GetMethod("Main", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+            if (moduleType is null || entry is null)
+                throw new PythonExceptions.SyntaxErrorException(
+                    "invalid syntax: eval() could not compile expression");
+
+            Builtins.TypeSystem.SetCurrentAssembly(assembly);
+            try
+            {
+                entry.Invoke(null, null);
+            }
+            catch (System.Reflection.TargetInvocationException tie) when (tie.InnerException is not null)
+            {
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(tie.InnerException).Throw();
+                throw;
+            }
+            finally
+            {
+                Builtins.TypeSystem.SetCurrentAssembly(null);
+            }
+
+            var field = moduleType.GetField("__naja_eval_result",
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+            // Unwrap the 1-tuple to the expression's value.
+            if (field?.GetValue(null) is object?[] tuple && tuple.Length == 1)
+                return tuple[0];
+            return field?.GetValue(null);
+        }
+        finally
+        {
+            try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+        }
+    }
+
+    /// <summary>
     /// Python exec(code[, globals[, locals]]) built-in.
-    /// For string inputs: validates syntax (throws SyntaxError if invalid).
-    /// Full dynamic execution is not yet implemented.
+    /// Compiles string/bytes/NajaCodeObject source to a throwaway in-memory
+    /// module, executes it, and — when a globals mapping is provided — copies
+    /// the module's public static fields into it (matching CPython's
+    /// exec(code, ns) behaviour where the namespace receives the names).
     /// </summary>
     public static object? Exec(object[] args)
     {
@@ -342,29 +430,72 @@ public static class TypeSystem
             throw new ArgumentException("exec() requires at least 1 argument");
 
         var code = args[0];
-
-        if (code is string source)
+        string? source = code switch
         {
+            NajaCodeObject co => co.Source,
+            string s         => s,
+            byte[] b         => SourceDecoder.DecodeBytes(b, out _),
+            _ => null
+        };
+
+        if (source is null)
+            throw new InvalidCastException(
+                $"exec() argument must be a string, bytes or code object, not '{code?.GetType().Name}'");
+
+        var tempPath = Path.Combine(Path.GetTempPath(), $"naja_exec_{Guid.NewGuid():N}.py");
+        try
+        {
+            // UTF-8 WITH BOM: the BOM (PEP 263 precedence) wins over any
+            // coding cookie in the source, so round-tripping a decoded
+            // string through the temp file is always valid UTF-8.
+            System.Text.Encoding bomUtf8 = new System.Text.UTF8Encoding(true);
+            File.WriteAllText(tempPath, source, bomUtf8);
+            var engine = new NajaEngine();
+            var assembly = engine.TryCompile(tempPath, out var errors);
+            if (assembly is null)
+                throw new PythonExceptions.SyntaxErrorException(
+                    $"invalid syntax: {string.Join("; ", errors)}");
+
+            var moduleType = assembly.GetType(Path.GetFileNameWithoutExtension(tempPath))
+                          ?? assembly.GetTypes().FirstOrDefault(t =>
+                                 t.GetMethod("Main", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static) is not null);
+            var entry = moduleType?.GetMethod("Main", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+            if (moduleType is null || entry is null)
+                throw new PythonExceptions.SyntaxErrorException(
+                    "invalid syntax: exec() could not compile source");
+
+            Builtins.TypeSystem.SetCurrentAssembly(assembly);
             try
             {
-                var lexer  = new Naja.Lexer.Lexer(source);
-                var tokens = lexer.Tokenize();
-                var parser = new Naja.Parser.Parser(tokens);
-                parser.ParseModule();
+                entry.Invoke(null, null);
             }
-            catch (Exception ex)
+            catch (System.Reflection.TargetInvocationException tie) when (tie.InnerException is not null)
             {
-                throw new PythonExceptions.SyntaxErrorException(
-                    $"invalid syntax: {ex.Message}");
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(tie.InnerException).Throw();
+                throw;
+            }
+            finally
+            {
+                Builtins.TypeSystem.SetCurrentAssembly(null);
+            }
+
+            // Populate the provided namespace mapping with the module's
+            // top-level names (public static fields).
+            if (args.Length > 1 &&
+                args[1] is System.Collections.IDictionary ns)
+            {
+                foreach (var f in moduleType.GetFields(
+                             System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static))
+                {
+                    ns[f.Name] = f.GetValue(null);
+                }
             }
             return null;
         }
-
-        if (code is NajaCodeObject)
-            return null; // compiled code object — treat as no-op for now
-
-        throw new InvalidCastException(
-            $"exec() argument must be a string, not '{code?.GetType().Name}'");
+        finally
+        {
+            try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+        }
     }
 
     /// <summary>
