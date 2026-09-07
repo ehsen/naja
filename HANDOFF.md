@@ -138,6 +138,28 @@ in CodeGen builtins invoked via emitted IL, or as reflection-based helpers insid
 | `bbc1791` | Uniform stdlib dispatch (§5.1); lexer escape decoding; `open()`/`NajaFile` + `subprocess.check_output/call`; unittest setUp/tearDown via concrete reflection; `with…as` field discipline; os fixes (normcase, remove→FileNotFoundError, `\\?\` listdir). CodeGen 277→279 pass, Win32Os internal errors 36→4, JSON module errors 94→12, CPython host crash eliminated. |
 | `b4b4232` | Import-binding deep scan + `ImportModule` field store; signal `const`→property (fixed the 5-month-old `test_windows.naja` compile crasher); `callable()` + `GetStaticAttr` singleton method-as-value; `os.kill`; `assertIsInstance`; `NajaSlice.Apply` dynamic slicing. CodeGen 279 pass / 1 fail. |
 | `f099b85` | Method decorators (`__dec_` + `DecorateClassMethod` + runner preference); top-level class decorators in Pass 2; `DynamicCallKw`/`StaticCallKw` keyword binding; `NajaTime` module + `IsImplemented` gate; `float('inf'/'nan')` parsing; JSON semantics (ensure_ascii, inf→ValueError, tuple key→TypeError). CodeGen **280/0 fail**; test_windows.naja 18 OK. |
+| `ef17876` | HANDOFF.md itself. |
+
+## 6b. Session log — 2026-09-08 (CPython parity stress-test round; see CPYTHON_FAILURE_ANALYSIS.md)
+
+Working tree on `main` (committed per-fix at session end). Nine root causes fixed, all
+proven by IL-level decoding of repros, verified against the exact CPython test bodies:
+
+1. Mixed int↔float compare/arith widened properly (`OperatorEmitters`) — test_unary::test_negative.
+2. Lexer `\xNN`/octal/`\u` escapes + unknown-escape backslash retention — test_utf8source::test_pep3120.
+3. Real `eval()` (throwaway-module compile+run; 1-tuple wrapper defeats inference narrowing).
+4. `**` double→long bit-reinterpretation fixed: `PyPow(long,long)` checked + BigInteger promotion.
+5. Unary TypeError semantics: `PyNeg`/`PyPos`/`PyInvert` (InvalidCastException = TypeError) — test_unary::test_bad_types.
+6. PEP 263: new `SourceDecoder` (BOM/coding-cookie/strict); `compile(bytes)`; real `exec(code, ns)` — test_utf8source::test_latin1.
+7. **Sequence `+`/`*` raw-opcode AV crasher killed** (was why FullSuite skipped test_augassign.py): List/Str/Tuple operands route to Dynamic helpers in EmitBinary + EmitAugAssign; DynamicAdd/Mul gained list concat + repetition. test_augassign now RUNS: 2 pass / 4 fail (slice-aug-assign, testBasic, `__iadd__`, unpacking — clustered, not yet fixed).
+8. `ILDumper` rewritten (reflects over `OpCodes`, OperandType-driven, token-resolved) — it found #7.
+9. BigInteger equality/arithmetic in ComparisonOperators/DynamicOperators (checked + promote; Python ints never wrap).
+
+Granular: test_unary 3/6→**6/6**, test_utf8source 0/3→**2/3**. Five base suites re-verified
+green (51/51/26/189/29). CodeGen.Tests: 280 pass + 2 pre-existing failures (JSON Module
+Tests, test_windows Gap Analysis — proven pre-existing at ef17876 by stash-bisect).
+Open items needing approval: dotted-name .py import loader (test_badsyntax), the 4
+remaining augassign gap clusters, `__file__` currently emitted empty.
 
 ## 7. Known remaining gaps (honest list)
 
