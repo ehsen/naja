@@ -67,9 +67,47 @@ public sealed class ControlFlowEmitters : ExpressionEmitterBase
             return type;
         }
 
-        // Declare local and store a copy, then leave value on stack
+        // Declare local and store a copy, then leave value on stack.
+        // STORE/LOAD CONSISTENCY: when Pass 1 hoisted the target to a static
+        // field, reads of that name resolve the FIELD first (NameEmitters
+        // priority) — storing only a local leaves the field stale (a read of
+        // `d` after `while a > (d := 3)` returned 0). Store BOTH: field first
+        // (authoritative), then the local for any existing local readers.
         var clrType = TypeMapper.ToClrType(type);
         if (clrType == typeof(void)) clrType = typeof(object);
+
+        if (_ctx.Fields.TryGetValue(e.Target, out var walrusHoistedField))
+        {
+            IL.Emit(OpCodes.Dup);
+            if (walrusHoistedField.FieldType == typeof(object))
+            {
+                TypeMapper.EmitBox(IL, type);
+            }
+            else if (walrusHoistedField.FieldType == typeof(double) &&
+                     type is IntType or BoolType)
+            {
+                IL.Emit(OpCodes.Conv_R8);
+            }
+            else if (walrusHoistedField.FieldType == typeof(long) && type is FloatType)
+            {
+                IL.Emit(OpCodes.Conv_I8);
+            }
+            else if (walrusHoistedField.FieldType.IsValueType && type is UnknownType)
+            {
+                IL.Emit(OpCodes.Unbox_Any, walrusHoistedField.FieldType);
+            }
+            else if (walrusHoistedField.FieldType == typeof(string) && type is UnknownType)
+            {
+                IL.Emit(OpCodes.Castclass, typeof(string));
+            }
+            else if (walrusHoistedField.FieldType != clrType && !walrusHoistedField.FieldType.IsValueType)
+            {
+                TypeMapper.EmitBox(IL, type);
+                IL.Emit(OpCodes.Castclass, walrusHoistedField.FieldType);
+            }
+            IL.Emit(OpCodes.Stsfld, walrusHoistedField);
+        }
+
         if (!_ctx.Locals.Contains(e.Target))
             _ctx.Locals.Declare(e.Target, clrType);
         IL.Emit(OpCodes.Dup);
