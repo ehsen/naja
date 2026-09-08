@@ -1,9 +1,11 @@
 # Naja — Project Handoff & Status
 
-> **Read this first in any new session.** Verified state as of **2026-09-08 PM**, HEAD = `f3ffbab` on `main`
-> (remote is named `naja` → `github.com/ehsen/naja`). This file is the source of truth for current status.
+> **Read this first in any new session.** Verified state as of **2026-09-08 PM+2 (crasher round)**,
+> HEAD = `bc5b4a5` on `main` (remote is named `naja` → `github.com/ehsen/naja`; `bc5b4a5` NOT yet pushed).
+> This file is the source of truth for current status.
 > README.md is still the architecture/navigation reference but is **stale on several points** (see §9).
-> ⚠️ **Working tree has UNCOMMITTED fixes** (F1/F2/F3 + watchdog + docs) — see §6c before anything else.
+> ⚠️ **Working tree has UNCOMMITTED fix-2 work** (from-import member resolution, ~60% applied — exact
+> applied/remaining state in §6d). **Read §6d FIRST: it contains the resume plan.**
 
 ---
 
@@ -13,7 +15,7 @@ Python 3.x syntax → native **.NET 10 IL** compiler via `System.Reflection.Emit
 no C# intermediate step. Pipeline: Lexer → Parser → Semantics → (optional) Inference → 3-pass IL emission.
 `.naja` and `.py` files are the same language to the CLI; `.naja` is just the project's native spelling.
 
-## 2. Current verified status (2026-09-08 PM, after F1/F2/F3 — uncommitted tree)
+## 2. Current verified status (2026-09-08 PM+2, after bare-raise fix bc5b4a5 — unpushed + uncommitted fix-2)
 
 | Suite | Result |
 |---|---|
@@ -21,10 +23,11 @@ no C# intermediate step. Pipeline: Lexer → Parser → Semantics → (optional)
 | Naja.Parser.Tests | 51/51 ✅ |
 | Naja.Semantics.Tests | 26/26 ✅ |
 | Naja.Inference.Tests | 189/189 ✅ |
-| **Naja.CodeGen.Tests** | **288 passed / 2 failed / 4 skipped** (+8 over the 280 baseline; the 2 failures are pre-existing: JSON Module Tests, test_windows Gap Analysis — proven at ef17876 via stash-bisect) ⚠️ "Test Run Aborted" prints AFTER the summary — host dies at teardown, investigate (§6c-C-2) |
+| **Naja.CodeGen.Tests** | **288 passed / 2 failed / 4 skipped** last fully verified at f3ffbab-tree (2 failures pre-existing: JSON Module Tests, test_windows Gap Analysis — proven at ef17876 via stash-bisect). The "Test Run Aborted" that printed after the summary is **ROOT-CAUSED AND FIXED** (bc5b4a5) — it was NOT teardown, see §6d-A. Re-run full suite to re-confirm no abort. |
 | Naja.WinForms.Tests | 29/29 ✅ |
 | ConfirmedPassing (CI gate) | 3 pass / 0 fail / 15 skip ✅ |
-| CPython granular | int_literal 6/6, utf8source 2/3, unary 6/6, generator_stop 2/2, exception_variations 30, decorators 7, **scope 0, super 0, compare 0** (never investigated — next clusters) |
+| CPython granular | int_literal 6/6, utf8source 2/3, unary 6/6, generator_stop 2/2, exception_variations 30, decorators 7, **scope 0/41 (root-caused — §6d-B, fix in flight), super 0, compare 0** |
+| test_raise.py | **RUNS TO COMPLETION: 37 tests, 16 pass / 21 fail** (was: fatal 0x80131506 hard-kill at test_invalid_reraise, aborting EVERY full-suite run). Honest remaining fails: exception __context__/__cause__ semantics, raise-string removal TypeError, etc. |
 | test_named_expressions.py | runs to completion: 74 tests, 37 pass (was: infinite wedge) |
 | test_augassign.py | runs: 2 pass / 4 fail (was: AV hard-crash) |
 
@@ -165,12 +168,13 @@ Tests, test_windows Gap Analysis — proven pre-existing at ef17876 by stash-bis
 Open items needing approval: dotted-name .py import loader (test_badsyntax), the 4
 remaining augassign gap clusters, `__file__` currently emitted empty.
 
-## 6c. Session state — 2026-09-08 PM (walrus/field-store round) ⚠️ READ FIRST
+## 6c. Session log — 2026-09-08 PM (walrus/field-store round; committed + pushed as f3ffbab→8d47c19)
 
-### A. UNCOMMITTED working tree (verify with `git status`)
+### A. UNCOMMITTED working tree (⚠️ RESOLVED — committed per-fix + pushed 2026-09-08 PM+2)
 
-All fixes below are built, verified against repros + regression, but **NOT committed**.
-Commit per-fix and push `naja main` as the FIRST action of the next session:
+~~All fixes below are built, verified against repros + regression, but **NOT committed**.~~
+DONE — landed as `a3e515f` (F1), `537bb7d` (F2), `541dcb2` (F3), `6280f39` (watchdog), `8d47c19`
+(docs), pushed to `naja main`. The per-file fix table below is retained for reference:
 
 | File | Fix |
 |---|---|
@@ -187,29 +191,27 @@ Verified before writing this: hang repro → `result: 1` (CPython-exact, termina
 37 pass; `CPython_NamedExpressions` + `CPython_LongExp` xUnit facts PASS; base suites
 51/51/26/189/29 green; CodeGen 288/2/4; ConfirmedPassing 3/0/15.
 
-### B. Pending investigation results (logs exist, unread)
+### B. Pending investigation results (logs exist, unread → ✅ READ 2026-09-08 PM+2, see §6d)
 
-Two background runs finished; their logs are at `%TEMP%\naja_cpy\` (`C:\Users\Ehsen\AppData\Local\Temp\naja_cpy\`):
+Both logs were read in the PM+2 session. Findings supersede this section: `suite_final.log` showed the
+crash was MID-RUN (8/19 facts), not teardown; `bulk_watchdog.log` died at test_raise.py (crasher now
+fixed, `bc5b4a5`). Full story in §6d-A.
+
 1. **`suite_final.log`** — all 19 `CpythonSuiteRunner` facts with the fixed tree (was: wedged).
 2. **`bulk_watchdog.log`** — full 392-file `CPython_BulkSuite_PassRate` under the new watchdog —
    the honest full-suite pass rate; will contain the first-ever complete bulk failure list.
-Read both first; they inform the next gap clusters.
 
-### C. Ordered pending work (user-approved direction: stress-test via CPython's own tests only,
-simple → hard, root-cause, document, ASK APPROVAL before each fix; never invent tests)
+### C. Ordered pending work (✅ items 1-3 handled in the PM+2 session — see §6d; direction stands)
 
-1. **Commit + push** the §6c-A tree (per-fix commits), after reading B's logs.
-2. **Investigate the teardown abort** — CodeGen summary prints (288/2/4) then "Test Run Aborted":
-   host dies at process teardown, likely abandoned watchdog threads still running guest IL during
-   exit (my watchdog leaves hangers alive by design). Cheap checks: does the abort happen with
-   `--filter` runs that exclude bulk? Is it new (post-watchdog) or pre-existing? If watchdog-related,
-   consider `Environment.FailFast`-free alternatives: thread-abort is net-core-blocked, so maybe
-   track abandoned threads and `Join` them at teardown, or run bulk in a child process.
-3. **Scope / super / compare granular areas — 0 passes each.** Next natural clusters; never
-   investigated. Scope showed `testComplexDefinitions`/`testFreeingCell`/`testListCompLocalVars`
-   failing in ≤450ms; super `test_class_getattr_working`/`test_unbound_method_transfer_working`/
-   `test_shadowed_global`; compare `test_issue_1393`/`test_sets`/`test_str_subclass`. Start here —
-   likely a few root causes each unblock many FullSuite files.
+1. ~~**Commit + push** the §6c-A tree~~ ✅ done (f3ffbab→8d47c19).
+2. ~~**Investigate the teardown abort**~~ ✅ SOLVED — was NOT teardown; illegal `Rethrow` outside a
+   handler in test_raise.py::test_invalid_reraise; fixed in `bc5b4a5` (§6d-A).
+3. ~~**Scope / super / compare granular areas — 0 passes each.**~~ Scope ✅ root-caused (from-import
+   member resolution, §6d-B/C; fix 2 in flight, user-approved with fix 3). Super + compare still
+   pending (§10-2). The original failing-method list: scope `testComplexDefinitions`/
+   `testFreeingCell`/`testListCompLocalVars` (all 41 actually die to the ONE cctor cause);
+   super `test_class_getattr_working`/`test_unbound_method_transfer_working`/`test_shadowed_global`;
+   compare `test_issue_1393`/`test_sets`/`test_str_subclass`.
 4. **Previously documented open items** (from CPYTHON_FAILURE_ANALYSIS.md):
    - Dotted-name `.py` import loader (sys.path/package search through SourceDecoder) — blocks
      ONLY test_utf8source::test_badsyntax (needs `import test.tokenizedata.badsyntax_pep3120`
@@ -237,6 +239,148 @@ simple → hard, root-cause, document, ASK APPROVAL before each fix; never inven
   ALWAYS `git stash list` + `git status` before popping; the old `dev` stash is still in the list
   (safe to drop: the LEGB work was ff-merged into main long ago).
 - ILDumper works now: `NajaEngine.Eval(path, dumpIL:true)` → `%TEMP%\naja_il_<asm>.txt`.
+
+## 6d. Session state — 2026-09-08 PM+2 (crasher round) ⚠️ READ FIRST — CONTAINS THE RESUME PLAN
+
+### A. The "Test Run Aborted" MYSTERY IS SOLVED — it was NOT teardown
+
+The 2026-09-08 PM reading ("host dies at teardown") was WRONG. Evidence chain (all verified this round):
+
+1. Windows Event Log (Id 1000): both 11:08 and 11:11 crashes = `testhost.exe` killed by **0xc0000005 (AV)
+   in `coreclr.dll` at the IDENTICAL fault offset `0x1690fa`** → one root cause, not a teardown race.
+2. `suite_final.log` (the "teardown" evidence) actually showed only 8 of 19 facts reporting — the crash
+   was MID-RUN; vstest prints a partial summary on abort, which is what got misread as "after summary".
+3. The **single-threaded replica harness** (`%TEMP%\naja_dump`, no watchdog → no zombie-thread race)
+   ALSO crashed (EXIT=139) — disproving the watchdog hypothesis. Its last START line + `Fatal error.
+   Internal CLR error. (0x80131506)` stack named the culprit exactly: **test_raise.py::TestRaise::
+   test_invalid_reraise**.
+4. Root cause: that test does a bare `raise` with NO active exception. `EmitRaise` emitted
+   `OpCodes.Rethrow` unconditionally — **`rethrow` is only legal inside a catch handler**; in a try
+   body it is invalid IL the JIT turns into a fatal CLR error, hard-killing the process.
+
+**FIX LANDED in `bc5b4a5`** (verified, committed, NOT pushed — push with the round):
+`EmitRaise` (ExceptionEmitters.cs) now: `_ctx.ActiveHandlerExceptionLocal` set → `Rethrow`
+(identity-preserving, unchanged); else → call new `ExceptionHelpers.NoActiveException()` →
+`InvalidOperationException("RuntimeError: No active exception to re-raise")` + throw.
+Verified: bare-raise repro (outside/inside/after-handler) all pass; test_raise.py runs 37 tests, 16 pass.
+This also un-aborts the bulk suite: a full 392-file run should now COMPLETE for the first time.
+
+**The bulk-suite 0xc0000005 crash and the watchdog-zombie theory**: disproven — the crash was this
+single illegal-IL construct (test_raise.py is a "r" file, mid-alphabet; the misordered guest output in
+bulk_watchdog.log was interleaved stderr of the dying process, not evidence of zombies).
+
+### B. Scope cluster (0/41) root-caused — from-import member resolution
+
+Every one of the 41 scope granular failures has ONE signature:
+`TypeInitializationException: The type initializer for 'ScopeTests' threw an exception.` Drill-down:
+`MissingMethodException: Constructor on type 'Naja.StdLib.NajaTestSupport' not found for 1 arg(s).
+Available: [()]. Args: [NajaFunction]`.
+
+Chain: test_scope.py does `from test.support import cpython_only` → `NajaTestSupport` LACKS
+`cpython_only` (also `gc_collect`, `check_syntax_error`) → the from-import pre-pass maps EVERY alias
+to the module TypeName with NO member check → NameEmitters step 6b pushes the module **Type** as the
+value → `@cpython_only` decorates with a Type → `CallCallable(Type)` = constructor call →
+MissingMethodException in the class cctor → the WHOLE class dies → all 41 methods error.
+
+**Bigger finding (repro `repro_fromimport_member.py`)**: `from math import pi` — where pi EXISTS —
+also pushes the module Type (`print(pi)` → `Naja.StdLib.NajaMath`). From-import NEVER resolves
+members; member VALUES (constants, decorators, first-class functions like test_compare's ALWAYS_EQ)
+are broken across the whole stdlib surface. This is likely a multi-cluster blocker (compare's 0
+includes `ALWAYS_EQ` as a value; super's `test_shadowed_global` needs import_helper; etc.).
+
+### C. Fix 2 design — from-import member resolution (USER-APPROVED, IN FLIGHT, ~60% applied)
+
+Approved scope (all three fixes): (1) bare-raise ✅ landed `bc5b4a5`; (2) from-import member
+verification + ImportError semantics; (3) NajaTestSupport members. Fix 2 state on disk:
+
+**APPLIED (uncommitted, compiles? — NOT yet built, build first to check):**
+- `Naja.CodeGen/Builtins/ReflectionHelpers.cs` — new `ImportFromMember(Type moduleType, string
+  memberName)`: resolution ladder = singleton instance METHOD → bound-method NajaFunction; instance
+  property/field on singleton → VALUE; static property; enum member; static field (NajaStaticMethod/
+  ClassMethod unwrap); static method → raw MethodInfo (CallCallable dispatches); else
+  `TypeLoadException("ImportError: cannot import name '<m>' from '<module>'")`.
+- `Naja.CodeGen/EmitContext.cs` — new `FromImportMembers` dict:
+  `name → (string ModuleName, string TypeName, string MemberName)`.
+- `Naja.CodeGen/AssemblyEmitter.cs` — new instance field `_fromImportMembers` (mirrors the
+  `_classCtorArgCounts` pattern so NO signature churn across Pass-3 sites).
+- `Naja.CodeGen/AssemblyEmitter.ModuleEmission.cs` — pre-pass records member bindings for stdlib
+  from-imports (skips `from x import *`); `mainCtx.FromImportMembers` copy added (Pass 2).
+
+**REMAINING (do in this order):**
+1. **Pass 3 copies** — add `foreach (var (k, v) in _fromImportMembers) ctx.FromImportMembers[k] = v;`
+   at 4 sites: `AssemblyEmitter.MethodGeneration.cs` ~L128, ~L241, ~L353 (the three
+   `foreach importMap → ctx.ImportMap` loops) and `AssemblyEmitter.ClassBody.cs` ~L290 (cctorCtx).
+2. **NameEmitters.EmitName** — new step **6a.5, BEFORE step 6b (ImportMap)** — if
+   `_ctx.FromImportMembers.TryGetValue(e.Name, …)`: resolve the module CLR Type (loaded-assembly
+   search first, same pattern as GetStdLibField), emit `ldtoken <modType>` + `GetTypeFromHandle` +
+   `ldstr memberName` + `call ImportFromMember`; return `NajaTypes.Unknown`. Order matters: the name
+   exists in BOTH ImportMap and FromImportMembers — 6a.5 must win for stdlib from-imports.
+3. **Method cache** — `NajaBuiltinsMethodCache.ImportFromMember_Method` entry (follow
+   `GetStaticAttr_Method` shape: `typeof(ReflectionHelpers).GetMethod(nameof(…))!`).
+4. **ImportError message**: currently derives module name from `moduleType.Name.Replace("Naja","")`
+   ("TestSupport" for test.support). The tuple carries the real Python name — either pass it to the
+   helper (4th arg) or accept the CLR-derived approximation. CPython wording:
+   `cannot import name 'cpython_only' from 'test.support'`.
+5. **Build + verify**: `dotnet build Naja.slnx` first (fix-2 files untouched by a build since edits);
+   then rebuild `Naja.CLI` (staleness!) and run `repro_fromimport_member.py` — `pi` must print the
+   VALUE (3.14159…), `sqrt(16)` → 4, `math.pi` attr access unchanged; missing-member repro
+   (`repro_ts_missing.py` pre-fix-3) must now throw ImportError, not push a Type.
+6. **Regression**: base suites (51/51/26/189/29), CodeGen.Tests full run (expect 288+/2/4 AND no
+   "Test Run Aborted" — first full run that should complete), scope granular (expect >0 of 41; with
+   fix 3 landed expect most to pass), test_raise.py 16 pass holds.
+
+### D. Fix 3 design — NajaTestSupport members (USER-APPROVED, NOT STARTED)
+
+Add to `Naja.StdLib/NajaTestSupport.cs` (respect §5.9 — NO CodeGen reference):
+- `cpython_only` — pass-through decorator: `public static object cpython_only(object func) => func;`
+  (Naja targets CPython parity, so run the test rather than skip).
+- `gc_collect` — `public static void gc_collect() { GC.Collect(); GC.WaitForPendingFinalizers();
+  GC.Collect(); }` (CPython's gc.collect is a no-op for refcount-only, but test_scope's
+  testFreeingCell-adjacent code just calls it).
+- `check_syntax_error(testcase, statement, errtext='', *, lineno=None, offset=None)` — CPython body
+  (support/__init__.py:826): `with testcase.assertRaisesRegex(SyntaxError, errtext) as cm:
+  compile(statement, '<test string>', 'exec')`, then asserts `err.lineno`/`err.offset` non-None.
+  Implementation: reach `TypeSystem.Compile` via RAW REFLECTION (the `InvokeDecorated` pattern),
+  invoke `assertRaisesRegex` on the testcase via reflection. **`SyntaxErrorException` must gain
+  `lineno`/`offset` properties** (currently message-only ctors) and `TypeSystem.Compile` must
+  populate them — test_scope asserts `assertIsNotNone(err.lineno)`. Parser errors carry line/col in
+  the message (`[L2:C4]`); parse them out or thread them through.
+- Note: `check_syntax_error` is called as `check_syntax_error(self, """if 1: …""")` — testcase-first
+  signature; kwonly lineno/offset can be optional parameters.
+
+### E. Ordered resume plan (next session)
+
+1. `git status` — expect: `bc5b4a5` HEAD (unpushed) + this HANDOFF/docs update staged or modified,
+   modified EmitContext.cs / AssemblyEmitter.cs / AssemblyEmitter.ModuleEmission.cs /
+   ReflectionHelpers.cs (fix-2 work). Commit the docs update first (it is this file). Do NOT commit
+   the fix-2 files until step C-6 verifies; if the build breaks the design, `git diff` of these four
+   files is the spec.
+2. Finish fix 2 per §6d-C (Pass 3 copies → NameEmitters 6a.5 → method cache → ImportError wording →
+   build → verify).
+3. Do fix 3 per §6d-D; build `Naja.CLI` + `Naja.CPythonTests` after EVERY StdLib/CodeGen change
+   (copied-DLL staleness — twice bitten).
+4. Full verification round (§6d-C-6 list) + scope granular + super/compare spot-checks.
+5. Commit fix 2 and fix 3 separately (clear messages; include repro evidence in the body), then
+   **push `naja main`** (fix 1 `bc5b4a5` rides along).
+6. Update this file (§2, session log) + `CPYTHON_FAILURE_ANALYSIS.md` (crasher + scope clusters),
+   commit docs, push.
+7. THEN: full CPython bulk run (should complete end-to-end for the FIRST time — the honest 392-file
+   failure list becomes the next round's input).
+
+### F. Method notes from this round (keep doing)
+
+- **Windows Event Log Id 1000** is the fastest crash triage: `Get-WinEvent -FilterHashtable
+  @{LogName='Application'; Id=1000; StartTime=…}` gives faulting module + exception code + offset.
+  Two crashes at the SAME offset = one root cause.
+- **Replica harness verdicts are decisive**: single-threaded crash = real guest crasher; only-
+  under-watchdog crash = zombie race. This round it proved the crasher, disproved the watchdog theory.
+- The replica at `%TEMP%\naja_dump` now prints the full exception CHAIN (depth 6) — that drill-down
+  found the ScopeTests cctor cause in one run. Program.cs currently holds the chain-drill version;
+  the bulk-replica loop is in git history of this file / previous session notes.
+- `naja.exe run` with a **native Windows path** (`F:/Sources/cpython/...`) — MSYS-style `/f/...`
+  paths fail with "file not found" (MSYS path conversion disabled for native tools).
+- Event-log PowerShell from bash: backticks break — write a .ps1 to %TEMP% and run with
+  `-ExecutionPolicy Bypass -File` (see `%TEMP%\naja_cpy\evt_query.ps1`).
 
 ## 7. Known remaining gaps (honest list)
 
@@ -292,16 +436,23 @@ simple → hard, root-cause, document, ASK APPROVAL before each fix; never inven
 - **ANALYSIS_SUMMARY.txt**, `test_results.log`, `detailed_test_results.log` (repo root) and
   `Naja.CodeGen/llm_context/*` — pre-date this session's fixes; historical planning docs only.
 
-## 10. Suggested next steps (priority order — session start 2026-09-08 PM+)
+## 10. Suggested next steps (priority order — session start 2026-09-08 PM+3)
 
-1. **Read the two unread logs** (§6c-B): `%TEMP%\naja_cpy\suite_final.log` and
-   `%TEMP%\naja_cpy\bulk_watchdog.log` (the honest 392-file pass rate + full failure list).
-2. **Commit + push** the §6c-A tree (per-fix commits: F1, F2, F3, watchdog, docs).
-3. **Investigate the CodeGen teardown abort** (§6c-C-2) — summary prints then "Test Run Aborted".
-4. **Scope / super / compare clusters** (§6c-C-3) — all three granular areas at 0 passes;
-   root-cause the 3 visible methods each, fix, document, verify.
-5. **Dotted-name import loader + real `__file__`** (§7-11) — needs approval; unlocks
+**FIRST: follow §6d-E (the resume plan) — it supersedes this list until fix 2 + fix 3 land.**
+Quick version: finish fix 2 (from-import members, ~60% applied) → fix 3 (NajaTestSupport members)
+→ verify → commit both + push (fix 1 `bc5b4a5` rides along) → update docs.
+
+After that round is green:
+
+1. **Full CPython bulk run** (`CPython_BulkSuite_PassRate`, watchdog active) — with the bare-raise
+   crasher fixed it should COMPLETE for the first time; the honest 392-file failure list is the next
+   round's input. (The old "teardown abort" mystery is closed — §6d-A.)
+2. **Super / compare clusters** — still 0 passes, never investigated. compare needs `ALWAYS_EQ` as a
+   VALUE (fix 2 should unlock it), set/frozenset ordering, str subclassing; super needs unbound
+   method transfer (`D.f(D())`) and `import_helper.ready_to_import` (dotted-import feature §7-11).
+3. **Dotted-name import loader + real `__file__`** (§7-11) — needs approval; unlocks
    test_badsyntax and import-from-script-dir generally.
-6. **augassign clusters** (§6c-C-4): slice-aug-assign, testBasic, `__iadd__`, unpacking.
-7. **`subTest` + name mangling** (§7-12/13) — unlock more of test_named_expressions' 37 fails.
-8. Update README status tables from this file; keep §2 current after every round.
+4. **augassign clusters** (§6c-C-4): slice-aug-assign, testBasic, `__iadd__`, unpacking.
+5. **`subTest` + name mangling** (§7-12/13) — unlock more of test_named_expressions' 37 fails.
+6. test_raise.py's honest remaining 21 fails (exception __context__/__cause__ semantics).
+7. Update README status tables from this file; keep §2 current after every round.
