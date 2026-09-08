@@ -428,7 +428,11 @@ Completed the §6d-E resume plan end-to-end:
    + `t = T("x")`. Needs an approval round.
 5. **Docs**: this file (§2, §6e) + CPYTHON_FAILURE_ANALYSIS.md (items 12/13,
    honest CodeGen re-baseline, scope-cluster names).
-6. **Bulk run**: see §10 — run AFTER this commit round with the watchdog active.
+6. **Bulk run**: ATTEMPTED at PM+3 close, **stopped at ~25 min per user request — no results
+   captured** (the loop prints only after completion, so the partial log holds nothing). Next
+   session: restart it fresh per §10-1. Note the fact lives in **Naja.CodeGen.Tests**
+   (`Naja.CodeGen.Tests.LanguageCompliance.CpythonSuiteRunner.CPython_BulkSuite_PassRate`),
+   NOT Naja.CPythonTests — a filter against CPythonTests matches nothing.
 
 ## 7. Known remaining gaps (honest list)
 
