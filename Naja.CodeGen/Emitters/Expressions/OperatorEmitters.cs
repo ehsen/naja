@@ -230,13 +230,12 @@ public sealed class OperatorEmitters : ExpressionEmitterBase
                         IL.Emit(OpCodes.Stloc, tmpR);
 
                         TypeMapper.EmitBox(IL, l);
-                        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ToFloat_Method);
 
                         IL.Emit(OpCodes.Ldloc, tmpR);
-                        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ToFloat_Method);
-
-                        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.PyFloorDivF_Method);
-                        return NajaTypes.Float;
+                        // Exact dynamic floor division: int//int stays int
+                        // (never 1.0), BigInteger-aware, float fallback.
+                        IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.PyFloorDivDynamic_Method);
+                        return NajaTypes.Unknown;
                     }
 
                     if (l is FloatType || r is FloatType)

@@ -164,6 +164,67 @@ public static class MathFunctions
         return Math.Pow(Convert.ToDouble(b), Convert.ToDouble(e));
     }
 
+    /// <summary>
+    /// Exact dynamic floor division (a // b) for Unknown-typed operands.
+    /// Keeps integer semantics exact (int//int → int, never 1.0) and handles
+    /// BigInteger; falls back to double floor only for true float operands.
+    /// Replaces the old ToFloat-everything path where `3 // 2` → 1.0.
+    /// </summary>
+    public static object PyFloorDivDynamic(object a, object b)
+    {
+        // BigInteger operands stay exact
+        if (a is System.Numerics.BigInteger || b is System.Numerics.BigInteger)
+        {
+            var la = ToBig(a);
+            var lb = ToBig(b);
+            if (lb.IsZero) throw new DivideByZeroException("ZeroDivisionError: integer division or modulo by zero");
+            var q = System.Numerics.BigInteger.Divide(la, lb);
+            var r = la - q * lb;
+            if (!r.IsZero && ((r < 0) != (lb < 0))) q -= 1;
+            return q;
+        }
+
+        // both integer-ish → exact long floor division
+        if (IsIntLike(a) && IsIntLike(b))
+        {
+            long la = ToLong(a), lb = ToLong(b);
+            if (lb == 0) throw new DivideByZeroException("ZeroDivisionError: integer division or modulo by zero");
+            long q = la / lb;
+            long r = la % lb;
+            if (r != 0 && ((r < 0) != (lb < 0))) q--;
+            return q;
+        }
+
+        // float path (anything IConvertible)
+        if (a is IConvertible && b is IConvertible)
+        {
+            double fa = Convert.ToDouble(a), fb = Convert.ToDouble(b);
+            if (fb == 0) throw new DivideByZeroException("ZeroDivisionError: float floor division by zero");
+            return Math.Floor(fa / fb);
+        }
+
+        throw new InvalidCastException(
+            $"TypeError: unsupported operand type(s) for //: '{TypeName(a)}' and '{TypeName(b)}'");
+
+        static bool IsIntLike(object v)
+            => v is long || v is int || v is short || v is sbyte || v is byte || v is ushort || v is uint || v is bool;
+
+        static long ToLong(object v) => v switch
+        {
+            bool bo => bo ? 1L : 0L,
+            IConvertible ic => Convert.ToInt64(ic),
+            _ => Convert.ToInt64(v)
+        };
+
+        static System.Numerics.BigInteger ToBig(object v) => v switch
+        {
+            System.Numerics.BigInteger big => big,
+            bool bo => bo ? 1 : 0,
+            double d => (System.Numerics.BigInteger)d,
+            _ => (System.Numerics.BigInteger)ToLong(v)
+        };
+    }
+
     /// <summary>Python unary minus with type checking. TypeError for str/bytes etc.</summary>
     public static object PyNeg(object v) => v switch
     {

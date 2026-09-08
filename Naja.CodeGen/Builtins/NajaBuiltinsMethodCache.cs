@@ -68,6 +68,9 @@ internal static class NajaBuiltinsMethodCache
     public static readonly MethodInfo PyPowDynamic_Method =
         typeof(MathFunctions).GetMethod(nameof(MathFunctions.PyPowDynamic))!;
 
+    public static readonly MethodInfo PyFloorDivDynamic_Method =
+        typeof(MathFunctions).GetMethod(nameof(MathFunctions.PyFloorDivDynamic))!;
+
     public static readonly MethodInfo PyPowLong_Long_Method =
         typeof(MathFunctions).GetMethod(nameof(MathFunctions.PyPow), new[] { typeof(long), typeof(long) })!;
 
