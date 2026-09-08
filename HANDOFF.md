@@ -1,8 +1,9 @@
 # Naja — Project Handoff & Status
 
-> **Read this first in any new session.** Verified state as of **2026-09-07**, HEAD = `f099b85` on `main`
+> **Read this first in any new session.** Verified state as of **2026-09-08 PM**, HEAD = `f3ffbab` on `main`
 > (remote is named `naja` → `github.com/ehsen/naja`). This file is the source of truth for current status.
 > README.md is still the architecture/navigation reference but is **stale on several points** (see §9).
+> ⚠️ **Working tree has UNCOMMITTED fixes** (F1/F2/F3 + watchdog + docs) — see §6c before anything else.
 
 ---
 
@@ -12,7 +13,7 @@ Python 3.x syntax → native **.NET 10 IL** compiler via `System.Reflection.Emit
 no C# intermediate step. Pipeline: Lexer → Parser → Semantics → (optional) Inference → 3-pass IL emission.
 `.naja` and `.py` files are the same language to the CLI; `.naja` is just the project's native spelling.
 
-## 2. Current verified status (`dotnet test Naja.slnx`, 2026-09-07)
+## 2. Current verified status (2026-09-08 PM, after F1/F2/F3 — uncommitted tree)
 
 | Suite | Result |
 |---|---|
@@ -20,9 +21,12 @@ no C# intermediate step. Pipeline: Lexer → Parser → Semantics → (optional)
 | Naja.Parser.Tests | 51/51 ✅ |
 | Naja.Semantics.Tests | 26/26 ✅ |
 | Naja.Inference.Tests | 189/189 ✅ |
-| **Naja.CodeGen.Tests** | **280 passed / 0 failed / 4 skipped** ✅ |
+| **Naja.CodeGen.Tests** | **288 passed / 2 failed / 4 skipped** (+8 over the 280 baseline; the 2 failures are pre-existing: JSON Module Tests, test_windows Gap Analysis — proven at ef17876 via stash-bisect) ⚠️ "Test Run Aborted" prints AFTER the summary — host dies at teardown, investigate (§6c-C-2) |
 | Naja.WinForms.Tests | 29/29 ✅ |
-| Naja.CPythonTests | 18 pass / 278 fail / 15 skip — long-tail CPython parity; **host crash eliminated** |
+| ConfirmedPassing (CI gate) | 3 pass / 0 fail / 15 skip ✅ |
+| CPython granular | int_literal 6/6, utf8source 2/3, unary 6/6, generator_stop 2/2, exception_variations 30, decorators 7, **scope 0, super 0, compare 0** (never investigated — next clusters) |
+| test_named_expressions.py | runs to completion: 74 tests, 37 pass (was: infinite wedge) |
+| test_augassign.py | runs: 2 pass / 4 fail (was: AV hard-crash) |
 
 Everything that was failing at the start of the 2026-09-07 session (Win32OsTests, NajaWindowsOsTests,
 JsonTests, CPython gap-analysis test) is green. `testdata/windows_os/test_windows.naja` runs 18 tests OK
@@ -161,11 +165,85 @@ Tests, test_windows Gap Analysis — proven pre-existing at ef17876 by stash-bis
 Open items needing approval: dotted-name .py import loader (test_badsyntax), the 4
 remaining augassign gap clusters, `__file__` currently emitted empty.
 
+## 6c. Session state — 2026-09-08 PM (walrus/field-store round) ⚠️ READ FIRST
+
+### A. UNCOMMITTED working tree (verify with `git status`)
+
+All fixes below are built, verified against repros + regression, but **NOT committed**.
+Commit per-fix and push `naja main` as the FIRST action of the next session:
+
+| File | Fix |
+|---|---|
+| `Naja.CodeGen/Emitters/Statements/AssignmentEmitters.cs` | **F1**: `EmitStore` hoisted-field path now converts to the field's CLR type before `stsfld` (Int/Bool→double `conv.r8`; Float/Bool→long `conv.i8`; Unknown→`unbox.any`/`castclass string`). Was: raw bit reinterpretation — `e = 0.0; e = 3 // 2` → `5E-324`; in a while loop this poisoned the condition → the infinite loop that wedged the suite. |
+| `Naja.CodeGen/Emitters/Expressions/ControlFlowEmitters.cs` | **F2**: `EmitWalrus` (non-comprehension path) now stores the hoisted FIELD (same conversion rules as F1) AND the local when `_ctx.Fields` contains the target. Was: stored only a local while `EmitName` reads fields first → `while a > (d := 3)` left `d == 0`. Watch out: variable renamed `walrusHoistedField` (name collision with the comprehension-path `walrusField` in the same method). |
+| `Naja.CodeGen/Builtins/MathFunctions.cs` | **F3**: new `PyFloorDivDynamic(object,object)` — BigInteger-exact, int-like→exact long floor division, IConvertible→`Math.Floor` double fallback, `DivideByZeroException` ("ZeroDivisionError: …"), `InvalidCastException` TypeError otherwise. |
+| `Naja.CodeGen/Builtins/NajaBuiltinsMethodCache.cs` | `PyFloorDivDynamic_Method` entry. |
+| `Naja.CodeGen/Emitters/Expressions/OperatorEmitters.cs` | FloorDiv Unknown branch routes through `PyFloorDivDynamic` (returns Unknown) instead of ToFloat-everything (`3 // 2` → int `1`, not `1.0`). |
+| `Naja.CodeGen.Tests/LanguageCompliance/CpythonSuiteRunner.cs` | **Watchdog**: `CPython_BulkSuite_PassRate` runs each file on a background thread with a 60s `Join` budget; timeout → recorded `[Watchdog] TIMEOUT` failure, thread abandoned. |
+| `CPYTHON_FAILURE_ANALYSIS.md` | Bugs 10/11 + F3 + harness marked FIXED with fix details. |
+
+Verified before writing this: hang repro → `result: 1` (CPython-exact, terminates);
+`5E-324` repro → `1.0`; walrus repro → `d == 3`; test_named_expressions.py 74 tests
+37 pass; `CPython_NamedExpressions` + `CPython_LongExp` xUnit facts PASS; base suites
+51/51/26/189/29 green; CodeGen 288/2/4; ConfirmedPassing 3/0/15.
+
+### B. Pending investigation results (logs exist, unread)
+
+Two background runs finished; their logs are at `%TEMP%\naja_cpy\` (`C:\Users\Ehsen\AppData\Local\Temp\naja_cpy\`):
+1. **`suite_final.log`** — all 19 `CpythonSuiteRunner` facts with the fixed tree (was: wedged).
+2. **`bulk_watchdog.log`** — full 392-file `CPython_BulkSuite_PassRate` under the new watchdog —
+   the honest full-suite pass rate; will contain the first-ever complete bulk failure list.
+Read both first; they inform the next gap clusters.
+
+### C. Ordered pending work (user-approved direction: stress-test via CPython's own tests only,
+simple → hard, root-cause, document, ASK APPROVAL before each fix; never invent tests)
+
+1. **Commit + push** the §6c-A tree (per-fix commits), after reading B's logs.
+2. **Investigate the teardown abort** — CodeGen summary prints (288/2/4) then "Test Run Aborted":
+   host dies at process teardown, likely abandoned watchdog threads still running guest IL during
+   exit (my watchdog leaves hangers alive by design). Cheap checks: does the abort happen with
+   `--filter` runs that exclude bulk? Is it new (post-watchdog) or pre-existing? If watchdog-related,
+   consider `Environment.FailFast`-free alternatives: thread-abort is net-core-blocked, so maybe
+   track abandoned threads and `Join` them at teardown, or run bulk in a child process.
+3. **Scope / super / compare granular areas — 0 passes each.** Next natural clusters; never
+   investigated. Scope showed `testComplexDefinitions`/`testFreeingCell`/`testListCompLocalVars`
+   failing in ≤450ms; super `test_class_getattr_working`/`test_unbound_method_transfer_working`/
+   `test_shadowed_global`; compare `test_issue_1393`/`test_sets`/`test_str_subclass`. Start here —
+   likely a few root causes each unblock many FullSuite files.
+4. **Previously documented open items** (from CPYTHON_FAILURE_ANALYSIS.md):
+   - Dotted-name `.py` import loader (sys.path/package search through SourceDecoder) — blocks
+     ONLY test_utf8source::test_badsyntax (needs `import test.tokenizedata.badsyntax_pep3120`
+     to raise SyntaxError naming 'utf-8'). A real feature, needs approval.
+   - 4 augassign clusters: slice-aug-assign (`x[1:2] *= 2` → NajaSlice vs IConvertible cast),
+     testBasic `2 != 3` numeric aug-assign, `__iadd__` dunder dispatch on user classes,
+     `test_with_unpacking` (expects SyntaxError Naja doesn't raise).
+   - `__file__` emitted as `ldstr ""` (ModuleEmission.cs ~L440) — needed by import-from-script-dir.
+   - test_named_expressions remaining 37 fails: missing `subTest` in NajaUnittest, `__x` → `_Foo__x`
+     name mangling, etc.
+   - 2 pre-existing CodeGen failures (JSON Module Tests, test_windows Gap Analysis
+     "Specified method is not supported" at NajaEngine.cs:172) — classify or fix at leisure.
+
+### D. Method notes that made this round fast (keep doing)
+
+- **Bulk-replica harness**: `%TEMP%\naja_dump\{NajaDump.csproj,Program.cs}` references Naja.CodeGen
+  and replicates the bulk loop with per-file `START/OK/ERR` progress printing — a hang pinpoints in
+  minutes. Program.cs currently holds the replica (not the IL dumper anymore).
+- **Timeout-bisect**: `timeout 20 naja.exe run <file>` (exit 124 = hang) + per-method output-char
+  counting (`FFEEFF...` — Naja's unittest runner prints one char per method).
+- **Head-N bisect pitfall**: truncating a test file cuts off `unittest.main()` → methods never run →
+  false negatives. Only bisect files whose harness entry still executes.
+- **Stale-stash trap (NEW, cost a repair cycle)**: `git stash pop` on a CLEAN tree pops an OLD
+  unrelated stash (here: `WIP on dev: 554ef67` LEGB work) → merge conflicts in untouched files.
+  ALWAYS `git stash list` + `git status` before popping; the old `dev` stash is still in the list
+  (safe to drop: the LEGB work was ff-merged into main long ago).
+- ILDumper works now: `NajaEngine.Eval(path, dumpIL:true)` → `%TEMP%\naja_il_<asm>.txt`.
+
 ## 7. Known remaining gaps (honest list)
 
-1. **CPythonTests: 278 failures** — semantic long tail (exact exception messages, repr formats, edge
-   semantics). Needs `CPYTHON_TEST_ROOT` env var for the full runner. Best next lever: cluster failures
-   by theme and pick high-frequency modules.
+1. **CPythonTests long tail** — granular passcounts (2026-09-08 PM): int_literal 6/6, utf8source 2/3,
+   unary 6/6, generator_stop 2/2, exception_variations 30, decorators 7; **scope 0, super 0,
+   compare 0 = next clusters**. test_named_expressions 37/74, test_augassign 2/6 now RUN
+   (both were crash/skip). Full-suite honest rate: read `%TEMP%\naja_cpy\bulk_watchdog.log` (§6c-B).
 2. **async/await** — parsed, emitted synchronously (no state machine).
 3. **Multiple inheritance** — first base only.
 4. **Closure late-binding corner cases** — recursive closures sharing a captured name.
@@ -176,6 +254,11 @@ remaining augassign gap clusters, `__file__` currently emitted empty.
 9. **pathlib / csv / string** — intentionally raise ImportError now (IsImplemented gate); implement
    them or keep failing fast.
 10. The other CodeGen skips are by design (explicit `Skip =` in test code).
+11. **Dotted-name .py import loader missing** — `import test.tokenizedata.badsyntax_pep3120` raises
+    plain ImportError; any import-from-script-dir feature needs it (+ real `__file__`).
+12. **`subTest` not implemented in NajaUnittest** — breaks several modern CPython test files.
+13. **Name mangling (`__x` → `_Cls__x`) not implemented** — breaks test_named_expressions scope tests.
+14. **Slice aug-assign** — `x[1:2] *= 2` routes NajaSlice into a numeric cast → InvalidCastException.
 
 ## 8. Pitfalls that cost real time (don't relearn these)
 
@@ -190,6 +273,16 @@ remaining augassign gap clusters, `__file__` currently emitted empty.
   *skip*; enable Developer Mode to run them for real.
 - `%TEMP%\naja_*.py` repro scripts from the session are ephemeral — re-create as needed.
 - Git CRLF→LF warnings on some files are normal; remote is `naja` not `origin`.
+- **`git stash pop` on a clean tree pops an OLD stash** (§6c-D) — always `git stash list` first.
+- **stsfld/stloc never converts** — any store into a typed slot must emit the conversion itself
+  (F1 pattern in `AssignmentEmitters.EmitStore`). Cost the suite a 20-minute wedge.
+- **Raw numeric opcodes on reference-typed operands = AV crash** — List/Str/Tuple operands must
+  route to Dynamic* helpers in EmitBinary AND EmitAugAssign AND EmitSingleComparison.
+- **`conv.*` converts the TOP of the stack** (right operand) — left-side widening needs
+  stash/convert/reload.
+- **Head-N bisect lies when the harness entry is truncated** (§6c-D).
+- **The bulk suite wedges without the watchdog** — never run `CPython_BulkSuite_PassRate`
+  unguarded; one hanging guest file eats the whole 392-file loop.
 
 ## 9. Stale docs (read with care)
 
@@ -199,12 +292,16 @@ remaining augassign gap clusters, `__file__` currently emitted empty.
 - **ANALYSIS_SUMMARY.txt**, `test_results.log`, `detailed_test_results.log` (repo root) and
   `Naja.CodeGen/llm_context/*` — pre-date this session's fixes; historical planning docs only.
 
-## 10. Suggested next steps (priority order)
+## 10. Suggested next steps (priority order — session start 2026-09-08 PM+)
 
-1. Cluster the 278 CPythonTests failures (set `CPYTHON_TEST_ROOT`, run, group by missing-module vs
-   semantic-mismatch) — the highest-information next move.
-2. Update README status tables from this file.
-3. Interop blockers for real desktop apps (README "Known Limitations" 1–3): `len()` on .NET string,
-   enum member access via non-imported namespaces, closure capture edge.
-4. Grow `Naja.Inference` coverage to cut dynamic dispatch (performance).
-5. async/await state-machine emission.
+1. **Read the two unread logs** (§6c-B): `%TEMP%\naja_cpy\suite_final.log` and
+   `%TEMP%\naja_cpy\bulk_watchdog.log` (the honest 392-file pass rate + full failure list).
+2. **Commit + push** the §6c-A tree (per-fix commits: F1, F2, F3, watchdog, docs).
+3. **Investigate the CodeGen teardown abort** (§6c-C-2) — summary prints then "Test Run Aborted".
+4. **Scope / super / compare clusters** (§6c-C-3) — all three granular areas at 0 passes;
+   root-cause the 3 visible methods each, fix, document, verify.
+5. **Dotted-name import loader + real `__file__`** (§7-11) — needs approval; unlocks
+   test_badsyntax and import-from-script-dir generally.
+6. **augassign clusters** (§6c-C-4): slice-aug-assign, testBasic, `__iadd__`, unpacking.
+7. **`subTest` + name mangling** (§7-12/13) — unlock more of test_named_expressions' 37 fails.
+8. Update README status tables from this file; keep §2 current after every round.

@@ -127,12 +127,12 @@ a bulk-replica harness (one static engine + per-file progress, mirroring
 test_augassign AV killed the run earlier in alphabetical order. Two
 compounding bugs, both minimal-repro'd via CLI:
 
-### 10. Module-field store never converts — raw bit reinterpretation (OPEN)
+### 10. Module-field store never converts — raw bit reinterpretation (FIXED as F1)
 `e = 0.0; e = 3 // 2` → prints `5E-324` (int64 bits of `1` read as double).
 The module assignment `stsfld` path writes the raw evaluation-stack value into
-the inference-typed static field with **no `EmitConversion`** when the
-expression type ≠ field type. Same class as the Pow stsfld bug (#4), but at
-the ASSIGNMENT store. In a `while` loop this is lethal:
+the inference-typed static field with **no conversion** when the expression
+type ≠ field type. Same class as the Pow stsfld bug (#4), but at the
+ASSIGNMENT store. In a `while` loop this is lethal:
 ```python
 a = 9; n = 2; x = 3; d = 0
 while a > d:
@@ -142,25 +142,34 @@ while a > d:
 Trace: `d = 3 // 2` produced `4607182418800017408` = IEEE bits of `1.0` stored
 into the long-typed field. `a` then fills with garbage, the condition never
 turns false → **the actual infinite loop** (also the FullSuite wedge).
-Proposed fix F1: emit `TypeMapper.EmitConversion(fieldType ← exprType)` at
-every module-field store.
+**F1 (2026-09-08 PM, `AssignmentEmitters.EmitStore`)**: hoisted-field stores
+now convert to the field's actual CLR type before `stsfld` —
+Int/Bool→double via `conv.r8`, Float/Bool→long via `conv.i8`,
+Unknown→`unbox.any`/`castclass`. Verified: `e = 0.0; e = 3 // 2` → `1.0`;
+the hang repro converges to CPython's `1` and terminates.
 
-### 11. Walrus stores to a local while reads hit the field (OPEN)
+### 11. Walrus stores to a local while reads hit the field (FIXED as F2)
 `a = 9; while a > (d := 3): a = 1` → prints `d == 0`. `EmitWalrus` (non-
-comprehension path) declares/uses a LOCAL, but Pass 1 hoists the walrus
+comprehension path) declared/used a LOCAL, but Pass 1 hoists the walrus
 target to a FIELD and `NameEmitters` reads fields before locals — the write
-lands in a dead slot. CPython would print `d == 3`. This is the
-store/load-consistency pitfall applied to walrus targets.
-Proposed fix F2: `EmitWalrus` must store into the hoisted field when
-`_ctx.Fields` contains the target.
+landed in a dead slot. CPython prints `d == 3`.
+**F2 (2026-09-08 PM, `ControlFlowEmitters.EmitWalrus`)**: when the target is
+hoisted to a field, store the FIELD (with F1's conversion rules) AND the
+local. Verified: walrus repro prints `result: 1 3`.
 
-### F3 (proposed, semantics): exact dynamic FloorDiv
-FloorDiv's Unknown branch unconditionally `ToFloat`s both operands —
-int/BigInteger operands silently lose exactness (`3 // 2` → 1.0, not int 1).
-A `PyFloorDivDynamic(object,object)` (long-exact, BigInteger-aware, float
-fallback) would mirror PyPowDynamic.
+### F3 — exact dynamic FloorDiv (FIXED)
+FloorDiv's Unknown branch unconditionally `ToFloat`'d both operands —
+int/BigInteger operands silently lost exactness (`3 // 2` → 1.0, not int 1).
+**Fixed**: new `MathFunctions.PyFloorDivDynamic(object,object)` —
+BigInteger-exact, int-like → exact long floor division, IConvertible →
+double floor fallback, proper ZeroDivisionError, TypeError otherwise;
+emitter's Unknown branch routes through it and returns Unknown.
+Verified: `3 // 2` with Unknown operands → `1` (int), not `1.0`.
 
-### Harness note
+### Harness note (FIXED)
 `CPython_BulkSuite_PassRate` runs 392 files with **no per-file timeout** —
-one hanger wedges the whole suite (and did). Recommend a watchdog
-(`Thread` + `Join(ms)`) or per-file task cancellation before re-baselining.
+one hanger wedged the whole suite. **Fixed**: per-file watchdog thread with
+60s budget; a timeout is recorded as `[Watchdog] TIMEOUT` failure and the
+thread is abandoned. test_named_expressions.py now runs to completion
+(74 tests: 37 pass / 37 fail on genuine documented gaps: missing `subTest`,
+name mangling `__x` → `_Foo__x`, etc.).
