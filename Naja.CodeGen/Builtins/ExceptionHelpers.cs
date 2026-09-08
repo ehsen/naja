@@ -133,6 +133,16 @@ public static class ExceptionHelpers
         throw new Exception("TypeError: exceptions must be Exception instances or exception types");
     }
 
+    /// <summary>
+    /// Bare `raise` with no active exception — Python raises
+    /// RuntimeError("No active exception to re-raise"). Emitted by
+    /// EmitRaise when no except handler is active (IL `rethrow` is illegal
+    /// outside a catch block and would crash the process).
+    /// InvalidOperationException = Naja's RuntimeError mapping.
+    /// </summary>
+    public static InvalidOperationException NoActiveException() =>
+        new("RuntimeError: No active exception to re-raise");
+
     /// <summary>Enter a with-block context manager (__enter__ protocol).</summary>
     public static object? ContextEnter(object obj)
     {

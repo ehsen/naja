@@ -294,7 +294,23 @@ public class ExceptionEmitters : StatementEmitterBase
         }
         else
         {
-            IL.Emit(OpCodes.Rethrow);
+            // Bare `raise`. Inside an except handler (ActiveHandlerExceptionLocal
+            // is set), IL `rethrow` is legal and re-raises the active exception.
+            // OUTSIDE a handler it is INVALID IL (rethrow is only permitted in a
+            // catch block) — the JIT turns it into a fatal Internal CLR Error
+            // (0x80131506) that kills the whole process (crashed the bulk suite
+            // via test_raise.py::test_invalid_reraise).
+            // Python semantics: bare raise with no active exception raises
+            // RuntimeError("No active exception to re-raise").
+            if (_ctx.ActiveHandlerExceptionLocal is not null)
+            {
+                IL.Emit(OpCodes.Rethrow);
+            }
+            else
+            {
+                IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.NoActiveException_Method);
+                IL.Emit(OpCodes.Throw);
+            }
         }
     }
 

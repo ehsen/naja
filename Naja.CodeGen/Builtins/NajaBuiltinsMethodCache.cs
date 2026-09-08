@@ -267,6 +267,9 @@ internal static class NajaBuiltinsMethodCache
     public static readonly MethodInfo ContextExitWithException_Method = 
         typeof(ExceptionHelpers).GetMethod(nameof(ExceptionHelpers.ContextExitWithException))!;
 
+    public static readonly MethodInfo NoActiveException_Method = 
+        typeof(ExceptionHelpers).GetMethod(nameof(ExceptionHelpers.NoActiveException))!;
+
     public static readonly MethodInfo ContextExit_Method = 
         typeof(ExceptionHelpers).GetMethod(nameof(ExceptionHelpers.ContextExit))!;
 
