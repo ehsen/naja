@@ -80,6 +80,16 @@ public sealed class EmitContext
     public Dictionary<string, string> NamespaceImports { get; } = new();
 
     /// <summary>
+    /// `from <stdlib-module> import <member>` bindings — local name →
+    /// (Python module name, backing CLR type name, member name).
+    /// NameEmitters step 6a.5 resolves these via ReflectionHelpers.ImportFromMember
+    /// so member VALUES (constants, decorators, first-class functions) load
+    /// correctly and missing members raise ImportError instead of silently
+    /// binding the module Type.
+    /// </summary>
+    public Dictionary<string, (string ModuleName, string TypeName, string MemberName)> FromImportMembers { get; } = new();
+
+    /// <summary>
     /// Inference results for this module.
     /// Null when running without the inference pass (e.g. unit tests that
     /// construct EmitContext directly).

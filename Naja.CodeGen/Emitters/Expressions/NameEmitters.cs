@@ -366,6 +366,35 @@ public sealed class NameEmitters : ExpressionEmitterBase
             return NajaTypes.Unknown;
         }
 
+        // 6a.5 From-import member bindings: `from math import pi` → the VALUE of pi,
+        //     not the module Type. MUST run before 6b because the local name exists
+        //     in BOTH ImportMap and FromImportMembers for stdlib from-imports — the
+        //     member binding must win (ImportMap would push the module Type).
+        if (_ctx.FromImportMembers.TryGetValue(e.Name, out var fromImport))
+        {
+            // Resolve the module's CLR type the same way step 6a does: loaded
+            // assemblies first, then Type.GetType with the StdLibMap assembly name.
+            var modType =
+                AppDomain.CurrentDomain.GetAssemblies()
+                    .Select(a => a.GetType(fromImport.TypeName, throwOnError: false))
+                    .FirstOrDefault(t => t is not null);
+
+            if (modType is null && StdLibResolver.TryResolve(fromImport.ModuleName, out var fiRes))
+                modType = Type.GetType($"{fiRes.TypeName}, {fiRes.AssemblyName}", throwOnError: false);
+
+            if (modType is not null)
+            {
+                IL.Emit(OpCodes.Ldtoken, modType);
+                IL.Emit(OpCodes.Call, typeof(Type).GetMethod("GetTypeFromHandle")!);
+                IL.Emit(OpCodes.Ldstr, fromImport.ModuleName);
+                IL.Emit(OpCodes.Ldstr, fromImport.MemberName);
+                IL.Emit(OpCodes.Call, NajaBuiltinsMethodCache.ImportFromMember_Method);
+                return NajaTypes.Unknown;
+            }
+            // modType null → fall through to 6b, which will attempt its own
+            // resolution of the same TypeName (identical fallback chain).
+        }
+
         // 6b. .NET imports: from System.X import Y → push the resolved Type object onto the stack.
         //    We search already-loaded assemblies first (avoids partial-AQN failures with
         //    strong-named WinForms / Drawing assemblies).

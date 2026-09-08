@@ -61,6 +61,15 @@ public sealed partial class AssemblyEmitter
                         // For stdlib modules, the type is the singleton class (e.g., NajaSys)
                         // and we access members via reflection at codegen time
                         importMap[localName] = (stdLibModule.TypeName, stdLibModule.AssemblyName);
+
+                        // ALSO record the member binding: `from math import pi` must
+                        // load the VALUE of pi (NameEmitters step 6a.5 → ImportFromMember),
+                        // not the module Type. Without this, member values (constants,
+                        // decorators, first-class functions) leak the module Type —
+                        // @cpython_only became a phantom constructor call.
+                        // `from x import *` skips member recording (undefined name set).
+                        if (alias.Name is not "*" and not null)
+                            _fromImportMembers[localName] = (fis.Module, stdLibModule.TypeName, alias.Name);
                     }
                     usedStdLibAssemblies.Add(stdLibModule.AssemblyName);
                 }
@@ -458,6 +467,7 @@ public sealed partial class AssemblyEmitter
         foreach (var (k, v) in classCtors) mainCtx.ClassConstructors[k] = v;
         foreach (var (k, v) in _classCtorArgCounts) mainCtx.ClassCtorArgCounts[k] = v;
         foreach (var (k, v) in importMap) mainCtx.ImportMap[k] = v;
+        foreach (var (k, v) in _fromImportMembers) mainCtx.FromImportMembers[k] = v;
         foreach (var (k, v) in functionDefs) mainCtx.FunctionDefs[k] = v;
 
         foreach (var (k, v) in namespaceImports) mainCtx.NamespaceImports[k] = v;

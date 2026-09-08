@@ -126,6 +126,7 @@ public sealed partial class AssemblyEmitter
         foreach (var (k, v) in classMethods) ctx.Methods[k] = v;
         foreach (var (k, v) in classParamTs) ctx.MethodParamTypes[k] = v;
         foreach (var (k, v) in importMap) ctx.ImportMap[k] = v;
+        foreach (var (k, v) in _fromImportMembers) ctx.FromImportMembers[k] = v;
         foreach (var (k, v) in namespaceImports) ctx.NamespaceImports[k] = v;
         foreach (var mn in _classMethodNames) ctx.ClassMethods.Add(mn);
 
@@ -239,6 +240,7 @@ public sealed partial class AssemblyEmitter
         foreach (var (k, v) in _classConstructors) ctx.ClassConstructors[k] = v;
         foreach (var mn in _classMethodNames) ctx.ClassMethods.Add(mn);
         foreach (var (k, v) in importMap) ctx.ImportMap[k] = v;
+        foreach (var (k, v) in _fromImportMembers) ctx.FromImportMembers[k] = v;
 
         // LEGB: locally-assigned names shadow module-level fields unless declared 'global'.
         // Remove the module field from ctx so the emitter creates a proper local instead.
@@ -351,6 +353,7 @@ public sealed partial class AssemblyEmitter
             foreach (var (k, v) in _classMethodParamTypes) bodyCtx.AllClassMethodParamTypes[k] = v;
             foreach (var mn in _classMethodNames) bodyCtx.ClassMethods.Add(mn);
             foreach (var (k, v) in importMap) bodyCtx.ImportMap[k] = v;
+            foreach (var (k, v) in _fromImportMembers) bodyCtx.FromImportMembers[k] = v;
 
             // LEGB: remove locally-assigned non-global names
             foreach (var name in fnAssigned)

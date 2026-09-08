@@ -80,6 +80,12 @@ public sealed partial class AssemblyEmitter
     private readonly Dictionary<string, Type[]> _classMethodParamTypes = new();
     private readonly HashSet<string> _classMethodNames = new();
 
+    // `from <stdlib> import <member>` member bindings (localName → module/type/member).
+    // Populated by the EmitModule import pre-pass; copied into every EmitContext
+    // (Pass 2 Main + Pass 3 function/class bodies) so NameEmitters step 6a.5
+    // resolves member VALUES via ReflectionHelpers.ImportFromMember.
+    private readonly Dictionary<string, (string ModuleName, string TypeName, string MemberName)> _fromImportMembers = new();
+
     // Nested class support: maps unique internal name → ClassDef AST node.
     // Unique name format: "{cls.Name}_L{cls.Line}" to avoid collisions when the same
     // class name appears in multiple function bodies.  Populated by Pass 1 scanning.

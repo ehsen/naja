@@ -179,6 +179,9 @@ internal static class NajaBuiltinsMethodCache
     public static readonly MethodInfo GetStaticAttr_Method = 
         typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.GetStaticAttr))!;
 
+    public static readonly MethodInfo ImportFromMember_Method =
+        typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.ImportFromMember))!;
+
     // ── Type operations ─────────────────────────────────────────────────────
     public static readonly MethodInfo TypeOf_Method = 
         typeof(TypeSystem).GetMethod(nameof(TypeSystem.TypeOf))!;

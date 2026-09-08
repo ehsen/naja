@@ -106,6 +106,97 @@ public static class ReflectionHelpers
         return null;
     }
 
+    /// <summary>
+    /// `from <module> import <member>` member resolution — the single runtime
+    /// gate for from-import VALUES. Python semantics: a missing member raises
+    /// ImportError at import time ("cannot import name 'X' from 'Y'"); it must
+    /// NEVER silently resolve to the module Type (that turned @cpython_only into
+    /// a phantom constructor call and killed whole test classes).
+    /// Resolution order mirrors GetStaticAttr: static property → enum → static
+    /// field → static method (wrapped as callable MethodInfo) → instance member
+    /// on the module's Instance singleton (bound-method NajaFunction).
+    /// </summary>
+    public static object ImportFromMember(Type moduleType, string pythonModuleName, string memberName)
+    {
+        // 0. Instance member on the singleton shape (os.getcwd, json.dumps, …):
+        //    METHODS wrap as a bound-method NajaFunction; properties/fields
+        //    (math.pi, signal.SIGTERM) return their VALUE immediately.
+        object? singleton = null;
+        try
+        {
+            var instFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+            singleton = moduleType.GetField("Instance",
+                BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+
+            var iMethod = moduleType.GetMethod(memberName, instFlags);
+            if (iMethod is not null && singleton is not null)
+            {
+                var methods = moduleType.GetMethods(instFlags)
+                    .Where(m => string.Equals(m.Name, memberName, StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+                var capturedObj = singleton;
+                var wrapper = new Func<object[], object?>(args =>
+                {
+                    var m = methods.FirstOrDefault(x => x.GetParameters().Length == args.Length)
+                         ?? methods.FirstOrDefault()!;
+                    try { return m.Invoke(capturedObj, args); }
+                    catch (System.Reflection.TargetInvocationException tie) when (tie.InnerException is not null)
+                    {
+                        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(tie.InnerException).Throw();
+                        throw;
+                    }
+                });
+                return new NajaFunction(wrapper, System.Array.Empty<object>());
+            }
+
+            // Instance property / field on the singleton → its VALUE.
+            var iProp = moduleType.GetProperty(memberName, instFlags);
+            if (iProp is not null && singleton is not null)
+                return iProp.GetValue(singleton)!;
+            var iField = moduleType.GetField(memberName, instFlags);
+            if (iField is not null && singleton is not null)
+                return iField.GetValue(singleton)!;
+        }
+        catch { }
+
+        // Static property
+        var prop = moduleType.GetProperty(memberName,
+            BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
+        if (prop?.GetGetMethod() is { } getter)
+            return getter.Invoke(null, null);
+
+        // Enum member
+        if (moduleType.IsEnum)
+        {
+            try { return Enum.Parse(moduleType, memberName, ignoreCase: true); }
+            catch { }
+        }
+
+        // Static field
+        try
+        {
+            var field = moduleType.GetField(memberName,
+                BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
+            if (field is not null)
+            {
+                var fv = field.GetValue(null);
+                if (fv is NajaStaticMethod sm) return sm.__func__;
+                if (fv is NajaClassMethod cm) return cm.__func__;
+                return fv;
+            }
+        }
+        catch { }
+
+        // Static method — push the MethodInfo; CallCallable dispatches it.
+        var sMethod = moduleType.GetMethod(memberName,
+            BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
+        if (sMethod is not null)
+            return sMethod;
+
+        throw new TypeLoadException(
+            $"ImportError: cannot import name '{memberName}' from '{pythonModuleName}'");
+    }
+
     /// <summary>Check if an object has an attribute (property, field, or method).</summary>
     public static bool HasAttr(object obj, object name)
     {

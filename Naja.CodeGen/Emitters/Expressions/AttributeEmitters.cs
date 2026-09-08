@@ -65,8 +65,13 @@ public sealed class AttributeEmitters : ExpressionEmitterBase
         }
 
         // ── Imported .NET type static member access: Color.White, FontStyle.Bold, etc. ──
+        // `from <stdlib> import <member>` names are ALSO in ImportMap, but their
+        // runtime value is the MEMBER (a list, a function, a constant) — attribute
+        // access must resolve on that value dynamically (fall through to GetAttr),
+        // NOT statically on the module type. `argv.append` broke exactly this way.
         if (e.Object is NameExpr importedName &&
-            _ctx.ImportMap.TryGetValue(importedName.Name, out var importEntry))
+            _ctx.ImportMap.TryGetValue(importedName.Name, out var importEntry) &&
+            !_ctx.FromImportMembers.ContainsKey(importedName.Name))
         {
             var dotnetType =
                 AppDomain.CurrentDomain.GetAssemblies()

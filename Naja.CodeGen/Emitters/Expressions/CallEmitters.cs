@@ -198,8 +198,12 @@ public sealed class CallEmitters : ExpressionEmitterBase
                 return NajaTypes.Unknown;
             }
 
-            // .NET imported type instantiation
-            if (_ctx.ImportMap.ContainsKey(name))
+            // .NET imported type instantiation — but NOT `from <stdlib> import <member>`
+            // bindings: those names are also in ImportMap (same registration), yet the
+            // value is a member VALUE (NajaFunction/MethodInfo/constant), not a module
+            // Type. Castclass Type on a NajaFunction crashes at runtime; member names
+            // must fall through to the first-class-callable path (CallCallable).
+            if (_ctx.ImportMap.ContainsKey(name) && !_ctx.FromImportMembers.ContainsKey(name))
             {
                 _mainEmitter.Emit(e.Func);
                 IL.Emit(OpCodes.Castclass, typeof(Type));

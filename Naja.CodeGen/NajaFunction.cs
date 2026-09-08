@@ -35,9 +35,30 @@ public sealed class NajaFunction
     // Python-style call entry: receives positional args as object[]
     public object? __call__(object[] args)
     {
-        // Merge provided args with pre-evaluated defaults for missing trailing parameters
         var method = _target.Method;
-        int paramCount = method.GetParameters().Length;
+        var targetParams = method.GetParameters();
+
+        // Whole-args delegate convention (single object[] parameter): the wrapper
+        // takes the ENTIRE args array as its one parameter — the same shape
+        // CallCallable special-cases for delegates. All bound-method wrappers
+        // (GetStaticAttr, ImportFromMember, DecorateClassMethod) use it; the old
+        // 1:1 mapping passed args[0] where object[] was expected → ArgumentException.
+        if (targetParams.Length == 1 && targetParams[0].ParameterType == typeof(object[]))
+        {
+            try
+            {
+                return _target.DynamicInvoke(new object?[] { args });
+            }
+            catch (System.Reflection.TargetInvocationException tie) when (tie.InnerException is not null)
+            {
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(tie.InnerException).Throw();
+                throw; // unreachable
+            }
+        }
+
+        // Standard 1:1 mapping: merge provided args with pre-evaluated defaults
+        // for missing trailing parameters.
+        int paramCount = targetParams.Length;
         var finalArgs = new object?[paramCount];
         
         // Copy provided arguments

@@ -288,6 +288,7 @@ public sealed partial class AssemblyEmitter
             foreach (var (k, v) in _classMethodParamTypes) cctorCtx.AllClassMethodParamTypes[k] = v;
             foreach (var mn in _classMethodNames) cctorCtx.ClassMethods.Add(mn);
             foreach (var (k, v) in importMap) cctorCtx.ImportMap[k] = v;
+            foreach (var (k, v) in _fromImportMembers) cctorCtx.FromImportMembers[k] = v;
             foreach (var (k, v) in namespaceImports) cctorCtx.NamespaceImports[k] = v;
             var cctorExpr = new ExpressionEmitter(cctorCtx);
             foreach (var member in cls.Body)
