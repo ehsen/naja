@@ -173,3 +173,75 @@ one hanger wedged the whole suite. **Fixed**: per-file watchdog thread with
 thread is abandoned. test_named_expressions.py now runs to completion
 (74 tests: 37 pass / 37 fail on genuine documented gaps: missing `subTest`,
 name mangling `__x` → `_Foo__x`, etc.).
+
+## Fixed this round — 2026-09-08 PM+3 (from-import + test.support round)
+
+### 12. From-import pushed the module Type as the member VALUE (FIXED as fix 2, commit e918d30)
+Every `from <stdlib> import <member>` name resolved to the module's CLR
+**Type** — no member resolution at all. Signatures: `print(pi)` →
+`Naja.StdLib.NajaMath`; `@cpython_only` → phantom constructor call →
+MissingMethodException in the class cctor → **all 41 test_scope.py methods
+error at once** (`The type initializer for 'ScopeTests' threw`). The same
+bug class blocked test_compare's `ALWAYS_EQ` and any first-class member use.
+**Fixed**: `FromImportMembers` map (module/type/member) recorded in the
+EmitModule pre-pass, copied to Pass 2 + all 4 Pass-3 sites;
+`ReflectionHelpers.ImportFromMember` resolution ladder (instance method →
+bound NajaFunction; instance prop/field → VALUE; static prop; enum; static
+field; static method → MethodInfo; else exact-CPython-wording ImportError);
+`NameEmitters` step 6a.5 ahead of ImportMap; `NajaFunction.__call__` learns
+the whole-args `Func<object[],object?>` convention (was Int64→Object[]
+ArgumentException); CallEmitters/AttributeEmitters exclude member names from
+the ImportMap static branches (value is the member, not a Type).
+Verified: pi/sqrt in module+def+class scope; CPython-wording ImportError;
+**scope granular 0/41 → 13/41**. Note: from-import is LAZY — ImportError
+raises at first use, not at the import statement.
+
+### 13. test.support members cpython_only / gc_collect / check_syntax_error (FIXED as fix 3, commit 91fb0c5)
+All three were missing → whole test classes died at import. `check_syntax_error`
+is a faithful port of support/__init__.py:826 (compile + errtext regex +
+lineno/offset asserts), reaching `TypeSystem.Compile` via raw reflection
+(StdLib must not reference CodeGen). `SyntaxErrorException` gained
+lineno/offset; `TypeSystem.Compile` threads ParseException/LexerException
+line/col into them. Verified: error path + lineno kwarg + decorated fn + gc.
+
+### Re-baselined honest CodeGen.Tests total (first-ever COMPLETE run)
+With the bare-raise crasher (bc5b4a5) fixed, the suite no longer aborts
+mid-run: **549 passed / 7 failed / 13 skipped of 569**. The old "288/2/4"
+was a partial printed at the abort point. All 7 failures stash-bisect to
+**pre-existing at f452f4c**: Power + DictComp_With_Filter assert stale
+pre-c90af78 float semantics (`2**3` → `8.0`; CPython prints `8` — tests
+need updating, not the code), Canary/Generators_FullScript/
+Nonlocal_IndependentClosureInstances (LEGB/generator gaps), plus the 2
+documented JSON/Gap-Analysis failures.
+
+### New pre-existing bug found (NOT fixed, needs approval)
+User-class instantiation **with args** when only a parameterless ctor
+exists: CallEmitters emits the args then `newobj` defaultCtor consumes none
+→ stack imbalance → `Common Language Runtime detected an invalid program`.
+Repro (no imports involved): `class T: pass` + `t = T("x")`.
+
+## Granular scoreboard (after PM+3 round)
+
+| Area | Start | Now |
+|---|---|---|
+| test_int_literal | 6/6 | 6/6 |
+| test_generator_stop | 2/2 | 2/2 |
+| test_unary | 3/6 | **6/6** |
+| test_utf8source | 0/3 | **2/3** |
+| test_exception_variations | — | 30/30 |
+| test_decorators | — | 7/16 |
+| test_scope | 0/41 | **13/41** (was cctor-dead; now individual semantics fails) |
+| test_compare | 0/16 | 0/16 (now a clean ImportError: needs ALWAYS_EQ + fractions/decimal) |
+| test_super | 0 | not re-run this round |
+| test_augassign (FullSuite) | hard-crash | runs: 2 pass / 4 fail |
+
+test_raise.py: 37 tests, 16 pass / 21 fail (context/cause semantics — unchanged).
+
+### Scope remaining-28 cluster names (for next round)
+testBoundAndFree, testCellIsArgAndEscapes, testCellIsKwonlyArg,
+testCellIsLocalAndEscapes, testCellLeak, testClassAndGlobal,
+testClassNamespaceOverridesClosure, testComplexDefinitions,
+testEvalExecFreeVars, testEvalFreeVars, testGlobalInParallelNestedFunctions,
+testInteractionWithTraceFunc, testLeaks, testLocalsClass, …
+First signature seen: `AttributeError: 'function' object has no attribute
+'__closure__'` — closure-introspection surface.

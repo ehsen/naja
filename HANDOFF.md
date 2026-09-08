@@ -1,11 +1,10 @@
 # Naja — Project Handoff & Status
 
-> **Read this first in any new session.** Verified state as of **2026-09-08 PM+2 (crasher round)**,
-> HEAD = `bc5b4a5` on `main` (remote is named `naja` → `github.com/ehsen/naja`; `bc5b4a5` NOT yet pushed).
+> **Read this first in any new session.** Verified state as of **2026-09-08 PM+3 (from-import + test.support round)**,
+> HEAD = `91fb0c5` on `main` (**pushed**; remote is named `naja` → `github.com/ehsen/naja`).
 > This file is the source of truth for current status.
 > README.md is still the architecture/navigation reference but is **stale on several points** (see §9).
-> ⚠️ **Working tree has UNCOMMITTED fix-2 work** (from-import member resolution, ~60% applied — exact
-> applied/remaining state in §6d). **Read §6d FIRST: it contains the resume plan.**
+> ✅ The fix-2/fix-3 resume plan in §6d-E is COMPLETE (landed as `e918d30` + `91fb0c5`); see §6e for the new state.
 
 ---
 
@@ -15,7 +14,7 @@ Python 3.x syntax → native **.NET 10 IL** compiler via `System.Reflection.Emit
 no C# intermediate step. Pipeline: Lexer → Parser → Semantics → (optional) Inference → 3-pass IL emission.
 `.naja` and `.py` files are the same language to the CLI; `.naja` is just the project's native spelling.
 
-## 2. Current verified status (2026-09-08 PM+2, after bare-raise fix bc5b4a5 — unpushed + uncommitted fix-2)
+## 2. Current verified status (2026-09-08 PM+3, after e918d30 + 91fb0c5 — pushed)
 
 | Suite | Result |
 |---|---|
@@ -23,13 +22,19 @@ no C# intermediate step. Pipeline: Lexer → Parser → Semantics → (optional)
 | Naja.Parser.Tests | 51/51 ✅ |
 | Naja.Semantics.Tests | 26/26 ✅ |
 | Naja.Inference.Tests | 189/189 ✅ |
-| **Naja.CodeGen.Tests** | **288 passed / 2 failed / 4 skipped** last fully verified at f3ffbab-tree (2 failures pre-existing: JSON Module Tests, test_windows Gap Analysis — proven at ef17876 via stash-bisect). The "Test Run Aborted" that printed after the summary is **ROOT-CAUSED AND FIXED** (bc5b4a5) — it was NOT teardown, see §6d-A. Re-run full suite to re-confirm no abort. |
+| **Naja.CodeGen.Tests** | **549 passed / 7 failed / 13 skipped of 569 — first-ever COMPLETE run** (no "Test Run Aborted"). The old "288/2/4" was a partial printed at the abort point. All 7 failures stash-bisect to pre-existing at f452f4c: Power + DictComp_With_Filter assert stale pre-c90af78 float semantics (`2**3`→`8.0`; CPython prints `8` — update the TESTS), Canary/Generators_FullScript/Nonlocal_IndependentClosureInstances (LEGB/generator gaps), JSON Module Tests, test_windows Gap Analysis. |
 | Naja.WinForms.Tests | 29/29 ✅ |
 | ConfirmedPassing (CI gate) | 3 pass / 0 fail / 15 skip ✅ |
-| CPython granular | int_literal 6/6, utf8source 2/3, unary 6/6, generator_stop 2/2, exception_variations 30, decorators 7, **scope 0/41 (root-caused — §6d-B, fix in flight), super 0, compare 0** |
-| test_raise.py | **RUNS TO COMPLETION: 37 tests, 16 pass / 21 fail** (was: fatal 0x80131506 hard-kill at test_invalid_reraise, aborting EVERY full-suite run). Honest remaining fails: exception __context__/__cause__ semantics, raise-string removal TypeError, etc. |
-| test_named_expressions.py | runs to completion: 74 tests, 37 pass (was: infinite wedge) |
-| test_augassign.py | runs: 2 pass / 4 fail (was: AV hard-crash) |
+| CPython granular | int_literal 6/6, utf8source 2/3, unary 6/6, generator_stop 2/2, exception_variations 30/30, decorators 7/16, **scope 13/41 (was 0/41 — cctor blocker fixed; remaining are real closure/eval semantics gaps)**, compare 0/16 (now a clean ImportError: needs ALWAYS_EQ + fractions/decimal), super 0 (not re-run) |
+| test_raise.py | 37 tests, 16 pass / 21 fail (baseline holds; context/__cause__ semantics pending) |
+| test_named_expressions.py | runs to completion: 74 tests, 37 pass |
+| test_augassign.py | runs: 2 pass / 4 fail |
+
+From-import now resolves member VALUES (`from math import pi` → 3.14159…)
+in module/def/class scope, with exact-CPython-wording ImportError for
+missing members (lazy: raised at first USE). test.support has
+cpython_only/gc_collect/check_syntax_error (fix 3). Full detail: §6e +
+CPYTHON_FAILURE_ANALYSIS.md (items 12/13).
 
 Everything that was failing at the start of the 2026-09-07 session (Win32OsTests, NajaWindowsOsTests,
 JsonTests, CPython gap-analysis test) is green. `testdata/windows_os/test_windows.naja` runs 18 tests OK
@@ -382,6 +387,49 @@ Add to `Naja.StdLib/NajaTestSupport.cs` (respect §5.9 — NO CodeGen reference)
 - Event-log PowerShell from bash: backticks break — write a .ps1 to %TEMP% and run with
   `-ExecutionPolicy Bypass -File` (see `%TEMP%\naja_cpy\evt_query.ps1`).
 
+## 6e. Session log — 2026-09-08 PM+3 (from-import + test.support round; commits e918d30, 91fb0c5 — PUSHED)
+
+Completed the §6d-E resume plan end-to-end:
+
+1. **Fix 2 (e918d30)** — from-import member resolution. Finished the remaining
+   60%: Pass-3 `FromImportMembers` copies at all 4 sites, NameEmitters step 6a.5
+   (before ImportMap), `ImportFromMember_Method` cache entry, CPython-wording
+   ImportError (real Python module name threaded as a new helper arg). Four
+   latent bugs fixed en route, each minimal-repro'd:
+   - `fromImportMembers` → `_fromImportMembers` compile error in the half-applied work.
+   - CallEmitters ".NET type instantiation" branch fired for from-import names
+     (they're in BOTH maps) → castclass Type on a NajaFunction → crash. Member
+     names now excluded → fall through to CallCallable.
+   - AttributeEmitters same shadowing (`argv.append` resolved statically on the
+     module type). Same exclusion.
+   - `NajaFunction.__call__` 1:1 param mapping broke whole-args delegates
+     (`Func<object[],object?>`): Int64 → Object[] ArgumentException. Added the
+     whole-args special case (mirrors CallCallable). Also un-breaks
+     `@cpython_only`-decorated method invocation.
+   - **Design note**: from-import is LAZY — ImportError raises at first USE of
+     the name, not at the import statement (StatementEmitter emits nothing for
+     FromImportStatement).
+2. **Fix 3 (91fb0c5)** — test.support members: `cpython_only` (pass-through),
+   `gc_collect`, `check_syntax_error` (faithful port of support/__init__.py:826;
+   reaches TypeSystem.Compile via cached raw reflection — StdLib has ZERO
+   project references, §5.9). `SyntaxErrorException` gained lineno/offset;
+   TypeSystem.Compile threads ParseException/LexerException line/col into them.
+3. **Verification round**: solution 0 errors; base suites 51/51/26/189/29 green;
+   **CodeGen.Tests first-ever COMPLETE run: 549/7/13 of 569, no abort** — all 7
+   failures stash-bisected to pre-existing at f452f4c; test_raise 16 pass holds;
+   scope granular **0/41 → 13/41** (from-import cctor blocker dead; remaining 28
+   are real closure/eval semantics gaps — names in CPYTHON_FAILURE_ANALYSIS.md);
+   compare now a clean ImportError (`ALWAYS_EQ` missing — next-round scope);
+   unary/utf8/generator_stop/int_literal/exception_variations/decorators all
+   unchanged.
+4. **New pre-existing bug found (NOT fixed)**: user-class instantiation WITH
+   args when only a parameterless ctor exists → CallEmitters emits args, newobj
+   consumes none → stack imbalance → `invalid program`. Repro: `class T: pass`
+   + `t = T("x")`. Needs an approval round.
+5. **Docs**: this file (§2, §6e) + CPYTHON_FAILURE_ANALYSIS.md (items 12/13,
+   honest CodeGen re-baseline, scope-cluster names).
+6. **Bulk run**: see §10 — run AFTER this commit round with the watchdog active.
+
 ## 7. Known remaining gaps (honest list)
 
 1. **CPythonTests long tail** — granular passcounts (2026-09-08 PM): int_literal 6/6, utf8source 2/3,
@@ -436,23 +484,31 @@ Add to `Naja.StdLib/NajaTestSupport.cs` (respect §5.9 — NO CodeGen reference)
 - **ANALYSIS_SUMMARY.txt**, `test_results.log`, `detailed_test_results.log` (repo root) and
   `Naja.CodeGen/llm_context/*` — pre-date this session's fixes; historical planning docs only.
 
-## 10. Suggested next steps (priority order — session start 2026-09-08 PM+3)
+## 10. Suggested next steps (priority order — session start 2026-09-08 PM+4)
 
-**FIRST: follow §6d-E (the resume plan) — it supersedes this list until fix 2 + fix 3 land.**
-Quick version: finish fix 2 (from-import members, ~60% applied) → fix 3 (NajaTestSupport members)
-→ verify → commit both + push (fix 1 `bc5b4a5` rides along) → update docs.
+**The §6d-E resume plan is COMPLETE** (fix 2 `e918d30` + fix 3 `91fb0c5`, pushed,
+docs updated). Current input for the next round:
 
-After that round is green:
-
-1. **Full CPython bulk run** (`CPython_BulkSuite_PassRate`, watchdog active) — with the bare-raise
-   crasher fixed it should COMPLETE for the first time; the honest 392-file failure list is the next
-   round's input. (The old "teardown abort" mystery is closed — §6d-A.)
-2. **Super / compare clusters** — still 0 passes, never investigated. compare needs `ALWAYS_EQ` as a
-   VALUE (fix 2 should unlock it), set/frozenset ordering, str subclassing; super needs unbound
-   method transfer (`D.f(D())`) and `import_helper.ready_to_import` (dotted-import feature §7-11).
-3. **Dotted-name import loader + real `__file__`** (§7-11) — needs approval; unlocks
-   test_badsyntax and import-from-script-dir generally.
-4. **augassign clusters** (§6c-C-4): slice-aug-assign, testBasic, `__iadd__`, unpacking.
-5. **`subTest` + name mangling** (§7-12/13) — unlock more of test_named_expressions' 37 fails.
-6. test_raise.py's honest remaining 21 fails (exception __context__/__cause__ semantics).
-7. Update README status tables from this file; keep §2 current after every round.
+1. **Full CPython bulk run** (`CPython_BulkSuite_PassRate`, watchdog active) — the
+   bare-raise crasher is fixed; it should COMPLETE for the first time. The honest
+   392-file failure list is the next round's primary input.
+2. **CodeGen.Tests stale test expectations** (approval: trivial) — `Power` and
+   `DictComp_With_Filter` assert `8.0`/`16.0`; CPython prints `8`/`16` (int ** is
+   int since c90af78). Update the two test expectations, not the code.
+3. **Arg-ctor stack imbalance** (approval needed) — user-class instantiation with
+   args under a parameterless-only ctor → `invalid program`. Repro: `class T: pass`
+   + `t = T("x")`. Fix: match a ctor by arity or route through CreateDotNet-style
+   dynamic construction when no matching ctor exists.
+4. **Super / compare clusters** — compare needs `ALWAYS_EQ` added to
+   NajaTestSupport (+ fractions/decimal for FullTest), set/frozenset ordering,
+   str subclassing; super needs unbound method transfer (`D.f(D())`) and
+   `import_helper.ready_to_import` (dotted-import feature §7-11).
+5. **Scope remaining 28** — closure-introspection surface: `__closure__`
+   attribute on functions, eval/exec free vars, class-namespace-vs-closure.
+6. **Dotted-name import loader + real `__file__`** (§7-11) — needs approval;
+   unlocks test_badsyntax and import-from-script-dir generally.
+7. **augassign clusters** (§6c-C-4): slice-aug-assign, testBasic, `__iadd__`,
+   unpacking.
+8. **`subTest` + name mangling** (§7-12/13) — unlock more of test_named_expressions' 37 fails.
+9. test_raise.py's honest remaining 21 fails (exception __context__/__cause__ semantics).
+10. Update README status tables from this file; keep §2 current after every round.
