@@ -333,8 +333,38 @@ public sealed class CpythonSuiteRunner
         {
             try
             {
-                Engine.Eval(testFile);
-                passed++;
+                // Watchdog: a hanging guest script must not wedge the whole
+                // 392-file loop (test_named_expressions.py did exactly this).
+                // Run the eval on a background thread and give each file a
+                // hard budget; a timeout counts as a failure and the thread is
+                // abandoned (the CLR will kill it at process exit).
+                var file = testFile;
+                Exception? captured = null;
+                var worker = new Thread(() =>
+                {
+                    try { Engine.Eval(file); }
+                    catch (Exception ex) { captured = ex; }
+                })
+                { IsBackground = true, Name = $"naja-bulk-{Path.GetFileNameWithoutExtension(file)}" };
+
+                worker.Start();
+                if (!worker.Join(TimeSpan.FromSeconds(60)))
+                {
+                    failed++;
+                    failures.Add((Path.GetFileName(testFile), "[Watchdog] TIMEOUT after 60s (thread abandoned)"));
+                    continue;
+                }
+
+                if (captured is not null)
+                {
+                    failed++;
+                    var msg = captured.Message[..Math.Min(120, captured.Message.Length)];
+                    failures.Add((Path.GetFileName(testFile), $"[{captured.GetType().Name}] {msg}"));
+                }
+                else
+                {
+                    passed++;
+                }
             }
             catch (Exception ex)
             {
