@@ -11,6 +11,20 @@ public static class PythonExceptions
     {
         public SyntaxErrorException(string message) : base(message) { }
         public SyntaxErrorException(string message, Exception inner) : base(message, inner) { }
+
+        // Python SyntaxError attributes. CPython populates lineno/offset for
+        // parse-time errors and leaves them None for `raise SyntaxError(...)`.
+        // test.support.check_syntax_error asserts both are not None after a
+        // failed compile() — so TypeSystem.Compile must thread the parser's
+        // line/column through (ParseException/LexerException carry them).
+        public long? lineno { get; init; }
+        public long? offset { get; init; }
+
+        public SyntaxErrorException(string message, long? line, long? col) : base(message)
+        {
+            lineno = line is > 0 ? line : null;
+            offset = col is > 0 ? col : null;
+        }
     }
 
     /// <summary>Raised when indentation is incorrect (subset of SyntaxError).</summary>

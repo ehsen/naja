@@ -298,11 +298,38 @@ public static class TypeSystem
             return new NajaCodeObject(source, filename);
         }
         catch (PythonExceptions.SyntaxErrorException) { throw; }
+        catch (Naja.Parser.ParseException pex)
+        {
+            // Thread the parser's structured position into the Python-visible
+            // SyntaxError attributes — check_syntax_error asserts err.lineno /
+            // err.offset are not None (support/__init__.py:830-833).
+            throw new PythonExceptions.SyntaxErrorException(
+                $"[L{pex.Line}:C{pex.Column}] invalid syntax: {StripPosition(pex.Message)}",
+                pex.Line, pex.Column);
+        }
+        catch (Naja.Lexer.LexerException lex)
+        {
+            throw new PythonExceptions.SyntaxErrorException(
+                $"[L{lex.Line}:C{lex.Column}] invalid syntax: {StripPosition(lex.Message)}",
+                lex.Line, lex.Column);
+        }
         catch (Exception ex)
         {
             throw new PythonExceptions.SyntaxErrorException(
                 $"invalid syntax: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// ParseException/LexerException already embed "[L#:#] " in their message —
+    /// drop a duplicate prefix if present so the output reads like
+    /// "[L2:C4] invalid syntax: Expected …" instead of a doubled marker.
+    /// </summary>
+    private static string StripPosition(string message)
+    {
+        if (message is not null && message.StartsWith("[L") && message.Contains("] "))
+            return message.Substring(message.IndexOf("] ") + 2);
+        return message ?? "";
     }
 
     /// <summary>

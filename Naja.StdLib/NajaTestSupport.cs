@@ -188,6 +188,116 @@ public class NajaTestSupport
             return "darwin";
         return "unknown";
     }
+
+    // ── CPython test.support members required by the parity suite ─────────────
+
+    /// <summary>
+    /// test.support.cpython_only — decorator that marks a test as CPython-specific.
+    /// Naja targets CPython parity, so run the test rather than skip: pass-through.
+    /// </summary>
+    public static object cpython_only(object func) => func;
+
+    /// <summary>
+    /// test.support.gc_collect — force a full garbage-collection cycle.
+    /// CPython calls this after deleting cyclic garbage in tests (e.g.
+    /// test_scope.testFreeingCell); refcount-only backends treat it as a no-op,
+    /// but run the full GC so finalizer-based cleanup happens on .NET too.
+    /// </summary>
+    public static void gc_collect()
+    {
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+    }
+
+    /// <summary>
+    /// test.support.check_syntax_error(testcase, statement, errtext='', *,
+    /// lineno=None, offset=None) — CPython body at support/__init__.py:826:
+    /// with testcase.assertRaisesRegex(SyntaxError, errtext) as cm:
+    ///     compile(statement, '<test string>', 'exec')
+    /// err = cm.exception
+    /// testcase.assertIsNotNone(err.lineno)
+    /// if lineno is not None: testcase.assertEqual(err.lineno, lineno)
+    /// testcase.assertIsNotNone(err.offset)
+    /// if offset is not None: testcase.assertEqual(err.offset, offset)
+    ///
+    /// Naja.StdLib must NOT reference Naja.CodeGen (§ circular-ref rule), so
+    /// TypeSystem.Compile is reached via raw reflection (InvokeDecorated
+    /// pattern). Asserts run directly on the NajaTestCase — same assembly.
+    /// </summary>
+    public static void check_syntax_error(object testcase, object statement,
+                                         object? errtext = null,
+                                         object? lineno = null, object? offset = null)
+    {
+        if (testcase is not NajaTestCase tc)
+            throw new Exception(
+                $"TypeError: check_syntax_error expects a unittest.TestCase, got {testcase?.GetType().Name ?? "None"}");
+
+        Exception? err = null;
+        try
+        {
+            ResolveCompileMethod().Invoke(null,
+                new object?[] { new object[] { statement, "<test string>", "exec" } });
+        }
+        catch (System.Reflection.TargetInvocationException tie)
+            when (tie.InnerException is Exception inner)
+        {
+            err = inner;
+        }
+
+        if (err is null)
+            tc.fail("SyntaxError not raised");
+
+        // The raised exception must be a SyntaxError — name-based check on the
+        // inheritance chain since the CLR type lives in Naja.CodeGen.
+        if (!IsSyntaxErrorType(err!))
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(err).Throw();
+
+        var expected = errtext is null ? "" : S(errtext);
+        if (expected.Length > 0 &&
+            !System.Text.RegularExpressions.Regex.IsMatch(err!.Message, expected))
+            tc.fail($"'{err.Message}' does not match '{expected}'");
+
+        var errType = err.GetType();
+        var errLineno = errType.GetProperty("lineno")?.GetValue(err);
+        var errOffset = errType.GetProperty("offset")?.GetValue(err);
+
+        tc.assertIsNotNone(errLineno, "SyntaxError.lineno should not be None");
+        if (lineno is not null) tc.assertEqual(errLineno, lineno);
+        tc.assertIsNotNone(errOffset, "SyntaxError.offset should not be None");
+        if (offset is not null) tc.assertEqual(errOffset, offset);
+    }
+
+    /// <summary>True when the exception is Naja's SyntaxError mapping
+    /// (SyntaxErrorException or the IndentationError subclass).</summary>
+    private static bool IsSyntaxErrorType(Exception err)
+    {
+        for (var t = (System.Type?)err.GetType(); t is not null; t = t.BaseType)
+            if (t.Name is "SyntaxErrorException" or "IndentationErrorException")
+                return true;
+        return false;
+    }
+
+    private static System.Reflection.MethodInfo? _compileMethod;
+
+    /// <summary>
+    /// Raw-reflection lookup of Naja.CodeGen.Builtins.TypeSystem.Compile(object[])
+    /// (cached). Keeps Naja.StdLib free of a Naja.CodeGen project reference.
+    /// </summary>
+    private static System.Reflection.MethodInfo ResolveCompileMethod()
+    {
+        if (_compileMethod is not null) return _compileMethod;
+
+        var typeSystem = AppDomain.CurrentDomain.GetAssemblies()
+            .Select(a => a.GetType("Naja.CodeGen.Builtins.TypeSystem", throwOnError: false))
+            .FirstOrDefault(t => t is not null)
+            ?? throw new Exception(
+                "ImportError: Naja.CodeGen is not loaded — compile() unavailable");
+
+        _compileMethod = typeSystem.GetMethod("Compile", new[] { typeof(object[]) })
+            ?? throw new Exception("AttributeError: TypeSystem.Compile not found");
+        return _compileMethod;
+    }
 }
 
 /// <summary>
