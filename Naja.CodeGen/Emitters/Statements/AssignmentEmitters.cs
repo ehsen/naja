@@ -394,23 +394,39 @@ public class AssignmentEmitters : StatementEmitterBase
 
                 if (_ctx.Fields.TryGetValue(n.Name, out var staticField))
                 {
-                    // Hoisted field exists — store there for closure semantics
-                    if (staticField.FieldType == typeof(object))
+                    // Hoisted field exists — store there for closure semantics.
+                    // CRITICAL: convert the emitted value to the FIELD's actual CLR
+                    // type before stsfld — stsfld does NOT convert; mismatched
+                    // numeric types reinterpret raw bits (int64 1 stored into a
+                    // double field reads back as 5E-324). Python semantics say
+                    // `e = 0.0; e = 3` re-binds e to int 3 — so when the types
+                    // disagree, the SAFE store is to box and unbox exactly.
+                    var ft = staticField.FieldType;
+                    if (ft == typeof(object))
                     {
                         TypeMapper.EmitBox(IL, valueType);
                     }
-                    else if (staticField.FieldType.IsValueType && valueType is UnknownType)
+                    else if (ft == typeof(long))
                     {
-                        IL.Emit(OpCodes.Unbox_Any, staticField.FieldType);
+                        if (valueType is FloatType) IL.Emit(OpCodes.Conv_I8);
+                        else if (valueType is BoolType) IL.Emit(OpCodes.Conv_I8);
+                        else if (valueType is UnknownType) IL.Emit(OpCodes.Unbox_Any, typeof(long));
+                        else if (valueType is not IntType) IL.Emit(OpCodes.Conv_I8);
                     }
-                    else if (staticField.FieldType == typeof(string) && valueType is UnknownType)
+                    else if (ft == typeof(double))
                     {
-                        IL.Emit(OpCodes.Castclass, typeof(string));
+                        if (valueType is IntType || valueType is BoolType) IL.Emit(OpCodes.Conv_R8);
+                        else if (valueType is UnknownType) IL.Emit(OpCodes.Unbox_Any, typeof(double));
+                    }
+                    else if (ft == typeof(string))
+                    {
+                        if (valueType is UnknownType) IL.Emit(OpCodes.Castclass, typeof(string));
+                    }
+                    else if (ft.IsValueType && valueType is UnknownType)
+                    {
+                        IL.Emit(OpCodes.Unbox_Any, ft);
                     }
                     IL.Emit(OpCodes.Stsfld, staticField);
-
-                    // DEBUG: Log when storing to hoisted field
-                    // System.Diagnostics.Debug.WriteLine($"Stored to hoisted field: {n.Name}");
                     break;
                 }
 
