@@ -117,3 +117,50 @@ checked long arithmetic promoting to BigInteger (Python ints never wrap).
   totals: runs abort mid-suite when it fires. HANDOFF's "280/0" and current
   "280 pass / 2 fail" describe the same tree measured under different
   run-order aborts. Re-baseline after #7 lands.
+
+## Post-push findings — 2026-09-08 PM (bulk-suite hang investigation)
+
+The CodeGen `dotnet test` hang (testhost burned 20+ min CPU) was traced with
+a bulk-replica harness (one static engine + per-file progress, mirroring
+`CpythonSuiteRunner.CPython_BulkSuite_PassRate`) to
+**test_named_expressions.py** — previously masked because the (now-fixed)
+test_augassign AV killed the run earlier in alphabetical order. Two
+compounding bugs, both minimal-repro'd via CLI:
+
+### 10. Module-field store never converts — raw bit reinterpretation (OPEN)
+`e = 0.0; e = 3 // 2` → prints `5E-324` (int64 bits of `1` read as double).
+The module assignment `stsfld` path writes the raw evaluation-stack value into
+the inference-typed static field with **no `EmitConversion`** when the
+expression type ≠ field type. Same class as the Pow stsfld bug (#4), but at
+the ASSIGNMENT store. In a `while` loop this is lethal:
+```python
+a = 9; n = 2; x = 3; d = 0
+while a > d:
+    d = x // a**(n-1)      # RHS: Unknown (Pow returns object) → ToFloat →
+    a = ((n-1)*a + d) // n # PyFloorDivF → FLOAT on stack
+```
+Trace: `d = 3 // 2` produced `4607182418800017408` = IEEE bits of `1.0` stored
+into the long-typed field. `a` then fills with garbage, the condition never
+turns false → **the actual infinite loop** (also the FullSuite wedge).
+Proposed fix F1: emit `TypeMapper.EmitConversion(fieldType ← exprType)` at
+every module-field store.
+
+### 11. Walrus stores to a local while reads hit the field (OPEN)
+`a = 9; while a > (d := 3): a = 1` → prints `d == 0`. `EmitWalrus` (non-
+comprehension path) declares/uses a LOCAL, but Pass 1 hoists the walrus
+target to a FIELD and `NameEmitters` reads fields before locals — the write
+lands in a dead slot. CPython would print `d == 3`. This is the
+store/load-consistency pitfall applied to walrus targets.
+Proposed fix F2: `EmitWalrus` must store into the hoisted field when
+`_ctx.Fields` contains the target.
+
+### F3 (proposed, semantics): exact dynamic FloorDiv
+FloorDiv's Unknown branch unconditionally `ToFloat`s both operands —
+int/BigInteger operands silently lose exactness (`3 // 2` → 1.0, not int 1).
+A `PyFloorDivDynamic(object,object)` (long-exact, BigInteger-aware, float
+fallback) would mirror PyPowDynamic.
+
+### Harness note
+`CPython_BulkSuite_PassRate` runs 392 files with **no per-file timeout** —
+one hanger wedges the whole suite (and did). Recommend a watchdog
+(`Thread` + `Join(ms)`) or per-file task cancellation before re-baselining.
