@@ -93,6 +93,15 @@ Counts of errors across 186 failed files:
    file + RUN LOG, and end. Keep runs < 25 min.
 6. Commit messages: conventional, mention the failing test file(s) fixed.
 7. If the gate (18/18) or unit suite (0 failed) regresses, revert the last commit.
+8. CONCURRENCY: runs fire every 30m and may overlap. Guard the whole run with
+   `flock -n /tmp/naja_sprint.lock -c '<your work>'` — if the lock is held, a previous
+   run is still working; exit immediately with one line saying so (do not wait, do
+   not build, do not commit).
+9. EXTRA DATA: an analysis of missing stdlib modules ranked by blocked test files
+   was produced by a helper agent; its output file is under
+   /home/ubuntu/.hermes/cache/delegation/ (summary file named subagent-summary-*.txt,
+   newest one). Triage data files: /home/ubuntu/tier_a.json /home/ubuntu/tier_b.json
+   /home/ubuntu/tier_c.json and helper scripts /home/ubuntu/triage_*.py.
 
 ## RUN LOG (append one line per run)
 - [setup 2026-09-16 18:55 UTC] plan written; baseline recorded (12/198, host crash at test_ftplib).
