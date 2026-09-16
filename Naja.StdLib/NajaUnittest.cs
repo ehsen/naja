@@ -499,23 +499,8 @@ public class NajaTestCase
     {
         // Unwrap TargetInvocationException
         var actual = ex is System.Reflection.TargetInvocationException tie ? tie.InnerException ?? ex : ex;
-        if (expectedType.IsAssignableFrom(actual.GetType()))
-            return true;
-
-        // Naja's dual exception hierarchy: a Python handler that names an exception
-        // must also accept the native CLR analog surfaced by runtime IL operations
-        // (integer div -> DivideByZeroException, bad cast -> InvalidCastException, …).
-        if (expectedType == typeof(Core.PythonZeroDivisionError) && actual is DivideByZeroException) return true;
-        if (expectedType == typeof(Core.PythonTypeError) && actual is InvalidCastException) return true;
-        if (expectedType == typeof(Core.PythonValueError) && actual is ArgumentException) return true;
-        if (expectedType == typeof(Core.PythonKeyError) && actual is System.Collections.Generic.KeyNotFoundException) return true;
-        if (expectedType == typeof(Core.PythonIndexError) && actual is IndexOutOfRangeException) return true;
-        if (expectedType == typeof(Core.PythonAttributeError) && actual is MissingMemberException) return true;
-        if (expectedType == typeof(Core.PythonRuntimeError) && actual is InvalidOperationException) return true;
-        if (expectedType == typeof(Core.PythonNotImplementedError) && actual is NotImplementedException) return true;
-        if (expectedType == typeof(Core.PythonOSError) && actual is System.IO.IOException) return true;
-        if (expectedType == typeof(Core.PythonOverflowError) && actual is OverflowException) return true;
-        return false;
+        // Dual hierarchy: Python* types and native CLR analogs match either way
+        return Core.PythonException.MatchesExpected(actual, expectedType);
     }
 
     internal static Type? ResolveExceptionType(object? exType)
@@ -653,7 +638,7 @@ public sealed class AssertRaisesContext : IDisposable
         if (ex is System.Reflection.TargetInvocationException tie && tie.InnerException is not null)
             ex = tie.InnerException;
 
-        if (_expectedType is not null && !_expectedType.IsAssignableFrom(ex.GetType()))
+        if (_expectedType is not null && !Core.PythonException.MatchesExpected(ex, _expectedType))
         {
             // Wrong type — re-raise by returning false
             return false;

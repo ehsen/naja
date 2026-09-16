@@ -47,6 +47,43 @@ public static class PythonException
     /// <summary>Create a NotImplementedError with the given message.</summary>
     public static Exception NotImplementedError(string message) =>
         new PythonNotImplementedError(message);
+
+    /// <summary>
+    /// Naja's dual exception hierarchy: a Python exception-name handler must also
+    /// accept the native CLR analog surfaced by runtime IL operations (integer div
+    /// → DivideByZeroException, bad cast → InvalidCastException, …) and vice versa.
+    /// Used by except-clause matching, assertRaises, and assertIsInstance.
+    /// </summary>
+    public static bool MatchesExpected(Exception actual, Type expectedType)
+    {
+        if (expectedType.IsAssignableFrom(actual.GetType()))
+            return true;
+
+        if (expectedType == typeof(PythonZeroDivisionError) && actual is DivideByZeroException) return true;
+        if (expectedType == typeof(PythonTypeError) && actual is InvalidCastException) return true;
+        if (expectedType == typeof(PythonValueError) && actual is ArgumentException) return true;
+        if (expectedType == typeof(PythonKeyError) && actual is System.Collections.Generic.KeyNotFoundException) return true;
+        if (expectedType == typeof(PythonIndexError) && actual is IndexOutOfRangeException) return true;
+        if (expectedType == typeof(PythonAttributeError) && actual is MissingMemberException) return true;
+        if (expectedType == typeof(PythonRuntimeError) && actual is InvalidOperationException) return true;
+        if (expectedType == typeof(PythonNotImplementedError) && actual is NotImplementedException) return true;
+        if (expectedType == typeof(PythonOSError) && actual is System.IO.IOException) return true;
+        if (expectedType == typeof(PythonOverflowError) && actual is OverflowException) return true;
+
+        // Reverse direction: expected is the native analog, actual is the Python* type
+        if (expectedType == typeof(DivideByZeroException) && actual is PythonZeroDivisionError) return true;
+        if (expectedType == typeof(InvalidCastException) && actual is PythonTypeError) return true;
+        if (expectedType == typeof(ArgumentException) && actual is PythonValueError) return true;
+        if (expectedType == typeof(KeyNotFoundException) && actual is PythonKeyError) return true;
+        if (expectedType == typeof(IndexOutOfRangeException) && actual is PythonIndexError) return true;
+        if (expectedType == typeof(MissingMemberException) && actual is PythonAttributeError) return true;
+        if (expectedType == typeof(InvalidOperationException) && actual is PythonRuntimeError) return true;
+        if (expectedType == typeof(NotImplementedException) && actual is PythonNotImplementedError) return true;
+        if (expectedType == typeof(System.IO.IOException) && actual is PythonOSError) return true;
+        if (expectedType == typeof(OverflowException) && actual is PythonOverflowError) return true;
+
+        return false;
+    }
 }
 
 // ── Exception type definitions ─────────────────────────────────────────────────
