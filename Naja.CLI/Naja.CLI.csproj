@@ -4,7 +4,9 @@
 		<TargetFramework>net10.0-windows</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
-		<UseWindowsForms>true</UseWindowsForms>
+		<!-- Conditional: keeps `naja` runnable on Linux/macOS; WinForms binding
+		     stays available on Windows. -->
+		<UseWindowsForms Condition="'$([MSBuild]::IsOSPlatform(Windows))' == 'true'">true</UseWindowsForms>
 		<AssemblyName>naja</AssemblyName>
 	</PropertyGroup>
 

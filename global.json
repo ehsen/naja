@@ -1,7 +1,8 @@
 {
   "sdk": {
-    "version": "10.0.100",
-    "rollForward": "latestMinor"
+    "version": "10.0.100-rc.2.25502.107",
+    "rollForward": "latestFeature",
+    "allowPrerelease": true
   },
   "msbuild-sdks": {
     "Naja.Sdk": "0.1.0"

@@ -624,6 +624,29 @@ public static class ReflectionHelpers
                     return CallCallable(propVal, args);
             }
 
+            // Singleton-module fallback: stdlib modules (json, os, sys, math, …) are
+            // instance methods on a singleton class exposed via a public static
+            // Instance member (e.g. NajaJson.Instance). When no static member bound,
+            // bind the method on the singleton instance instead.
+            var singleton = GetStaticSingleton(type);
+            if (singleton is not null)
+            {
+                var instFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.IgnoreCase;
+                var instCandidates = type.GetMethods(instFlags)
+                    .Where(m => string.Equals(m.Name, methodName, StringComparison.OrdinalIgnoreCase) && !m.IsStatic)
+                    .Cast<MethodBase>();
+
+                if (TryBindBestCallable(instCandidates, args, out var instMethod, out var instBoundArgs))
+                {
+                    try { return instMethod.Invoke(singleton, instBoundArgs); }
+                    catch (TargetInvocationException tie) when (tie.InnerException is not null)
+                    {
+                        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(tie.InnerException).Throw();
+                        throw;
+                    }
+                }
+            }
+
             throw new Exception($"AttributeError: type '{type.FullName}' has no static method '{methodName}' matching {args.Length} argument(s)");
         }
 
@@ -633,6 +656,25 @@ public static class ReflectionHelpers
             System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(tie.InnerException).Throw();
             throw;
         }
+    }
+
+    /// <summary>
+    /// Returns the public static 'Instance' singleton of a stdlib module class
+    /// (e.g. NajaJson.Instance), or null when the type has no such singleton.
+    /// </summary>
+    public static object? GetStaticSingleton(Type type)
+    {
+        var instField = type.GetField("Instance",
+            BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
+        if (instField is not null && instField.GetValue(null) is { } fieldSingleton)
+            return fieldSingleton;
+
+        var instProp = type.GetProperty("Instance",
+            BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
+        if (instProp?.GetGetMethod() is { } getter)
+            return getter.Invoke(null, null);
+
+        return null;
     }
 
     // ── Event handler utilities ──────────────────────────────────────────────────

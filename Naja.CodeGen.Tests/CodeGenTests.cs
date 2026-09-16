@@ -1735,7 +1735,10 @@ public class CodeGenTests
     [Fact]
     public void Method_Resolution_ParamsArray()
     {
-        Assert.Equal("a\\b\\c\\d\\e\na\\b\\c", Run("""
+        // System.IO.Path.Combine is OS-dependent: '\' on Windows, '/' on POSIX.
+        // The expected output must match the platform the compiled code runs on.
+        var sep = System.IO.Path.DirectorySeparatorChar;
+        Assert.Equal($"a{sep}b{sep}c{sep}d{sep}e\na{sep}b{sep}c", Run("""
             from System.IO import Path
             print(Path.Combine('a', 'b', 'c', 'd', 'e'))
             print(Path.Combine('a', 'b', 'c'))

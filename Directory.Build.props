@@ -1,0 +1,14 @@
+<Project>
+
+  <!--
+    Naja's compiler, CLI, and test projects target net10.0-windows
+    (WinForms interop is part of the product). This flag lets those
+    projects *compile* on Linux/macOS too — the IL emission itself is
+    platform-neutral; only running WinForms-dependent code requires
+    an actual Windows runtime.
+  -->
+  <PropertyGroup>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+</Project>

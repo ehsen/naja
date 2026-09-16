@@ -4,7 +4,10 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <UseWindowsForms>true</UseWindowsForms>
+    <!-- WinForms is accessed via string-based reflection (Type.GetType) so the
+         compiler builds/runs cross-platform; on Windows the reference is kept
+         so emitted in-memory assemblies can bind WinForms types. -->
+    <UseWindowsForms Condition="'$([MSBuild]::IsOSPlatform(Windows))' == 'true'">true</UseWindowsForms>
   </PropertyGroup>
 
   <ItemGroup>

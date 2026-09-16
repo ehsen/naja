@@ -413,23 +413,11 @@ public static class NajaBuiltins
         }
     }
 
-    /// <summary>Invoke a static method on a .NET type (used for "from System.X import Y" then Y.Method(args)).</summary>
+    /// <summary>Invoke a static method on a .NET type (used for "from System.X import Y" then Y.Method(args)).
+    /// Delegates to ReflectionHelpers.StaticCall, which additionally handles callable
+    /// static fields/properties and stdlib singleton-instance module methods (json/os/sys/…).</summary>
     public static object? StaticCall(Type type, string methodName, object[] args)
-    {
-        var flags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.IgnoreCase;
-        var candidates = type.GetMethods(flags)
-            .Where(m => string.Equals(m.Name, methodName, StringComparison.OrdinalIgnoreCase));
-
-        if (!TryBindBestCallable(candidates, args, out var method, out var boundArgs))
-            throw new Exception($"AttributeError: type '{type.FullName}' has no static method '{methodName}' matching {args.Length} argument(s)");
-
-        try { return method.Invoke(null, boundArgs); }
-        catch (System.Reflection.TargetInvocationException tie) when (tie.InnerException is not null)
-        {
-            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(tie.InnerException).Throw();
-            throw;
-        }
-    }
+        => Builtins.ReflectionHelpers.StaticCall(type, methodName, args);
 
     /// <summary>Create a .NET object from a <see cref="Type"/> and Python values.</summary>
     public static object? CreateDotNet(Type type, object[] args)

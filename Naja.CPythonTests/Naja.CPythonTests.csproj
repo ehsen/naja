@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
-    <UseWindowsForms>true</UseWindowsForms>
+    <UseWindowsForms Condition="'$([MSBuild]::IsOSPlatform(Windows))' == 'true'">true</UseWindowsForms>
   </PropertyGroup>
 
   <ItemGroup>
