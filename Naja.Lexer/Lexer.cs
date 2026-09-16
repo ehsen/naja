@@ -340,10 +340,63 @@ public sealed class Lexer
                         Advance(); // skip \n if present
                     continue;
                 }
-                // Regular escape sequence
-                content.Append(Advance()); // backslash
-                if (_pos < _source.Length)
-                    content.Append(Advance()); // escaped char
+                // Regular escape sequence — decode per CPython string literal rules.
+                Advance(); // consume backslash
+                if (_pos >= _source.Length) { content.Append('\\'); break; }
+                char esc = Advance();
+                switch (esc)
+                {
+                    case 'n': content.Append('\n'); break;
+                    case 't': content.Append('\t'); break;
+                    case 'r': content.Append('\r'); break;
+                    case 'a': content.Append('\a'); break;
+                    case 'b': content.Append('\b'); break;
+                    case 'f': content.Append('\f'); break;
+                    case 'v': content.Append('\v'); break;
+                    case '\\': case '\'': case '"': content.Append(esc); break;
+                    case 'x': // \xHH — exactly up to 2 hex digits
+                    {
+                        int val = 0, digits = 0;
+                        while (digits < 2 && _pos < _source.Length && IsHexDigit(Current()))
+                        { val = val * 16 + HexValue(Advance()); digits++; }
+                        if (digits == 0) { content.Append("\\x"); }
+                        else content.Append((char)val);
+                        break;
+                    }
+                    case 'u' when !isBStr: // \uHHHH
+                    {
+                        int val = 0, digits = 0;
+                        while (digits < 4 && _pos < _source.Length && IsHexDigit(Current()))
+                        { val = val * 16 + HexValue(Advance()); digits++; }
+                        if (digits == 0) { content.Append("\\u"); }
+                        else content.Append((char)val);
+                        break;
+                    }
+                    case 'U' when !isBStr: // \UHHHHHHHH (may be astral → surrogate pair)
+                    {
+                        int val = 0, digits = 0;
+                        while (digits < 8 && _pos < _source.Length && IsHexDigit(Current()))
+                        { val = val * 16 + HexValue(Advance()); digits++; }
+                        if (digits == 0) { content.Append("\\U"); }
+                        else if (val > 0xFFFF && val <= 0x10FFFF) content.Append(char.ConvertFromUtf32(val));
+                        else content.Append((char)val);
+                        break;
+                    }
+                    case >= '0' and <= '7': // octal, up to 3 digits (first consumed)
+                    {
+                        int val = esc - '0';
+                        int digits = 1;
+                        while (digits < 3 && _pos < _source.Length && Current() >= '0' && Current() <= '7')
+                        { val = val * 8 + (Advance() - '0'); digits++; }
+                        content.Append((char)val);
+                        break;
+                    }
+                    default:
+                        // Unknown escape: preserved verbatim (CPython keeps backslash+char,
+                        // e.g. '\d' stays "\\d" — needed for regex strings).
+                        content.Append('\\').Append(esc);
+                        break;
+                }
                 continue;
             }
 
@@ -514,4 +567,15 @@ public sealed class Lexer
         if (_pos < _source.Length && _source[_pos] == '\r') Advance();
         if (_pos < _source.Length && _source[_pos] == '\n') Advance();
     }
+
+    private static bool IsHexDigit(char c) =>
+        c is >= '0' and <= '9' or >= 'a' and <= 'f' or >= 'A' and <= 'F';
+
+    private static int HexValue(char c) => c switch
+    {
+        >= '0' and <= '9' => c - '0',
+        >= 'a' and <= 'f' => c - 'a' + 10,
+        >= 'A' and <= 'F' => c - 'A' + 10,
+        _ => 0
+    };
 }
