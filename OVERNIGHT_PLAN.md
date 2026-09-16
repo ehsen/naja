@@ -84,6 +84,19 @@ Counts of errors across 186 failed files:
 11. [P2] email/register_error codecs API (33).
 12. Re-run FullSuite after each 2-3 fixes; update this table.
 
+## STDLIB RANKING (helper-agent analysis, Tier B files blocked per module)
+Quick wins (S effort, do these between P0 items when a cycle has spare capacity):
+- string (7 files; placeholder exists in resolver — implement NajaString module)
+- warnings (6 files; logging-lite shim: warn/simplefilter/catch_warnings/resetwarnings)
+- glob (2), copyreg (1), filecmp (1), html (1), quopri (1), colorsys (1)
+Big-ticket (implement only after P0/P1 cleared; L=large):
+- pickle L 18 | collections M 15 | doctest L 13 | random M 12 | operator M 11 |
+  copy M 11 | types M 9 | weakref M 9 | itertools M 8 | abc M 8 |
+  array M 5 | collections.abc M 5 | struct M 4
+NOTE: counts are Tier B only, not additive across co-occurring modules
+(collections/itertools/operator/random/copy appear in the same files).
+Full data: /home/ubuntu/.hermes/cache/delegation/subagent-summary-0-20260916_185921_353340.txt
+
 ## HARD RULES
 1. NEVER delete (or start) the user's incus containers.
 2. NEVER leave uncommitted changes at run end — commit+push or revert.
