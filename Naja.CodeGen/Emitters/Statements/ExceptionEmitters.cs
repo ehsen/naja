@@ -231,17 +231,67 @@ public class ExceptionEmitters : StatementEmitterBase
 
         if (handler.ExceptionType is TupleExpr texpr)
             return texpr.Elements
-                .Select(el => {
+                .SelectMany(el => {
                     var name = el is NameExpr n ? n.Name : el.ToString() ?? "";
-                    return TypeMapper.ResolveExceptionType(name) ?? typeof(Exception);
+                    return ExpandCatchTypes(name);
                 })
                 .ToList();
 
         var exName = handler.ExceptionType is NameExpr ne
             ? ne.Name
             : handler.ExceptionType.ToString() ?? "";
-        return new List<Type> { TypeMapper.ResolveExceptionType(exName) ?? typeof(Exception) };
+        return ExpandCatchTypes(exName);
     }
+
+    /// <summary>
+    /// Exception name → the set of CLR types whose instances that Python except
+    /// clause must catch. Python's hierarchy is emulated: raising paths produce
+    /// Naja.StdLib Python* exceptions, while runtime IL operations (integer div,
+    /// array bounds, casts) surface native CLR exceptions — the handler must
+    /// match both. Subclass relations follow CPython (ArithmeticError, LookupError).
+    /// </summary>
+    private static List<Type> ExpandCatchTypes(string name) => name switch
+    {
+        "ValueError" or "UnicodeDecodeError" =>
+            [typeof(Naja.StdLib.Core.PythonValueError), typeof(ArgumentException)],
+        "TypeError" =>
+            [typeof(Naja.StdLib.Core.PythonTypeError), typeof(InvalidCastException)],
+        "KeyError" =>
+            [typeof(Naja.StdLib.Core.PythonKeyError), typeof(System.Collections.Generic.KeyNotFoundException)],
+        "IndexError" =>
+            [typeof(Naja.StdLib.Core.PythonIndexError), typeof(IndexOutOfRangeException)],
+        "AttributeError" =>
+            [typeof(Naja.StdLib.Core.PythonAttributeError), typeof(MissingMemberException)],
+        "RuntimeError" =>
+            [typeof(Naja.StdLib.Core.PythonRuntimeError), typeof(InvalidOperationException)],
+        "NotImplementedError" =>
+            [typeof(Naja.StdLib.Core.PythonNotImplementedError), typeof(NotImplementedException)],
+        "OSError" or "IOError" =>
+            [typeof(Naja.StdLib.Core.PythonOSError), typeof(System.IO.IOException)],
+        "FileNotFoundError" =>
+            [typeof(Naja.StdLib.Core.PythonOSError), typeof(System.IO.FileNotFoundException)],
+        "PermissionError" =>
+            [typeof(Naja.StdLib.Core.PythonOSError), typeof(UnauthorizedAccessException)],
+        "OverflowError" =>
+            [typeof(Naja.StdLib.Core.PythonOverflowError), typeof(OverflowException)],
+        "ZeroDivisionError" =>
+            [typeof(Naja.StdLib.Core.PythonZeroDivisionError), typeof(DivideByZeroException)],
+        "ArithmeticError" =>
+            // Python: ArithmeticError covers ZeroDivisionError, OverflowError,
+            // FloatingPointError. Native analogs live under ArithmeticException.
+            [typeof(Naja.StdLib.Core.PythonZeroDivisionError),
+             typeof(Naja.StdLib.Core.PythonOverflowError),
+             typeof(ArithmeticException)],
+        "LookupError" =>
+            // Python: LookupError covers IndexError and KeyError.
+            [typeof(Naja.StdLib.Core.PythonIndexError),
+             typeof(Naja.StdLib.Core.PythonKeyError),
+             typeof(IndexOutOfRangeException),
+             typeof(System.Collections.Generic.KeyNotFoundException)],
+        _ => TypeMapper.ResolveExceptionType(name) is { } t
+             ? [t]
+             : [typeof(Exception)]
+    };
 
     // ── Raise ─────────────────────────────────────────────────────────────────
 

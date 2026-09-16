@@ -296,13 +296,17 @@ internal static class NajaBuiltinsMethodCache
         typeof(ExceptionHelpers).GetMethod(nameof(ExceptionHelpers.ContextEnter))!;
 
     // ── Dynamic call operations ──────────────────────────────────────────────
-    public static readonly MethodInfo CallCallable_Method = 
+    public static readonly MethodInfo CallCallable_Method =
         typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.CallCallable))!;
 
-    public static readonly MethodInfo DynamicCall_Method = 
+    public static readonly MethodInfo DynamicCall_Method =
         typeof(ReflectionHelpers).GetMethod(nameof(ReflectionHelpers.DynamicCall))!;
 
-    public static readonly MethodInfo CreateDotNet_Method = 
+    // ── Keyword argument tagging (CPython kwargs semantics) ──────────────────
+    public static readonly ConstructorInfo NajaKwArg_Ctor =
+        typeof(Naja.CodeGen.Builtins.NajaKwArg).GetConstructor(new[] { typeof(string), typeof(object) })!;
+
+    public static readonly MethodInfo CreateDotNet_Method =
         typeof(TypeSystem).GetMethod(nameof(TypeSystem.CreateDotNet))!;
 
     // ── String method references ─────────────────────────────────────────────

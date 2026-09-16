@@ -96,6 +96,98 @@ public class NajaTestCase
     public void assertHasAttr(object? obj, object? name) =>
         assertHasAttr(obj, name, null);
 
+    // ── isinstance / issubclass ───────────────────────────────────────────────
+    public void assertIsInstance(object? obj, object? classOrTuple) =>
+        assertIsInstance(obj, classOrTuple, null);
+
+    public void assertIsInstance(object? obj, object? classOrTuple, object? msg)
+    {
+        if (!IsInstanceOfType(obj, classOrTuple))
+            Fail($"{Format(obj)} is not an instance of {Format(classOrTuple)}", msg);
+    }
+
+    public void assertNotIsInstance(object? obj, object? classOrTuple) =>
+        assertNotIsInstance(obj, classOrTuple, null);
+
+    public void assertNotIsInstance(object? obj, object? classOrTuple, object? msg)
+    {
+        if (IsInstanceOfType(obj, classOrTuple))
+            Fail($"unexpectedly an instance of {Format(classOrTuple)}: {Format(obj)}", msg);
+    }
+
+    /// <summary>
+    /// Python isinstance(obj, cls) / isinstance(obj, (A, B)) with Naja's dual
+    /// exception hierarchy: Python exception names also match their native CLR
+    /// analogs (e.g. isinstance(exc, TypeError) is true for both PythonTypeError
+    /// and InvalidCastException).
+    /// </summary>
+    private static bool IsInstanceOfType(object? obj, object? classOrTuple)
+    {
+        if (obj is null) return false;
+
+        bool MatchOne(object cls)
+        {
+            if (cls is Type t) return t.IsInstanceOfType(obj);
+            var name = cls?.ToString() ?? "";
+            // Python built-in type names → CLR types (incl. native analogs)
+            return name switch
+            {
+                "int" => obj is long or int,
+                "float" => obj is double or float,
+                "str" => obj is string,
+                "bool" => obj is bool,
+                "bytes" => obj is byte[],
+                "list" => obj is System.Collections.Generic.List<object>,
+                "tuple" => obj.GetType().IsArray || obj.GetType().Name == "ReadOnlyCollection`1",
+                "dict" => obj is System.Collections.Generic.Dictionary<object, object>,
+                "set" or "frozenset" => obj.GetType().Name.Contains("HashSet") || obj.GetType().Name.Contains("NajaFrozenset"),
+                "NoneType" => obj is null,
+                "Exception" or "BaseException" => obj is Exception,
+                // Python exception names: match StdLib Python* types or native analogs
+                "ValueError" => obj is Core.PythonValueError or ArgumentException,
+                "TypeError" => obj is Core.PythonTypeError or InvalidCastException,
+                "KeyError" => obj is Core.PythonKeyError or System.Collections.Generic.KeyNotFoundException,
+                "IndexError" => obj is Core.PythonIndexError or IndexOutOfRangeException,
+                "AttributeError" => obj is Core.PythonAttributeError or MissingMemberException,
+                "RuntimeError" => obj is Core.PythonRuntimeError or InvalidOperationException,
+                "OSError" or "IOError" => obj is Core.PythonOSError or System.IO.IOException,
+                "OverflowError" => obj is Core.PythonOverflowError or OverflowException,
+                "ZeroDivisionError" => obj is Core.PythonZeroDivisionError or DivideByZeroException,
+                _ => ResolveExceptionType(name) is { } rt && rt.IsInstanceOfType(obj)
+            };
+        }
+
+        if (classOrTuple is System.Collections.Generic.IEnumerable<object> seq
+            && classOrTuple is not string)
+        {
+            foreach (var c in seq) { if (MatchOne(c)) return true; }
+            return false;
+        }
+        return MatchOne(classOrTuple!);
+    }
+
+    public void assertIsSubclass(object? cls, object? classOrTuple)
+    {
+        if (!IsSubclassOfChecked(cls, classOrTuple))
+            Fail($"{Format(cls)} is not a subclass of {Format(classOrTuple)}", null);
+    }
+
+    public void assertNotIsSubclass(object? cls, object? classOrTuple)
+    {
+        if (IsSubclassOfChecked(cls, classOrTuple))
+            Fail($"unexpectedly a subclass: {Format(cls)}", null);
+    }
+
+    private static bool IsSubclassOfChecked(object? cls, object? classOrTuple)
+    {
+        if (cls is null) return false;
+        bool MatchOne(object c) => c is Type t && cls is Type ct && ct.IsSubclassOf(t);
+        if (classOrTuple is System.Collections.Generic.IEnumerable<object> seq
+            && classOrTuple is not string)
+            return seq.Any(MatchOne);
+        return MatchOne(classOrTuple!);
+    }
+
     public void assertHasAttr(object? obj, object? name, object? msg)
     {
         if (!ObjectHasAttr(obj, name))
@@ -407,17 +499,53 @@ public class NajaTestCase
     {
         // Unwrap TargetInvocationException
         var actual = ex is System.Reflection.TargetInvocationException tie ? tie.InnerException ?? ex : ex;
-        return expectedType.IsAssignableFrom(actual.GetType());
+        if (expectedType.IsAssignableFrom(actual.GetType()))
+            return true;
+
+        // Naja's dual exception hierarchy: a Python handler that names an exception
+        // must also accept the native CLR analog surfaced by runtime IL operations
+        // (integer div -> DivideByZeroException, bad cast -> InvalidCastException, …).
+        if (expectedType == typeof(Core.PythonZeroDivisionError) && actual is DivideByZeroException) return true;
+        if (expectedType == typeof(Core.PythonTypeError) && actual is InvalidCastException) return true;
+        if (expectedType == typeof(Core.PythonValueError) && actual is ArgumentException) return true;
+        if (expectedType == typeof(Core.PythonKeyError) && actual is System.Collections.Generic.KeyNotFoundException) return true;
+        if (expectedType == typeof(Core.PythonIndexError) && actual is IndexOutOfRangeException) return true;
+        if (expectedType == typeof(Core.PythonAttributeError) && actual is MissingMemberException) return true;
+        if (expectedType == typeof(Core.PythonRuntimeError) && actual is InvalidOperationException) return true;
+        if (expectedType == typeof(Core.PythonNotImplementedError) && actual is NotImplementedException) return true;
+        if (expectedType == typeof(Core.PythonOSError) && actual is System.IO.IOException) return true;
+        if (expectedType == typeof(Core.PythonOverflowError) && actual is OverflowException) return true;
+        return false;
     }
 
     internal static Type? ResolveExceptionType(object? exType)
     {
         if (exType is Type t) return t;
         if (exType is string name)
+        {
+            // Python exception names map to the StdLib Python* hierarchy first —
+            // stdlib modules raise these types (PythonException factory).
+            var mapped = name switch
+            {
+                "ValueError" => typeof(Core.PythonValueError),
+                "TypeError" => typeof(Core.PythonTypeError),
+                "KeyError" => typeof(Core.PythonKeyError),
+                "IndexError" => typeof(Core.PythonIndexError),
+                "AttributeError" => typeof(Core.PythonAttributeError),
+                "RuntimeError" => typeof(Core.PythonRuntimeError),
+                "NotImplementedError" => typeof(Core.PythonNotImplementedError),
+                "OSError" or "IOError" => typeof(Core.PythonOSError),
+                "OverflowError" => typeof(Core.PythonOverflowError),
+                "ZeroDivisionError" => typeof(Core.PythonZeroDivisionError),
+                _ => null
+            };
+            if (mapped is not null) return mapped;
+
             return Type.GetType(name, throwOnError: false)
                 ?? AppDomain.CurrentDomain.GetAssemblies()
                        .Select(a => a.GetType(name, false, true))
                        .FirstOrDefault(x => x is not null);
+        }
         return null;
     }
 

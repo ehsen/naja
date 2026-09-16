@@ -24,9 +24,27 @@ public static class TypeConversion
         double d => d,
         long l => (double)l,
         bool b => b ? 1.0 : 0.0,
-        string s => double.Parse(s),
+        string s => ParsePythonFloat(s),
         _ => Convert.ToDouble(obj)
     };
+
+    /// <summary>Python float() string parsing: inf/infinity/nan (any case, optional
+    /// sign), underscores allowed as digit separators, InvariantCulture.</summary>
+    private static double ParsePythonFloat(string s)
+    {
+        var t = s.Trim();
+        var signed = t.TrimStart('+', '-');
+        var neg = t.StartsWith("-");
+        if (signed.Equals("inf", StringComparison.OrdinalIgnoreCase)
+            || signed.Equals("infinity", StringComparison.OrdinalIgnoreCase))
+            return neg ? double.NegativeInfinity : double.PositiveInfinity;
+        if (signed.Equals("nan", StringComparison.OrdinalIgnoreCase))
+            return double.NaN;
+        var style = System.Globalization.NumberStyles.Float;
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        return double.TryParse(t, style, ci, out var v) ? v
+            : throw Naja.StdLib.Core.PythonException.ValueError($"could not convert float: '{s}'");
+    }
 
     /// <summary>Convert an object to a Python string representation.</summary>
     public static string ToStr(object? obj)

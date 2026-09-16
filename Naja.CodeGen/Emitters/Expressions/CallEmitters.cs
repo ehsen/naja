@@ -570,7 +570,12 @@ public sealed class CallEmitters : ExpressionEmitterBase
         for (int i = 0; i < args.Count; i++)
         {
             IL.Emit(OpCodes.Dup); IL.Emit(OpCodes.Ldc_I4, i);
+            // Newobj pops args left-to-right: push the kwarg NAME first, then the
+            // value, so they land in (string name, object value) order.
+            bool isKw = args[i].Keyword is not null;
+            if (isKw) IL.Emit(OpCodes.Ldstr, args[i].Keyword!);
             var at = _mainEmitter.Emit(args[i].Value); TypeMapper.EmitBox(IL, at);
+            if (isKw) IL.Emit(OpCodes.Newobj, NajaBuiltinsMethodCache.NajaKwArg_Ctor);
             IL.Emit(OpCodes.Stelem_Ref);
         }
 

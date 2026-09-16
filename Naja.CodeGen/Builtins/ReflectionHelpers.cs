@@ -1115,6 +1115,97 @@ public static class ReflectionHelpers
         method = null!;
         boundArgs = null!;
 
+        // ── Keyword-aware binding (NajaKwArg-wrapped args from Python call sites) ──
+        bool hasKwargs = args.Any(a => a is NajaKwArg);
+        if (hasKwargs)
+        {
+            var (pos, kws) = NajaKwArg.Split(args);
+            // Duplicate kwarg names are a caller error
+            if (kws.Select(k => k.Name).Distinct().Count() != kws.Count)
+                return false;
+
+            foreach (var mb in candidates)
+            {
+                var ps = mb.GetParameters();
+                if (ps.Length > 0 && ps[^1].IsDefined(typeof(ParamArrayAttribute), false))
+                {
+                    // params-array method: kwargs that match no named param would need
+                    // **kwargs dict support — skip; positional prefix may still bind below.
+                    continue;
+                }
+
+                int fixedKw = 0;
+                var bound = new object?[ps.Length];
+                bool ok = true;
+
+                // Bind keyword args by name first (case-sensitive, CPython semantics).
+                var consumed = new HashSet<int>();
+                for (int k = 0; k < kws.Count; k++)
+                {
+                    int idx = Array.FindIndex(ps, p => p.Name == kws[k].Name);
+                    if (idx < 0 || consumed.Contains(idx))
+                    {
+                        // Unknown kwarg name — CPython raises TypeError. Binding fails
+                        // for this overload; other overloads may accept it.
+                        ok = false;
+                        break;
+                    }
+                    consumed.Add(idx);
+                    try { bound[idx] = TypeSystem.CoerceValue(kws[k].Value, ps[idx].ParameterType); }
+                    catch { ok = false; break; }
+                    if (bound[idx] != null && !ps[idx].ParameterType.IsAssignableFrom(bound[idx]!.GetType()))
+                    { ok = false; break; }
+                }
+                if (!ok) continue;
+
+                // Positional args fill remaining slots left-to-right, skipping consumed.
+                var freeSlots = new List<int>();
+                for (int i = 0; i < ps.Length; i++)
+                    if (!consumed.Contains(i) && !ps[i].IsOptional && !ps[i].HasDefaultValue)
+                        freeSlots.Add(i);
+                // Optional params also fillable positionally when args remain:
+                for (int i = 0; i < ps.Length; i++)
+                    if (!consumed.Contains(i) && (ps[i].IsOptional || ps[i].HasDefaultValue))
+                        freeSlots.Add(i);
+                freeSlots = freeSlots.Distinct().ToList();
+
+                if (pos.Length > freeSlots.Count) { continue; } // too many positional
+                fixedKw = pos.Length;
+                for (int i = 0; i < pos.Length; i++)
+                {
+                    int slot = freeSlots[i];
+                    try { bound[slot] = TypeSystem.CoerceValue(pos[i], ps[slot].ParameterType); }
+                    catch { ok = false; break; }
+                    if (bound[slot] != null && !ps[slot].ParameterType.IsAssignableFrom(bound[slot]!.GetType()))
+                    { ok = false; break; }
+                }
+                if (!ok) continue;
+
+                // Defaults for untouched optionals
+                for (int i = 0; i < ps.Length; i++)
+                    if (!consumed.Contains(i) && i >= fixedKw
+                        && (ps[i].IsOptional || ps[i].HasDefaultValue)
+                        && bound[i] is null && !freeSlots.Take(pos.Length).Contains(i))
+                        bound[i] = ps[i].HasDefaultValue ? ps[i].DefaultValue : Type.Missing;
+
+                // All required params must be filled
+                for (int i = 0; i < ps.Length; i++)
+                    if (!ps[i].IsOptional && !ps[i].HasDefaultValue
+                        && !consumed.Contains(i) && bound[i] is null)
+                    { ok = false; break; }
+                if (!ok) continue;
+
+                method = mb;
+                boundArgs = bound!;
+                return true;
+            }
+
+            // kwargs present but no overload accepted them — do NOT fall through to
+            // positional-only paths (that would silently misbind names, the very bug
+            // this binder fixes). Report failure to the caller.
+            return false;
+        }
+
         // Filter by parameter count — exclude params-array methods (handled by the dedicated loop below)
         var exact = candidates.Where(m => {
             var ps = m.GetParameters();
