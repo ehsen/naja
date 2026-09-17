@@ -591,23 +591,18 @@ public sealed class NajaTestSupport
 
     /// <summary>
     /// adjust_int_max_str_digits — temporarily change the int↔str digit limit.
-    /// Mirrors CPython's contextmanager: on enter, sets the limit to max_digits
-    /// (after first disabling via 0 to avoid an "already limited" no-op), and on
-    /// exit restores the previous value. Mirrors SwapAttr/CapturedStream shape:
-    /// __enter__ returns self, __exit__ returns false (don't suppress).
+    /// Mirrors CPython's contextmanager: on enter, sets the limit directly to
+    /// max_digits, and on exit restores the previous value. Mirrors
+    /// SwapAttr/CapturedStream shape: __enter__ returns self, __exit__ returns
+    /// false (don't suppress).
     /// </summary>
     public sealed class AdjustIntMaxStrDigits : object
     {
-        private readonly object _target;
         private readonly long _previous;
 
         public AdjustIntMaxStrDigits(object max_digits)
         {
-            _target = max_digits;
             _previous = NajaSys.Instance.get_int_max_str_digits();
-            // CPython's support.adjust_int_max_str_digits sets 0 first, then the
-            // requested value (see Lib/test/support/__init__.py).
-            NajaSys.Instance.set_int_max_str_digits(0);
             NajaSys.Instance.set_int_max_str_digits(max_digits);
         }
 

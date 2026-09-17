@@ -2631,5 +2631,76 @@ public class CodeGenTests
             print(os.path.isdir(d))
             """));
     }
+
+    [Fact]
+    public void Sys_IntMaxStrDigits_GetDefault()
+    {
+        Assert.Equal("4300", Run("""
+            import sys
+            print(sys.get_int_max_str_digits())
+            """));
+    }
+
+    [Fact]
+    public void Sys_IntMaxStrDigits_Set_Then_Get()
+    {
+        Assert.Equal("2048", Run("""
+            import sys
+            sys.set_int_max_str_digits(2048)
+            print(sys.get_int_max_str_digits())
+            sys.set_int_max_str_digits(4300)
+            """));
+    }
+
+    [Fact]
+    public void Sys_IntMaxStrDigits_Validation()
+    {
+        Assert.Equal("raised\n0\n4300", Run("""
+            import sys
+            try:
+                sys.set_int_max_str_digits(639)
+            except ValueError:
+                print('raised')
+            else:
+                print('no-raise')
+            sys.set_int_max_str_digits(0)
+            print(sys.get_int_max_str_digits())
+            sys.set_int_max_str_digits(4300)
+            print(sys.get_int_max_str_digits())
+            """));
+    }
+
+    [Fact]
+    public void Sys_IntMaxStrDigits_Adjust_ContextManager()
+    {
+        Assert.Equal("in 2048\nraised\nok 1\nback 4300", Run("""
+            import sys
+            import test.support
+            with test.support.adjust_int_max_str_digits(2048) as cm:
+                print('in', sys.get_int_max_str_digits())
+                try:
+                    int('1' * 3000)
+                except ValueError:
+                    print('raised')
+                else:
+                    print('no-raise')
+                print('ok', int('0' * 2047 + '1'))
+            print('back', sys.get_int_max_str_digits())
+            """));
+    }
+
+    [Fact]
+    public void Sys_IntMaxStrDigits_Exceeds_Limit()
+    {
+        Assert.Equal("True", Run("""
+            import sys
+            sys.set_int_max_str_digits(4300)
+            try:
+                int('9' * 5000)
+            except ValueError as e:
+                print('Exceeds the limit' in str(e))
+            sys.set_int_max_str_digits(4300)
+            """));
+    }
 }
 
