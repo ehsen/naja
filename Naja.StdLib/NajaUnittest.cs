@@ -421,6 +421,18 @@ public class NajaTestCase
     [ThreadStatic]
     private static List<string>? _subTestFailures;
 
+    /// <summary>
+    /// Returns and clears the recorded sub-test failures for the current thread.
+    /// Called by the runner after a test method completes to convert recorded
+    /// sub-test failures into a FAILED verdict. Returns null when there were none.
+    /// </summary>
+    internal static List<string>? TakeSubTestFailures()
+    {
+        var f = _subTestFailures;
+        _subTestFailures = null;
+        return f;
+    }
+
     // ── assertRegex ───────────────────────────────────────────────────────────
     /// <summary>
     /// assertRegex(text, expected_regex) — asserts that a regexp search matches text.
@@ -635,6 +647,15 @@ public class NajaTestCase
     private static void Fail(string reason, object? msg)
     {
         var message = msg is not null ? $"{msg}" : reason;
+        // Inside an active subTest: record the failure and SUPPRESS so the with-block
+        // continues (CPython subTest semantics) rather than throwing. This does not
+        // depend on the exception escaping to SubTestContext.__exit__ and guarantees
+        // the failure reaches the runner's recorded list.
+        if (InSubTest)
+        {
+            RecordSubTestFailure("<subtest>", new AssertionException(message));
+            return;
+        }
         throw new AssertionException(message);
     }
 }
@@ -877,36 +898,60 @@ public sealed class NajaUnittest
             foreach (var method in testMethods)
             {
                 NajaTestCase? instance = null;
+                string? verdict = null; // "pass" | "skip" | "fail" | "error"
                 try
                 {
                     instance = (NajaTestCase)Activator.CreateInstance(cls)!;
                     instance.setUp();
                     method.Invoke(instance, null);
                     instance.tearDown();
-                    passed++;
+                    verdict = "pass";
                     Console.Error.Write(".");
                 }
                 catch (SkipTestException ex)
                 {
-                    skipped++;
+                    verdict = "skip";
                     Console.Error.Write("s");
                     _ = ex;
                 }
                 catch (System.Reflection.TargetInvocationException tie)
                     when (tie.InnerException is AssertionException ae)
                 {
-                    failed++;
+                    verdict = "fail";
                     failures.Add($"FAIL: {cls.Name}.{method.Name}\n  AssertionError: {ae.Message}");
                     Console.Error.Write("F");
                     try { instance?.tearDown(); } catch { }
                 }
                 catch (Exception ex)
                 {
-                    errors++;
+                    verdict = "error";
                     var inner = ex is System.Reflection.TargetInvocationException tie2 ? tie2.InnerException ?? ex : ex;
                     failures.Add($"ERROR: {cls.Name}.{method.Name}\n  {inner.GetType().Name}: {inner.Message}");
                     Console.Error.Write("E");
                     try { instance?.tearDown(); } catch { }
+                }
+
+                // Consume recorded sub-test failures. Assertions inside an active
+                // subTest block are recorded + suppressed (so the with-block and
+                // subsequent code continue), so the method body completes normally
+                // even though the test actually failed. A non-empty capture here
+                // means the test produced failing sub-tests → reclassify it as FAILED.
+                var subFailures = NajaTestCase.TakeSubTestFailures();
+                if (subFailures is { Count: > 0 })
+                {
+                    foreach (var sf in subFailures)
+                        failures.Add($"FAIL: {cls.Name}.{method.Name}\n  {sf}");
+                    if (verdict == "pass")
+                        Console.Error.Write(new string('\b', 1) + "F"); // replace dot with F
+                    verdict = "fail";
+                }
+
+                switch (verdict)
+                {
+                    case "pass": passed++; break;
+                    case "skip": skipped++; break;
+                    case "fail": failed++; break;
+                    case "error": errors++; break;
                 }
             }
         }
