@@ -123,5 +123,5 @@ Full data: /home/ubuntu/.hermes/cache/delegation/subagent-summary-0-20260916_185
    /home/ubuntu/tier_c.json and helper scripts /home/ubuntu/triage_*.py.
 
 ## RUN LOG (append one line per run)
-- [run 2026-09-17 02:55 UTC] queue#3 textwrap.dedent (54 uses) -> subagent sa-0-8f59949b: Instance singletons (textwrap/shutil/tempfile/ctypes), NameEmitters GetStdLibField map +15, resolver +4 (test/script/socket/threading_helper), NajaTestSupport superset expansion (requires_* factories, captured_stdout, swap_attr, helper classes) + 3 regression tests. Controller-verified: build 0 err/0 warn, unit 540/553 0-failed, gate 18/18. Commit: PENDING_SHA
+- [run 2026-09-17 02:55 UTC] queue#3 textwrap.dedent (54 uses) -> subagent sa-0-8f59949b: Instance singletons (textwrap/shutil/tempfile/ctypes), NameEmitters GetStdLibField map +15, resolver +4 (test/script/socket/threading_helper), NajaTestSupport superset expansion (requires_* factories, captured_stdout, swap_attr, helper classes) + 3 regression tests. Controller-verified: build 0 err/0 warn, unit 540/553 0-failed, gate 18/18. Commit: 2b35cfe
 - [setup 2026-09-16 18:55 UTC] plan written; baseline recorded (12/198, host crash at test_ftplib).
