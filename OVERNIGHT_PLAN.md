@@ -1,5 +1,11 @@
 # NAJA OVERNIGHT CONFORMANCE SPRINT — OPERATING PLAN
-_Auto-maintained by the overnight agent. Last run appends to RUN LOG at bottom._
+_Auto-maintained by the sprint controller. Last run appends to RUN LOG at bottom._
+
+## OPERATING MODEL (changed 2026-09-17 ~02:10 UTC)
+The controller (cron job naja-sprint-controller) is a SENIOR ENGINEER: it does NOT
+write fixes. Each fix is ALLOCATED to a subagent (delegate_task) that implements and
+tests it; the controller reviews the diff, rebuilds, re-verifies, then commits+pushes.
+Never leave uncommitted work. This mirrors how the user wants the team to run.
 
 ## MISSION
 Make the Naja compiler (github.com/ehsen/naja, Python→.NET IL) pass as many CPython
@@ -102,8 +108,8 @@ Full data: /home/ubuntu/.hermes/cache/delegation/subagent-summary-0-20260916_185
 2. NEVER leave uncommitted changes at run end — commit+push or revert.
 3. Never claim success without tool-verified output; counts must come from real runs.
 4. CPython source tree is read-only reference.
-5. Each run: exactly ONE fix-cycle (or one crash-resilience fix), then update this
-   file + RUN LOG, and end. Keep runs < 25 min.
+5. Each run: ONE fix-cycle, allocated to a subagent per the operating model; controller
+   reviews + verifies + commits. Keep runs < 25 min.
 6. Commit messages: conventional, mention the failing test file(s) fixed.
 7. If the gate (18/18) or unit suite (0 failed) regresses, revert the last commit.
 8. CONCURRENCY: runs fire every 30m and may overlap. Guard the whole run with

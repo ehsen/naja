@@ -1127,11 +1127,102 @@ public static class ReflectionHelpers
             foreach (var mb in candidates)
             {
                 var ps = mb.GetParameters();
-                if (ps.Length > 0 && ps[^1].IsDefined(typeof(ParamArrayAttribute), false))
+                bool isParams = ps.Length > 0 && ps[^1].IsDefined(typeof(ParamArrayAttribute), false);
+                if (isParams)
                 {
-                    // params-array method: kwargs that match no named param would need
-                    // **kwargs dict support — skip; positional prefix may still bind below.
-                    continue;
+                    // ── params-array method with kwargs ─────────────────────────────
+                    // e.g. NajaTestCase.subTest(params object[] args). CPython accepts
+                    // **kwargs into *args-like sinks, so we must too: bind fixed
+                    // (non-array) parameters normally (kwargs by parameter name,
+                    // positionals left-to-right), then pack ALL leftover args — positional
+                    // values AND unmatched NajaKwArg wrappers (kept intact, NOT unwrapped,
+                    // so duck-typed callees can read Name/Value) — into the params array in
+                    // original call order. Unknown kwarg names are fatal for non-params
+                    // methods, but fine here because the params array swallows them.
+                    int fixedCount = ps.Length - 1;
+                    var elementType = ps[fixedCount].ParameterType.GetElementType()!;
+                    var pb = new object?[ps.Length];
+                    bool pok = true;
+                    var pConsumed = new HashSet<int>();
+                    var posRemainder = new List<object?>();
+                    var kwParams = new List<NajaKwArg>();
+
+                    // Bind fixed params by keyword name; unmatched kwargs pack into params.
+                    for (int k = 0; k < kws.Count; k++)
+                    {
+                        int idx = Array.FindIndex(ps, 0, fixedCount, p => p.Name == kws[k].Name);
+                        if (idx >= 0 && !pConsumed.Contains(idx))
+                        {
+                            pConsumed.Add(idx);
+                            try { pb[idx] = TypeSystem.CoerceValue(kws[k].Value, ps[idx].ParameterType); }
+                            catch { pok = false; break; }
+                            if (pb[idx] != null && !ps[idx].ParameterType.IsAssignableFrom(pb[idx]!.GetType()))
+                            { pok = false; break; }
+                        }
+                        else
+                            kwParams.Add(kws[k]); // params array exists to swallow it; wrapper kept intact
+                    }
+                    if (!pok) continue;
+
+                    // Positional args fill remaining fixed slots left-to-right; leftover -> params.
+                    var pFreeSlots = new List<int>();
+                    for (int i = 0; i < fixedCount; i++)
+                        if (!pConsumed.Contains(i) && !ps[i].IsOptional && !ps[i].HasDefaultValue)
+                            pFreeSlots.Add(i);
+                    for (int i = 0; i < fixedCount; i++)
+                        if (!pConsumed.Contains(i) && (ps[i].IsOptional || ps[i].HasDefaultValue))
+                            pFreeSlots.Add(i);
+                    pFreeSlots = pFreeSlots.Distinct().ToList();
+
+                    var pPosUsed = new HashSet<int>();
+                    int fi = 0;
+                    for (; fi < pos.Length && fi < pFreeSlots.Count; fi++)
+                    {
+                        int slot = pFreeSlots[fi];
+                        try { pb[slot] = TypeSystem.CoerceValue(pos[fi], ps[slot].ParameterType); }
+                        catch { pok = false; break; }
+                        if (pb[slot] != null && !ps[slot].ParameterType.IsAssignableFrom(pb[slot]!.GetType()))
+                        { pok = false; break; }
+                        pPosUsed.Add(slot);
+                    }
+                    if (!pok) continue;
+                    for (; fi < pos.Length; fi++)
+                        posRemainder.Add(pos[fi]);
+
+                    // Defaults for untouched fixed optionals.
+                    for (int i = 0; i < fixedCount; i++)
+                        if (!pConsumed.Contains(i) && !pPosUsed.Contains(i)
+                            && (ps[i].IsOptional || ps[i].HasDefaultValue) && pb[i] is null)
+                            pb[i] = ps[i].HasDefaultValue ? ps[i].DefaultValue : Type.Missing;
+
+                    // All required fixed params must be filled.
+                    for (int i = 0; i < fixedCount; i++)
+                        if (!ps[i].IsOptional && !ps[i].HasDefaultValue
+                            && !pConsumed.Contains(i) && !pPosUsed.Contains(i) && pb[i] is null)
+                        { pok = false; break; }
+                    if (!pok) continue;
+
+                    // Pack leftover args into the params array in original call order
+                    // (positionals precede kwargs at Python call sites).
+                    int pi = 0;
+                    var paramsArr = Array.CreateInstance(elementType, posRemainder.Count + kwParams.Count);
+                    foreach (var pr in posRemainder)
+                    {
+                        try { paramsArr.SetValue(TypeSystem.CoerceValue(pr, elementType), pi); }
+                        catch { pok = false; break; }
+                        if (pr != null && !elementType.IsAssignableFrom(pr.GetType()))
+                        { pok = false; break; }
+                        pi++;
+                    }
+                    if (pok)
+                        foreach (var kw in kwParams)
+                            paramsArr.SetValue(kw, pi++); // keep wrapper intact — no unwrap
+                    if (!pok) continue;
+                    pb[fixedCount] = paramsArr;
+
+                    method = mb;
+                    boundArgs = pb!;
+                    return true;
                 }
 
                 int fixedKw = 0;

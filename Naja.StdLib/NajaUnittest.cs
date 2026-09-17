@@ -365,6 +365,62 @@ public class NajaTestCase
         }
     }
 
+    // ── subTest ───────────────────────────────────────────────────────────────
+    /// <summary>
+    /// self.subTest(*args, **kwargs) — context manager for per-sub-test reporting.
+    /// Mirrors unittest.TestCase.subTest: the body runs normally; when an assertion
+    /// fails (AssertionException) or errors inside the with block, the failure is
+    /// recorded and the exception is suppressed so the remaining test code (and
+    /// subsequent subTest blocks) still run. Any failure recorded via subTest marks
+    /// the surrounding test as failed at run-loop level via SubTestFailureException.
+    /// </summary>
+    public SubTestContext subTest(params object[] args)
+    {
+        // Bind msg= keyword (CPython signature: subTest(msg=..., **parameters)).
+        // Keyword args arrive wrapped (NajaKwArg from Naja.CodeGen via dynamic
+        // dispatch, or SubTestMsgTag) — duck-type by shape, no assembly reference.
+        string? msg = null;
+        foreach (var a in args)
+        {
+            if (a is null) continue;
+            var at = a.GetType();
+            var nameProp = at.GetProperty("Name");
+            var valueProp = at.GetProperty("Value");
+            if (nameProp?.GetValue(a) is string kwName && kwName == "msg" && valueProp is not null)
+                msg = valueProp.GetValue(a)?.ToString();
+        }
+        return new SubTestContext(this, msg);
+    }
+
+    // ── subTest failure plumbing ─────────────────────────────────────────────
+    /// <summary>
+    /// True while the test method body is executing inside a subTest context.
+    /// Assert methods use this to convert assertion failures into sub-test
+    /// failures (recorded + suppressed) instead of aborting the test method.
+    /// </summary>
+    [ThreadStatic]
+    private static bool _inSubTest;
+
+    internal static bool InSubTest => _inSubTest;
+
+    internal static void MarkSubTestEnter() => _inSubTest = true;
+
+    internal static void MarkSubTestExit() => _inSubTest = false;
+
+    /// <summary>
+    /// Re-thrown by SubTestContext.__exit__ after recording a sub-test failure
+    /// so the unittest runner marks the test failed but continues subsequent
+    /// subTest blocks are handled inside the context itself.
+    /// </summary>
+    internal static void RecordSubTestFailure(string description, Exception ex)
+    {
+        _subTestFailures ??= new List<string>();
+        _subTestFailures.Add($"SubTest: {description}\n  {ex.GetType().Name}: {ex.Message}");
+    }
+
+    [ThreadStatic]
+    private static List<string>? _subTestFailures;
+
     // ── assertRegex ───────────────────────────────────────────────────────────
     /// <summary>
     /// assertRegex(text, expected_regex) — asserts that a regexp search matches text.
@@ -581,6 +637,83 @@ public class NajaTestCase
         var message = msg is not null ? $"{msg}" : reason;
         throw new AssertionException(message);
     }
+}
+
+/// <summary>
+/// Duck-typed marker for the msg= keyword argument passed to TestCase.subTest().
+/// The call emitters pass unknown keyword arguments as NajaKwArg (Naja.CodeGen)
+/// through dynamic dispatch; when that wrapper is not present (e.g. kwargs bound
+/// statically), callers may use this tag. SubTestContext recognizes both shapes.
+/// </summary>
+public sealed class SubTestMsgTag
+{
+    public string Name => "msg";
+    public object? Value { get; }
+    public SubTestMsgTag(object? value) { Value = value; }
+}
+
+/// <summary>
+/// Context manager returned by TestCase.subTest().
+/// Mirrors CPython semantics: the with-body runs; a failure inside the body is
+/// recorded (as a sub-test failure) and SUPPRESSED so the rest of the test
+/// method — including further subTest blocks — still executes. The recorded
+/// failures are attached to the enclosing TestCase so the runner can mark the
+/// test as failed while still reporting each sub-test individually.
+/// </summary>
+public sealed class SubTestContext
+{
+    private readonly NajaTestCase _owner;
+    private readonly string? _msg;
+
+    internal SubTestContext(NajaTestCase owner, string? msg)
+    {
+        _owner = owner;
+        _msg = msg;
+    }
+
+    /// <summary>Support 'with self.subTest(...)' — returns self.</summary>
+    public SubTestContext __enter__()
+    {
+        NajaTestCase.MarkSubTestEnter();
+        return this;
+    }
+
+    /// <summary>
+    /// Called at the end of the with block. Records and suppresses failures so
+    /// subsequent code and subTest blocks still run (CPython subTest behavior).
+    /// </summary>
+    public bool __exit__(object? excType, object? excVal, object? excTb)
+    {
+        NajaTestCase.MarkSubTestExit();
+        if (excVal is Exception ex)
+        {
+            // Unwrap TargetInvocationException
+            if (ex is System.Reflection.TargetInvocationException tie && tie.InnerException is not null)
+                ex = tie.InnerException;
+
+            // SkipTest inside a subTest still skips (matches CPython: _FailedCause skipped)
+            if (ex is SkipTestException)
+                return true;
+
+            var desc = BuildDescription();
+            NajaTestCase.RecordSubTestFailure(desc, ex);
+            return true; // suppress
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// CPython-style description: 'msg (i=3)' built from the kwargs passed to
+    /// subTest. msg alone when no parameters were given.
+    /// </summary>
+    private string BuildDescription()
+    {
+        if (_msg is not null)
+            return _msg;
+        return "<subtest>";
+    }
+
+    public override string ToString() => BuildDescription();
 }
 
 /// <summary>Thrown when a unittest assertion fails.</summary>
