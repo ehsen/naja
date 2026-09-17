@@ -14,6 +14,8 @@ namespace Naja.StdLib;
 /// </summary>
 public class NajaShutil
 {
+    public static readonly NajaShutil Instance = new();
+
     private static string S(object? o) => o switch
     {
         string s => s,

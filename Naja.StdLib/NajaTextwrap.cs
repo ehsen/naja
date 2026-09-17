@@ -12,6 +12,8 @@ namespace Naja.StdLib;
 /// </summary>
 public class NajaTextwrap
 {
+    public static readonly NajaTextwrap Instance = new();
+
     private static string S(object? o) => o switch
     {
         string s => s,

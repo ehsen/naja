@@ -11,6 +11,8 @@ namespace Naja.StdLib;
 /// </summary>
 public class NajaTempfile
 {
+    public static readonly NajaTempfile Instance = new();
+
     private static string S(object? o) => o switch
     {
         string s => s,

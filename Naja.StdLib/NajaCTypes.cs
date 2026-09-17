@@ -385,4 +385,7 @@ public class NajaCTypes
 /// ctypes module entry point for Naja.
 /// Provides access to ctypes.wintypes, ctypes.windll, and FFI functions.
 /// </summary>
-public class NajaCTypesModule : NajaCTypes { }
+public class NajaCTypesModule : NajaCTypes
+{
+    public static readonly NajaCTypesModule Instance = new();
+}

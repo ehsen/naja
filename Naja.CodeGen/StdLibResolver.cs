@@ -64,9 +64,13 @@ public static class StdLibResolver
             ["textwrap"] = ("Naja.StdLib.NajaTextwrap", "Naja.StdLib", "Text"),
             ["tempfile"] = ("Naja.StdLib.NajaTempfile", "Naja.StdLib", "IO"),
             ["ctypes"] = ("Naja.StdLib.NajaCTypesModule", "Naja.StdLib", "Core"),
+            ["test"] = ("Naja.StdLib.NajaTestSupport", "Naja.StdLib", "Core"),
             ["test.support"] = ("Naja.StdLib.NajaTestSupport", "Naja.StdLib", "Core"),
             ["test.support.os_helper"] = ("Naja.StdLib.NajaOsHelper", "Naja.StdLib", "Core"),
             ["test.support.import_helper"] = ("Naja.StdLib.NajaImportHelper", "Naja.StdLib", "Core"),
+            ["test.support.script_helper"] = ("Naja.StdLib.NajaScriptHelper", "Naja.StdLib", "Core"),
+            ["test.support.socket_helper"] = ("Naja.StdLib.NajaSocketHelper", "Naja.StdLib", "Core"),
+            ["test.support.threading_helper"] = ("Naja.StdLib.NajaThreadingHelper", "Naja.StdLib", "Core"),
         };
 
     /// <summary>

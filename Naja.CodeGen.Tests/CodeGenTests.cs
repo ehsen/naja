@@ -2600,5 +2600,36 @@ public class CodeGenTests
             print("ok")
             """));
     }
+
+    [Fact]
+    public void StdLib_Textwrap_Dedent()
+    {
+        Assert.Equal("hello\n  world", Run("""
+            import textwrap
+            print(textwrap.dedent("  hello\n    world"))
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Textwrap_Fill_Wrap()
+    {
+        Assert.Equal("a b\nc\n['a b', 'c d', 'e']", Run("""
+            import textwrap
+            print(textwrap.fill("a b c", 3))
+            print(textwrap.wrap("a b c d e", 3))
+            """));
+    }
+
+    [Fact]
+    public void StdLib_Shutil_And_Tempfile_Instance_Singleton()
+    {
+        Assert.Equal("True", Run("""
+            import shutil
+            import tempfile
+            import os
+            d = tempfile.mkdtemp()
+            print(os.path.isdir(d))
+            """));
+    }
 }
 
