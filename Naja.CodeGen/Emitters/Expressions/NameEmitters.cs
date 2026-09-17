@@ -471,6 +471,7 @@ public sealed class NameEmitters : ExpressionEmitterBase
             ["stat"]      = ("Naja.StdLib.NajaStat",          "Naja.StdLib"),
             ["shutil"]    = ("Naja.StdLib.NajaShutil",        "Naja.StdLib"),
             ["textwrap"]  = ("Naja.StdLib.NajaTextwrap",      "Naja.StdLib"),
+            ["graphlib"] = ("Naja.StdLib.NajaGraphlib",       "Naja.StdLib"),
             ["tempfile"]  = ("Naja.StdLib.NajaTempfile",      "Naja.StdLib"),
             ["ctypes"]    = ("Naja.StdLib.NajaCTypesModule", "Naja.StdLib"),
             ["test"]       = ("Naja.StdLib.NajaTestSupport",   "Naja.StdLib"),

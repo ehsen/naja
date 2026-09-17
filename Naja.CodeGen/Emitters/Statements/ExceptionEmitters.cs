@@ -254,6 +254,8 @@ public class ExceptionEmitters : StatementEmitterBase
     {
         "ValueError" or "UnicodeDecodeError" =>
             [typeof(Naja.StdLib.Core.PythonValueError), typeof(ArgumentException)],
+        "CycleError" =>
+            [typeof(Naja.StdLib.PythonCycleError)],
         "TypeError" =>
             [typeof(Naja.StdLib.Core.PythonTypeError), typeof(InvalidCastException)],
         "KeyError" =>

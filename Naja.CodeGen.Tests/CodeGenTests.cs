@@ -2702,5 +2702,108 @@ public class CodeGenTests
             sys.set_int_max_str_digits(4300)
             """));
     }
+
+    [Fact]
+    public void Graphlib_Add_Prepare_GetReady_IsActive_Loop()
+    {
+        // graph: 1 depends on {2,3,4}; 2 depends on {3}; 3 depends on {4}.
+        // Zero-predecessor node is 4 only; then 3, then 2, then 1.
+        Assert.Equal("4\n3\n2\n1\nFalse", Run("""
+            import graphlib
+            ts = graphlib.TopologicalSorter()
+            ts.add(1, 2, 3, 4)
+            ts.add(2, 3)
+            ts.add(3, 4)
+            ts.prepare()
+            while ts.is_active():
+                batch = ts.get_ready()
+                for n in batch:
+                    ts.done(n)
+                    print(n)
+            print(ts.is_active())
+            """));
+    }
+
+    [Fact]
+    public void Graphlib_From_Import_TopologicalSorter_Constructor()
+    {
+        // Generator of predecessors passed via the constructor graph dict.
+        Assert.Equal("1 3 5 7 9 0", Run("""
+            from graphlib import TopologicalSorter
+            dependson = (2 * x + 1 for x in range(5))
+            ts = TopologicalSorter({0: dependson})
+            print(' '.join(map(str, ts.static_order())))
+            """));
+    }
+
+    [Fact]
+    public void Graphlib_StaticOrder_FullOrdering()
+    {
+        // static_order yields ready batch (hola, bluch, blech) in insertion order.
+        Assert.Equal("hola|bluch|blech", Run("""
+            import graphlib
+            ts = graphlib.TopologicalSorter()
+            ts.add('blech', 'bluch')
+            ts.add('bluch', 'hola')
+            print('|'.join(ts.static_order()))
+            """));
+    }
+
+    [Fact]
+    public void Graphlib_CycleError_Caught_As_ValueError_With_Cycles()
+    {
+        // CycleError is a ValueError subclass: both 'except CycleError' AND
+        // 'except ValueError' catch it, and e.args / .cycles contain the cycle.
+        Assert.Equal("cycle|1|2|1\ncaught-as-valueerror", Run("""
+            import graphlib
+            ts = graphlib.TopologicalSorter()
+            ts.add(1, 2)
+            ts.add(2, 1)
+            try:
+                ts.prepare()
+            except graphlib.CycleError as e:
+                seq = e.args[1]
+                print('cycle|' + '|'.join(map(str, seq)))
+            try:
+                g = graphlib.TopologicalSorter()
+                g.add('a', 'b')
+                g.add('b', 'a')
+                g.prepare()
+            except ValueError:
+                print('caught-as-valueerror')
+            """));
+    }
+
+    [Fact]
+    public void Graphlib_ValueErrors_On_Invalid_Use()
+    {
+        Assert.Equal("add-after-prepare\ndouble-prepare\ndone-unknown\nget-ready-before-prepare", Run("""
+            import graphlib
+            ts = graphlib.TopologicalSorter()
+            ts.prepare()
+            try:
+                ts.add(1)
+            except ValueError:
+                print('add-after-prepare')
+            try:
+                ts.prepare()
+            except ValueError:
+                print('double-prepare')
+            t2 = graphlib.TopologicalSorter()
+            t2.add(1)
+            t2.prepare()
+            t2.get_ready()
+            try:
+                t2.done(99)
+            except ValueError as e:
+                print('done-unknown')
+            t3 = graphlib.TopologicalSorter()
+            try:
+                t3.get_ready()
+            except ValueError:
+                print('get-ready-before-prepare')
+            """));
+    }
 }
+
 

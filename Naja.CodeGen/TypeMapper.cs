@@ -222,6 +222,7 @@ public static class TypeMapper
     {
         "Exception" => typeof(Exception),
         "ValueError" => typeof(Naja.StdLib.Core.PythonValueError),
+        "CycleError" => typeof(Naja.StdLib.PythonCycleError),
         "TypeError" => typeof(Naja.StdLib.Core.PythonTypeError),
         "KeyError" => typeof(Naja.StdLib.Core.PythonKeyError),
         "IndexError" => typeof(Naja.StdLib.Core.PythonIndexError),

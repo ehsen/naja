@@ -62,6 +62,7 @@ public static class StdLibResolver
             // ── Phase 3 additions: shutil, textwrap, ctypes, test.support ──────
             ["shutil"] = ("Naja.StdLib.NajaShutil", "Naja.StdLib", "IO"),
             ["textwrap"] = ("Naja.StdLib.NajaTextwrap", "Naja.StdLib", "Text"),
+            ["graphlib"] = ("Naja.StdLib.NajaGraphlib", "Naja.StdLib", "Core"),
             ["tempfile"] = ("Naja.StdLib.NajaTempfile", "Naja.StdLib", "IO"),
             ["ctypes"] = ("Naja.StdLib.NajaCTypesModule", "Naja.StdLib", "Core"),
             ["test"] = ("Naja.StdLib.NajaTestSupport", "Naja.StdLib", "Core"),
