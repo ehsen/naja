@@ -241,7 +241,9 @@ public sealed class NajaTestSupport
     public static object setswitchinterval(object interval) => null;
     public static object get_pagesize() => (long)4096;
     public static object get_c_recursion_limit() => (long)1000;
-    public static object adjust_int_max_str_digits(object max_digits) => null;
+    public static object get_int_max_str_digits() => NajaSys.Instance.get_int_max_str_digits();
+    public static object set_int_max_str_digits(object max_digits) { NajaSys.Instance.set_int_max_str_digits(max_digits); return null; }
+    public static object adjust_int_max_str_digits(object max_digits) => new AdjustIntMaxStrDigits(max_digits);
     public static object check_cflags_pgo() => false;
     public static object check_bolt_optimized() => false;
     public static object python_is_optimized() => false;
@@ -584,6 +586,36 @@ public sealed class NajaTestSupport
                 var del = _obj.GetType().GetMethod("__delattr__", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 if (del is not null) { try { del.Invoke(_obj, new object?[] { _attr }); } catch { } }
             }
+        }
+    }
+
+    /// <summary>
+    /// adjust_int_max_str_digits — temporarily change the int↔str digit limit.
+    /// Mirrors CPython's contextmanager: on enter, sets the limit to max_digits
+    /// (after first disabling via 0 to avoid an "already limited" no-op), and on
+    /// exit restores the previous value. Mirrors SwapAttr/CapturedStream shape:
+    /// __enter__ returns self, __exit__ returns false (don't suppress).
+    /// </summary>
+    public sealed class AdjustIntMaxStrDigits : object
+    {
+        private readonly object _target;
+        private readonly long _previous;
+
+        public AdjustIntMaxStrDigits(object max_digits)
+        {
+            _target = max_digits;
+            _previous = NajaSys.Instance.get_int_max_str_digits();
+            // CPython's support.adjust_int_max_str_digits sets 0 first, then the
+            // requested value (see Lib/test/support/__init__.py).
+            NajaSys.Instance.set_int_max_str_digits(0);
+            NajaSys.Instance.set_int_max_str_digits(max_digits);
+        }
+
+        public AdjustIntMaxStrDigits __enter__() => this;
+        public bool __exit__(params object[] args)
+        {
+            NajaSys.Instance.set_int_max_str_digits(_previous);
+            return false;
         }
     }
 }

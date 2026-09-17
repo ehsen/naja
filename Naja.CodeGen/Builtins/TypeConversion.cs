@@ -14,9 +14,40 @@ public static class TypeConversion
         long l => l,
         double d => (long)d,
         bool b => b ? 1L : 0L,
-        string s => long.Parse(s),
+        string s => ParseIntString(s, 0),
         _ => Convert.ToInt64(obj)
     };
+
+    /// <summary>int(s[, base]) from a string, honoring the int<->str digit limit
+    /// (non-binary bases only; power-of-2 bases are unlimited).</summary>
+    public static long ParseIntString(string s, long base_)
+    {
+        Naja.StdLib.NajaSys.CheckIntStrDigitLimit(s, base_);
+        try
+        {
+            var trimmed = s.Trim();
+            int prefixLen = 0;
+            if (trimmed.Length > 0 && (trimmed[0] == '+' || trimmed[0] == '-'))
+                prefixLen = 1;
+            if (base_ == 0)
+            {
+                var body = trimmed[prefixLen..];
+                if (body.Length > 1 && body.StartsWith("0x", System.StringComparison.OrdinalIgnoreCase))
+                    return Naja.StdLib.NajaSys.ParseStringToLong(body[2..], 16);
+                if (body.Length > 1 && body.StartsWith("0o", System.StringComparison.OrdinalIgnoreCase))
+                    return Naja.StdLib.NajaSys.ParseStringToLong(body[2..], 8);
+                if (body.Length > 1 && body.StartsWith("0b", System.StringComparison.OrdinalIgnoreCase))
+                    return Naja.StdLib.NajaSys.ParseStringToLong(body[2..], 2);
+                return long.Parse(body.Replace("_", ""));
+            }
+            return Naja.StdLib.NajaSys.ParseStringToLong(trimmed[prefixLen..], base_);
+        }
+        catch (System.FormatException)
+        {
+            throw Naja.StdLib.Core.PythonException.ValueError(
+                $"invalid literal for int() with base {base_}: '{s}'");
+        }
+    }
 
     /// <summary>Convert an object to a Python float (double).</summary>
     public static double ToFloat(object obj) => obj switch

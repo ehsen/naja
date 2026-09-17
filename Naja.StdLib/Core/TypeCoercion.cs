@@ -68,6 +68,9 @@ public static class TypeCoercion
 
         if (x is string s)
         {
+            // Enforce the int<->str digit limit for plain decimal strings.
+            NajaSys.CheckIntStrDigitLimit(s);
+
             s = s.Trim();
             
             // Handle base specification like int("0x10", 16)
